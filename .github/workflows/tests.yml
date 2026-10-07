@@ -1,0 +1,79 @@
+name: Unity Tests
+
+on:
+  push:
+    branches:
+      - master
+      - develop
+  pull_request:
+    branches:
+      - master
+      - develop
+
+permissions:
+  checks: write
+  contents: read
+
+jobs:
+  testPlayMode:
+    name: Test EditMode
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        projectPath:
+          - empty-unity-project
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Clone empty Unity project
+        run: |
+          git clone https://DanilChizhikov:${{ secrets.PRIVATE_REPO_TOKEN }}@github.com/DanilChizhikov/empty-unity-project.git empty-unity-project
+
+      - name: Copy source into Unity project
+        run: |
+          mkdir -p ${{ matrix.projectPath }}/Assets/sources
+
+          shopt -s dotglob
+
+          for item in *; do
+            case "$item" in
+              ${{ matrix.projectPath }}|.git|.github|.gitignore|.gitattributes)
+                echo "Skipping $item"
+                ;;
+              *)
+                cp -R "$item" ${{ matrix.projectPath }}/Assets/sources/
+                ;;
+            esac
+          done
+
+      - name: Run Unity Tests
+        id: tests
+        uses: game-ci/unity-test-runner@v4
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        with:
+          unityVersion: 6000.0.63f1
+          projectPath: ${{ matrix.projectPath }}
+          testMode: editmode
+          customParameters: -buildTarget StandaloneLinux64
+
+      - name: Assert tests actually ran
+        if: always()
+        shell: bash
+        run: |
+          file=$(find artifacts -name '*-results.xml' | head -n 1)
+          if [ -z "$file" ]; then
+            echo "No test results XML produced"
+            exit 1
+          fi
+          total=$(grep -o 'total="[0-9]*"' "$file" | head -n 1 | grep -o '[0-9]*')
+          echo "results=$file total=${total:-0}"
+          if [ "${total:-0}" -lt 1 ]; then
+            echo "0 tests ran -> gate excluded the test assembly"
+            exit 1
+          fi
