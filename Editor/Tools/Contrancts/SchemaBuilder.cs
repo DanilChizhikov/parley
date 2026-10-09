@@ -22,9 +22,9 @@ namespace DTech.Parley.Editor.Tools
 			return Add(name, new JObject { ["type"] = "boolean", ["description"] = description }, required);
 		}
 
-		public SchemaBuilder Enum(string name, string description, string[] values, bool required = false)
+		public SchemaBuilder Enum(EnumSchemaRequest request)
 		{
-			return Add(name, new JObject { ["type"] = "string", ["description"] = description, ["enum"] = new JArray(values) }, required);
+			return Add(request.Name, new JObject { ["type"] = "string", ["description"] = request.Description, ["enum"] = new JArray(request.Values) }, request.Required);
 		}
 
 		public SchemaBuilder Add(string name, JObject schema, bool required = false)

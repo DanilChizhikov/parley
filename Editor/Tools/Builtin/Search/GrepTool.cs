@@ -22,7 +22,7 @@ namespace DTech.Parley.Editor.Tools.Builtin
 			.String("pattern", "Regular expression.", true)
 			.String("path", "File or folder to search (default: project root).")
 			.String("glob", "Only files matching this glob, e.g. '*.cs' or 'Assets/**/*.uss'.")
-			.Enum("output_mode", "Result format.", new[] { "files_with_matches", "content", "count" })
+			.Enum(new EnumSchemaRequest("output_mode", "Result format.", new[] { "files_with_matches", "content", "count" }))
 			.Boolean("-i", "Case-insensitive.")
 			.Integer("-C", "Context lines around each match (content mode).")
 			.Integer("head_limit", "Maximum result lines/files (default 100).")

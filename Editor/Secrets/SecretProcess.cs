@@ -10,10 +10,8 @@ namespace DTech.Parley.Editor.Secrets
 	{
 		private const int TimeoutMs = 10000;
 
-		public static int Run(string fileName, string arguments, string stdin, out string stdout, out string stderr)
+		public static SecretProcessResult Run(string fileName, string arguments, string stdin)
 		{
-			stdout = string.Empty;
-			stderr = string.Empty;
 			try
 			{
 				ProcessStartInfo startInfo = new ProcessStartInfo(fileName, arguments)
@@ -29,7 +27,7 @@ namespace DTech.Parley.Editor.Secrets
 				using Process process = Process.Start(startInfo);
 				if (process == null)
 				{
-					return -1;
+					return new SecretProcessResult(-1, string.Empty, string.Empty);
 				}
 
 				Task<string> output = process.StandardOutput.ReadToEndAsync();
@@ -53,17 +51,14 @@ namespace DTech.Parley.Editor.Secrets
 						Debug.LogException(exception);
 					}
 
-					return -1;
+					return new SecretProcessResult(-1, string.Empty, string.Empty);
 				}
 
-				stdout = output.Result;
-				stderr = error.Result;
-				return process.ExitCode;
+				return new SecretProcessResult(process.ExitCode, output.Result, error.Result);
 			}
 			catch (Exception exception)
 			{
-				stderr = exception.Message;
-				return -1;
+				return new SecretProcessResult(-1, string.Empty, exception.Message);
 			}
 		}
 	}

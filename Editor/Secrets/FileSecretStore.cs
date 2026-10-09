@@ -56,7 +56,7 @@ namespace DTech.Parley.Editor.Secrets
 				string valuesJson = JsonConvert.SerializeObject(values);
 				File.WriteAllText(_path, valuesJson);
 				string arguments = CommandLine.Join(new[] { "600", _path }, false);
-				SecretProcess.Run("chmod", arguments, null, out _, out _);
+				SecretProcess.Run("chmod", arguments, null);
 				error = null;
 				return true;
 			}

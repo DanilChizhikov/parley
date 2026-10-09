@@ -11,7 +11,6 @@ namespace DTech.Parley.Editor
 	{
 		public static Task SendAsync(UnityWebRequest request, CancellationToken cancellationToken)
 		{
-			TaskCompletionSource<bool> completion = new TaskCompletionSource<bool>();
 			UnityWebRequestAsyncOperation operation = request.SendWebRequest();
 			CancellationTokenRegistration registration = default;
 
@@ -27,10 +26,10 @@ namespace DTech.Parley.Editor
 				}
 			}));
 
-			var poll = new WebRequestPoll(operation, registration, cancellationToken, completion);
+			WebRequestPoll poll = new WebRequestPoll(operation, registration, cancellationToken);
 
 			EditorApplication.update += poll.Execute;
-			return completion.Task;
+			return poll.Task;
 		}
 
 		private sealed class WebRequestPoll
@@ -38,18 +37,15 @@ namespace DTech.Parley.Editor
 			private readonly UnityWebRequestAsyncOperation _operation;
 			private readonly CancellationTokenRegistration _registration;
 			private readonly CancellationToken _cancellationToken;
-			private readonly TaskCompletionSource<bool> _completion;
+			private readonly TaskCompletionSource<bool> _completion = new ();
 
-			public WebRequestPoll(
-				UnityWebRequestAsyncOperation operation,
-				CancellationTokenRegistration registration,
-				CancellationToken cancellationToken,
-				TaskCompletionSource<bool> completion)
+			public Task Task => _completion.Task;
+
+			public WebRequestPoll(UnityWebRequestAsyncOperation operation, CancellationTokenRegistration registration, CancellationToken cancellationToken)
 			{
 				_operation = operation;
 				_registration = registration;
 				_cancellationToken = cancellationToken;
-				_completion = completion;
 			}
 
 			public void Execute()

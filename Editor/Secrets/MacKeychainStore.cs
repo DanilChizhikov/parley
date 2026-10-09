@@ -12,12 +12,13 @@ namespace DTech.Parley.Editor.Secrets
 		{
 			secret = null;
 			string arguments = CommandLine.Join(new[] { "find-generic-password", "-s", SecretStores.Service, "-a", Account(key), "-w" }, false);
-			if (SecretProcess.Run(Tool, arguments, null, out string stdout, out _) != 0)
+			SecretProcessResult result = SecretProcess.Run(Tool, arguments, null);
+			if (result.ExitCode != 0)
 			{
 				return false;
 			}
 
-			secret = stdout.TrimEnd('\n', '\r');
+			secret = result.Output.TrimEnd('\n', '\r');
 			return secret.Length > 0;
 		}
 
@@ -26,15 +27,15 @@ namespace DTech.Parley.Editor.Secrets
 			string account = Account(key);
 			string script = "add-generic-password -U -s " + SecretStores.Service + " -a " + account
 				+ " -l Parley-" + account + " -X " + Hex(secret) + "\n";
-			int code = SecretProcess.Run(Tool, "-i", script, out _, out string stderr);
-			error = code == 0 && stderr.IndexOf("error", System.StringComparison.OrdinalIgnoreCase) < 0 ? null : stderr.Trim();
+			SecretProcessResult result = SecretProcess.Run(Tool, "-i", script);
+			error = result.ExitCode == 0 && result.Error.IndexOf("error", System.StringComparison.OrdinalIgnoreCase) < 0 ? null : result.Error.Trim();
 			return error == null;
 		}
 
 		public bool Delete(string key)
 		{
 			string arguments = CommandLine.Join(new[] { "delete-generic-password", "-s", SecretStores.Service, "-a", Account(key) }, false);
-			return SecretProcess.Run(Tool, arguments, null, out _, out _) == 0;
+			return SecretProcess.Run(Tool, arguments, null).ExitCode == 0;
 		}
 
 		private static string Account(string key)

@@ -32,7 +32,7 @@ namespace DTech.Parley.Editor
 			Application.logMessageReceivedThreaded += Capture;
 		}
 
-		public static List<ConsoleEntry> Read(int limit, bool includeLogs, bool includeWarnings, bool includeErrors, bool compilerOnly = false)
+		public static List<ConsoleEntry> Read(int limit, ConsoleSeverity minimum, bool compilerOnly = false)
 		{
 			List<ConsoleEntry> entries = ReadFromConsole() ?? Snapshot();
 			List<ConsoleEntry> result = new ();
@@ -44,14 +44,7 @@ namespace DTech.Parley.Editor
 					continue;
 				}
 
-				bool wanted = entry.Severity switch
-				{
-					ConsoleSeverity.Error => includeErrors,
-					ConsoleSeverity.Warning => includeWarnings,
-					_ => includeLogs,
-				};
-
-				if (wanted)
+				if (entry.Severity >= minimum)
 				{
 					result.Add(entry);
 				}
