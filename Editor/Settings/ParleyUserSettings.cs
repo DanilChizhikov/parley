@@ -34,6 +34,12 @@ namespace DTech.Parley.Editor
 			set => Set(ref _cliPathOverride, value);
 		}
 
+		public string CodexCliPathOverride
+		{
+			get => _codexCliPathOverride;
+			set => Set(ref _codexCliPathOverride, value);
+		}
+
 		public PermissionMode DefaultMode
 		{
 			get => _defaultMode;
@@ -79,6 +85,7 @@ namespace DTech.Parley.Editor
 		[SerializeField] private List<ParleyProfile> _profiles = new ();
 		[SerializeField] private string _activeProfileId;
 		[SerializeField] private string _cliPathOverride;
+		[SerializeField] private string _codexCliPathOverride;
 		[SerializeField] private PermissionMode _defaultMode = PermissionMode.Default;
 		[SerializeField] private bool _lockReloadDuringTurn = true;
 		[SerializeField] private bool _openLoginLinks = true;
@@ -194,6 +201,7 @@ namespace DTech.Parley.Editor
 			}
 
 			_profiles.Add(ParleyProfile.CreateClaude("Claude Code", ClaudeAuthMethod.CliDefault));
+			_profiles.Add(ParleyProfile.CreateCodex("Codex", CodexAuthMethod.CliDefault));
 			_profiles.Add(ParleyProfile.CreateLocal("LM Studio", LocalPreset.LmStudio));
 			_profiles.Add(ParleyProfile.CreateLocal("Ollama", LocalPreset.Ollama));
 			_activeProfileId = _profiles[0].Id;

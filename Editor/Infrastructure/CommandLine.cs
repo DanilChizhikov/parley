@@ -26,6 +26,43 @@ namespace DTech.Parley.Editor
 			return builder.ToString();
 		}
 
+		public static IEnumerable<string> Split(string text)
+		{
+			if (string.IsNullOrWhiteSpace(text))
+			{
+				yield break;
+			}
+
+			StringBuilder current = new StringBuilder();
+			bool quoted = false;
+			foreach (char character in text)
+			{
+				if (character == '"')
+				{
+					quoted = !quoted;
+					continue;
+				}
+
+				if (char.IsWhiteSpace(character) && !quoted)
+				{
+					if (current.Length > 0)
+					{
+						yield return current.ToString();
+						current.Clear();
+					}
+
+					continue;
+				}
+
+				current.Append(character);
+			}
+
+			if (current.Length > 0)
+			{
+				yield return current.ToString();
+			}
+		}
+
 		public static string QuoteWindows(string argument)
 		{
 			if (string.IsNullOrEmpty(argument))

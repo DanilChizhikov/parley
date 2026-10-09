@@ -11,5 +11,6 @@ namespace DTech.Parley.Editor
         public const string BedrockBearerToken = "bedrockBearerToken";
         public const string FoundryApiKey = "foundryApiKey";
         public const string LocalApiKey = "localApiKey";
+        public const string OpenAiApiKey = "openAiApiKey";
     }
 }

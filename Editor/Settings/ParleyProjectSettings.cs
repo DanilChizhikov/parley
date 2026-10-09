@@ -39,17 +39,26 @@ namespace DTech.Parley.Editor.Settings
 
 		public IReadOnlyList<string> AdditionalDirectories => _additionalDirectories;
 
+		public IReadOnlyList<string> InstructionFiles => _instructionFiles;
+
 		public IReadOnlyList<string> DisabledUnityTools => _disabledUnityTools;
 
 		[SerializeField] private string _appendSystemPrompt = string.Empty;
 		[SerializeField] private bool _unityToolsEnabled = true;
 		[SerializeField] private bool _includeProjectInstructions = true;
 		[SerializeField] private List<string> _additionalDirectories = new ();
+		[SerializeField] private List<string> _instructionFiles = new ();
 		[SerializeField] private List<string> _disabledUnityTools = new ();
 
 		public void SetAdditionalDirectories(IEnumerable<string> directories)
 		{
 			_additionalDirectories = new List<string>(directories);
+			Persist();
+		}
+
+		public void SetInstructionFiles(IEnumerable<string> files)
+		{
+			_instructionFiles = new List<string>(files);
 			Persist();
 		}
 

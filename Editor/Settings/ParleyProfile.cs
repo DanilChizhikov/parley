@@ -67,6 +67,9 @@ namespace DTech.Parley.Editor
 		public string AnthropicProfile { get; set; }
 		
 		[field: SerializeField]
+		public CodexAuthMethod CodexAuthMethod { get; set; }
+		
+		[field: SerializeField]
 		public string Model { get; set; }
 		
 		[field: SerializeField]
@@ -101,6 +104,9 @@ namespace DTech.Parley.Editor
 
 		public static ParleyProfile CreateClaude(string name, ClaudeAuthMethod method) => new ParleyProfile
 			{ Name = name, Kind = ProfileKind.ClaudeCode, AuthMethod = method };
+
+		public static ParleyProfile CreateCodex(string name, CodexAuthMethod method) => new ParleyProfile
+			{ Name = name, Kind = ProfileKind.Codex, CodexAuthMethod = method };
 
 		public static ParleyProfile CreateLocal(string name, LocalPreset preset)
 		{
