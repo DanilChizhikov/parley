@@ -126,8 +126,7 @@ namespace DTech.Parley.Tests.EditorMode
 			ParleyProfile profile = ParleyProfile.CreateLocal("t", LocalPreset.Custom);
 			profile.TextToolCalls = true;
 			profile.Model = "m";
-			LocalAgentRequest request = new LocalAgentRequest(profile, sink, Catalog(), null, null, PermissionMode.BypassPermissions, (_, _) => client);
-			LocalAgentBackend backend = new LocalAgentBackend(request);
+			LocalAgentBackend backend = new LocalAgentBackend(profile, sink, Catalog(), null, null, PermissionMode.BypassPermissions, (_, _) => client);
 			backend.SendAsync(new UserTurn { Text = "go" }, CancellationToken.None);
 
 			Assert.AreEqual(1, sink.ToolResults.Count);
@@ -140,8 +139,7 @@ namespace DTech.Parley.Tests.EditorMode
 		{
 			ParleyProfile profile = ParleyProfile.CreateLocal("t", LocalPreset.Custom);
 			profile.Model = "m";
-			LocalAgentRequest request = new LocalAgentRequest(profile, sink, Catalog(), null, null, mode, (_, _) => client);
-			return new LocalAgentBackend(request);
+			return new LocalAgentBackend(profile, sink, Catalog(), null, null, mode, (_, _) => client);
 		}
 
 		private static ToolCatalog Catalog()

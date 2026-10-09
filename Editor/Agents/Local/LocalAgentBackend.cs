@@ -35,7 +35,7 @@ namespace DTech.Parley.Editor.Agents.Local
 
 		public PermissionMode Mode { get; private set; }
 
-		public JArray History => new JArray(_history.ToArray());
+		public IReadOnlyList<JObject> History => _history;
 
 		private IChatCompletionClient _client;
 		private string _model;
@@ -44,15 +44,22 @@ namespace DTech.Parley.Editor.Agents.Local
 		private int _blockCounter;
 		private RoundStream _round;
 
-		public LocalAgentBackend(LocalAgentRequest request)
+		public LocalAgentBackend(
+			ParleyProfile profile,
+			IAgentSink sink,
+			ToolCatalog catalog,
+			string sessionId,
+			IEnumerable<JObject> history,
+			PermissionMode mode,
+			Func<string, string, IChatCompletionClient> clientFactory = null)
 		{
-			_profile = request.Profile;
-			_sink = request.Sink;
-			_catalog = request.Catalog;
-			_model = request.Profile.Model;
-			SessionId = string.IsNullOrEmpty(request.SessionId) ? Guid.NewGuid().ToString("N") : request.SessionId;
-			Mode = request.Mode == PermissionMode.Auto ? PermissionMode.Default : request.Mode;
-			_clientFactory = request.ClientFactory ?? ((url, key) => new OpenAiCompatClient(url, key));
+			_profile = profile;
+			_sink = sink;
+			_catalog = catalog;
+			_model = profile.Model;
+			SessionId = string.IsNullOrEmpty(sessionId) ? Guid.NewGuid().ToString("N") : sessionId;
+			Mode = mode == PermissionMode.Auto ? PermissionMode.Default : mode;
+			_clientFactory = clientFactory ?? ((url, key) => new OpenAiCompatClient(url, key));
 			string root = ProjectPaths.Root;
 			_gate = new PermissionGate(root, () => ParleyProjectSettings.instance.AdditionalDirectories, () => ParleyUserSettings.instance.RulesFor(root));
 			_context = new ToolContext
@@ -64,13 +71,13 @@ namespace DTech.Parley.Editor.Agents.Local
 				AskUser = AskAsync,
 			};
 
-			if (request.History != null)
+			if (history != null)
 			{
-				foreach (JToken message in request.History)
+				foreach (JObject message in history)
 				{
-					if (message is JObject item)
+					if (message != null)
 					{
-						_history.Add(item);
+						_history.Add(message);
 					}
 				}
 			}

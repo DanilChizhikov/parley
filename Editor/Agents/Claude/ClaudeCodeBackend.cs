@@ -53,17 +53,22 @@ namespace DTech.Parley.Editor.Agents.Claude
 		private bool _disposed;
 		private int _requestCounter;
 
-		public ClaudeCodeBackend(ClaudeCodeRequest request)
+		public ClaudeCodeBackend(
+			ParleyProfile profile,
+			IAgentSink sink,
+			ToolCatalog unityTools,
+			string resumeSessionId,
+			PermissionMode mode)
 		{
-			_profile = request.Profile;
-			_sink = request.Sink;
-			_unityTools = request.UnityTools;
-			_resumeSessionId = request.ResumeSessionId;
-			_model = request.Profile.Model;
-			_effort = request.Profile.Effort;
-			Mode = request.Mode;
-			_mapper = new ClaudeStreamMapper(request.Sink);
-			_bridge = new SdkMcpBridge(request.UnityTools, () => new ToolContext
+			_profile = profile;
+			_sink = sink;
+			_unityTools = unityTools;
+			_resumeSessionId = resumeSessionId;
+			_model = profile.Model;
+			_effort = profile.Effort;
+			Mode = mode;
+			_mapper = new ClaudeStreamMapper(sink);
+			_bridge = new SdkMcpBridge(unityTools, () => new ToolContext
 			{
 				AdditionalDirectories = ParleyProjectSettings.instance.AdditionalDirectories,
 				GetMode = () => Mode,
@@ -285,7 +290,7 @@ namespace DTech.Parley.Editor.Agents.Claude
 			string executable = await ClaudeCliLocator.LocateAsync(ParleyUserSettings.instance.CliPathOverride);
 			if (executable == null)
 			{
-				throw new InvalidOperationException(
+				throw new AgentSetupException(
 					"Claude Code CLI was not found. Install it (https://code.claude.com/docs/en/setup) or set its path in Preferences > DTech > Parley.");
 			}
 
@@ -294,7 +299,7 @@ namespace DTech.Parley.Editor.Agents.Claude
 			AuthEnvironment auth = AuthEnvironmentBuilder.Build(_profile, ReadSecret);
 			if (!auth.IsValid)
 			{
-				throw new InvalidOperationException(_profile.Name + ": " + string.Join(" ", auth.Problems));
+				throw new AgentSetupException(_profile.Name + ": " + string.Join(" ", auth.Problems));
 			}
 
 			ProcessStartInfo startInfo = new ProcessStartInfo(executable, CommandLine.Join(BuildArguments(auth)))
