@@ -1,0 +1,26 @@
+.pl-root {
+    --pl-bg: #232323;
+    --pl-surface: #2A2A2A;
+    --pl-surface-2: #313131;
+    --pl-surface-3: #3A3A3A;
+    --pl-border: #474747;
+    --pl-text: #DCDCDC;
+    --pl-text-muted: #9B9B9B;
+    --pl-accent: #4C8DF6;
+    --pl-accent-hover: #6AA2FA;
+    --pl-accent-text: #FFFFFF;
+    --pl-user-bg: #2C3746;
+    --pl-code-bg: #1B1B1B;
+    --pl-success: #57C786;
+    --pl-warning: #E5B450;
+    --pl-error: #F26D6D;
+    --pl-error-bg: #3D2526;
+    --pl-warning-bg: #3B3222;
+    --pl-diff-add: #1E3A28;
+    --pl-diff-del: #452328;
+    --pl-diff-hunk: #22324A;
+    --pl-plan: #9B7FF0;
+    --pl-plan-bg: #2E2843;
+    --pl-request-bg: #2B3140;
+    --pl-selected: #34465F;
+}
