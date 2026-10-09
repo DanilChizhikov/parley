@@ -31,7 +31,7 @@ namespace DTech.Parley.Editor.Tools
 		{
 			yield return new ConsoleTool();
 			yield return new CompileStatusTool();
-			yield return new RefreshTool();
+			yield return new ConsoleRefreshTool();
 			yield return new SelectionTool();
 			yield return new HierarchyTool();
 			yield return new InspectTool();
