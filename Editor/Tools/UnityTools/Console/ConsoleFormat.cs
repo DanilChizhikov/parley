@@ -6,7 +6,7 @@ namespace DTech.Parley.Editor.Tools.UnityTools
 {
 	internal static class ConsoleFormat
 	{
-		public static string Format(List<ConsoleEntry> entries, string filter, bool includeStack, int limit)
+		public static List<ConsoleEntry> Filter(List<ConsoleEntry> entries, string filter)
 		{
 			List<ConsoleEntry> matching = new ();
 			foreach (ConsoleEntry entry in entries)
@@ -17,15 +17,20 @@ namespace DTech.Parley.Editor.Tools.UnityTools
 				}
 			}
 
-			if (matching.Count == 0)
+			return matching;
+		}
+
+		public static string Format(List<ConsoleEntry> entries, bool includeStack, int limit)
+		{
+			if (entries.Count == 0)
 			{
 				return "Console has no matching entries.";
 			}
 
 			StringBuilder builder = new StringBuilder();
-			for (int i = System.Math.Max(0, matching.Count - limit); i < matching.Count; i++)
+			for (int i = System.Math.Max(0, entries.Count - limit); i < entries.Count; i++)
 			{
-				ConsoleEntry entry = matching[i];
+				ConsoleEntry entry = entries[i];
 				builder.Append('[').Append(entry.Severity).Append("] ").Append(entry.Message);
 				if (!string.IsNullOrEmpty(entry.File))
 				{
@@ -44,7 +49,8 @@ namespace DTech.Parley.Editor.Tools.UnityTools
 
 		public static string CompileReport(bool includeWarnings)
 		{
-			List<ConsoleEntry> entries = ConsoleReader.Read(200, false, includeWarnings, true, true);
+			ConsoleSeverity minimum = includeWarnings ? ConsoleSeverity.Warning : ConsoleSeverity.Error;
+			List<ConsoleEntry> entries = ConsoleReader.Read(200, minimum, true);
 			StringBuilder builder = new StringBuilder();
 			builder.AppendLine(EditorApplication.isCompiling ? "Unity is compiling scripts right now." : "Unity is not compiling.");
 			int errors = 0;

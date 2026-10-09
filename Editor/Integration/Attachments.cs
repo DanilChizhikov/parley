@@ -34,7 +34,7 @@ namespace DTech.Parley.Editor
 
 		public static ChatAttachment FromConsoleErrors(int limit = 20)
 		{
-			List<ConsoleEntry> entries = ConsoleReader.Read(limit, false, false, true);
+			List<ConsoleEntry> entries = ConsoleReader.Read(limit, ConsoleSeverity.Error);
 			if (entries.Count == 0)
 			{
 				return null;
@@ -66,7 +66,7 @@ namespace DTech.Parley.Editor
 			}
 
 			Rect rect = view.position;
-			return Capture(view.camera, (int)rect.width, (int)rect.height, "Scene view");
+			return Capture(view.camera, new Vector2Int((int)rect.width, (int)rect.height), "Scene view");
 		}
 
 		public static ChatAttachment FromGameCamera()
@@ -78,7 +78,7 @@ namespace DTech.Parley.Editor
 				camera = cameras.Length > 0 ? cameras[0] : null;
 			}
 
-			return camera == null ? null : Capture(camera, 1280, 720, "Game camera (" + camera.name + ")");
+			return camera == null ? null : Capture(camera, new Vector2Int(1280, 720), "Game camera (" + camera.name + ")");
 		}
 
 		public static ChatAttachment FromPath(string path)
@@ -132,16 +132,16 @@ namespace DTech.Parley.Editor
 			}
 		}
 
-		private static ChatAttachment Capture(Camera camera, int width, int height, string label)
+		private static ChatAttachment Capture(Camera camera, Vector2Int size, string label)
 		{
-			if (width <= 0 || height <= 0)
+			if (size.x <= 0 || size.y <= 0)
 			{
 				return null;
 			}
 
-			float scale = Mathf.Min(1.0f, ScreenshotMaxSide / (float)Mathf.Max(width, height));
-			width = Mathf.Max(16, (int)(width * scale));
-			height = Mathf.Max(16, (int)(height * scale));
+			float scale = Mathf.Min(1.0f, ScreenshotMaxSide / (float)Mathf.Max(size.x, size.y));
+			int width = Mathf.Max(16, (int)(size.x * scale));
+			int height = Mathf.Max(16, (int)(size.y * scale));
 			RenderTexture target = RenderTexture.GetTemporary(width, height, 24, RenderTextureFormat.ARGB32);
 			RenderTexture previousTarget = camera.targetTexture;
 			RenderTexture previousActive = RenderTexture.active;

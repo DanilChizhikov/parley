@@ -18,7 +18,7 @@ namespace DTech.Parley.Editor.Tools.Builtin
                 ["description"] = "The full, updated todo list.",
                 ["items"] = new SchemaBuilder()
                     .String("content", "Imperative description, e.g. 'Fix the login bug'.", true)
-                    .Enum("status", "Item status.", new[] { "pending", "in_progress", "completed" }, true)
+                    .Enum(new EnumSchemaRequest("status", "Item status.", new[] { "pending", "in_progress", "completed" }, true))
                     .String("activeForm", "Present continuous form shown while in progress, e.g. 'Fixing the login bug'.", true)
                     .Build(),
             }, true)
