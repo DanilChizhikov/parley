@@ -14,5 +14,12 @@ namespace DTech.Parley.Editor
         
         [field: SerializeField]
         public string Pattern { get; private set; }
+
+        public AllowRule(string projectRoot, string tool, string pattern)
+        {
+            ProjectRoot = projectRoot;
+            Tool = tool;
+            Pattern = pattern;
+        }
     }
 }
