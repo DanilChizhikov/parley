@@ -62,7 +62,7 @@ namespace DTech.Parley.Tests.EditorMode
 
 		public void ToolResult(ToolResultRequest request)
 		{
-			ToolResults.Add((request.ToolUserId, request.Text, request.IsError));
+			ToolResults.Add((request.ToolUseId, request.Text, request.IsError));
 		}
 
 		public void RequestRaised(PendingRequest request)

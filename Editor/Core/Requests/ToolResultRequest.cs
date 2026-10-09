@@ -4,14 +4,14 @@ namespace DTech.Parley.Editor
 {
     internal readonly struct ToolResultRequest
     {
-        public string ToolUserId { get; }
+        public string ToolUseId { get; }
         public string Text { get; }
         public bool IsError { get; }
         public JToken Structured { get; }
 
-        public ToolResultRequest(string toolUserId, string text, bool isError, JToken structured)
+        public ToolResultRequest(string toolUseId, string text, bool isError, JToken structured)
         {
-            ToolUserId = toolUserId;
+            ToolUseId = toolUseId;
             Text = text;
             IsError = isError;
             Structured = structured;

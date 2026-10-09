@@ -35,7 +35,7 @@ namespace DTech.Parley.Editor.Agents.Local
 
 		public PermissionMode Mode { get; private set; }
 
-		public JArray History => new JArray(_history.ToArray());
+		public IReadOnlyList<JObject> History => _history;
 
 		private IChatCompletionClient _client;
 		private string _model;
@@ -49,7 +49,7 @@ namespace DTech.Parley.Editor.Agents.Local
 			IAgentSink sink,
 			ToolCatalog catalog,
 			string sessionId,
-			JArray history,
+			IEnumerable<JObject> history,
 			PermissionMode mode,
 			Func<string, string, IChatCompletionClient> clientFactory = null)
 		{
@@ -73,11 +73,11 @@ namespace DTech.Parley.Editor.Agents.Local
 
 			if (history != null)
 			{
-				foreach (JToken message in history)
+				foreach (JObject message in history)
 				{
-					if (message is JObject item)
+					if (message != null)
 					{
-						_history.Add(item);
+						_history.Add(message);
 					}
 				}
 			}

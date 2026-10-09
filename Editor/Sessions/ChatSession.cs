@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using DTech.Parley.Editor.Agents.Claude;
@@ -20,13 +21,15 @@ namespace DTech.Parley.Editor.Sessions
 		public event Action<PendingRequest> OnRequestRaised;
 		public event Action OnStateChanged;
 
-		private static readonly HashSet<string> _editTools = new () { "Edit", "Write", "MultiEdit", "NotebookEdit" };
+		private const double DeltaFlushIntervalSeconds = 0.05;
 
 		private readonly Dictionary<string, TranscriptBlock> _blocksByKey = new ();
 		private readonly Dictionary<string, TranscriptBlock> _blocksByToolId = new ();
 		private readonly Dictionary<string, TranscriptBlock> _requestBlocks = new ();
 		private readonly Dictionary<string, PendingRequest> _requests = new ();
 		private readonly Dictionary<string, TodoItem> _pendingTaskCreates = new ();
+		private readonly Dictionary<TranscriptBlock, StringBuilder> _pendingText = new ();
+		private readonly Dictionary<TranscriptBlock, StringBuilder> _pendingInput = new ();
 		private readonly List<TodoItem> _todos = new ();
 		private readonly Dictionary<string, BackgroundTaskInfo> _tasks = new ();
 		private readonly CancellationTokenSource _lifetime = new ();
@@ -67,13 +70,20 @@ namespace DTech.Parley.Editor.Sessions
 
 		private TranscriptEntry _currentAssistant;
 		private bool _sending;
-		private bool _editedFiles;
 		private bool _disposed;
+		private bool _deltaFlushScheduled;
+		private double _lastDeltaFlush;
 
 		public ChatSession(ParleyProfile profile, SessionRecord record)
 		{
 			Profile = profile;
-			Record = record ?? new SessionRecord { ProfileId = profile.Id, Kind = profile.Kind, Mode = ParleyUserSettings.instance.DefaultMode };
+			Record = record ?? new SessionRecord { Mode = ParleyUserSettings.instance.DefaultMode };
+			if (Record.Kind != profile.Kind)
+			{
+				Record.BackendSessionId = null;
+				Record.LocalHistory = null;
+			}
+
 			Record.ProfileId = profile.Id;
 			Record.Kind = profile.Kind;
 			Model = profile.Model;
@@ -82,10 +92,12 @@ namespace DTech.Parley.Editor.Sessions
 			Backend = profile.Kind switch
 			{
 				ProfileKind.ClaudeCode => new ClaudeCodeBackend(profile, this, ToolCatalog.CreateForMcp(ParleyProjectSettings.instance), Record.BackendSessionId, Record.Mode),
-				ProfileKind.Codex => new CodexBackend(profile, this,  ToolCatalog.CreateForMcp(ParleyProjectSettings.instance), Record.BackendSessionId, Record.Mode),
+				ProfileKind.Codex => new CodexBackend(profile, this, ToolCatalog.CreateForMcp(ParleyProjectSettings.instance), Record.BackendSessionId, Record.Mode),
 				ProfileKind.Local => new LocalAgentBackend(profile, this, ToolCatalog.CreateForLocalAgent(ParleyProjectSettings.instance), Record.BackendSessionId, Record.LocalHistory, Record.Mode),
 				_ => throw new ArgumentOutOfRangeException(),
 			};
+
+			Record.Mode = Backend.Mode;
 		}
 
 		public void Dispose()
@@ -95,10 +107,16 @@ namespace DTech.Parley.Editor.Sessions
 				return;
 			}
 
-			_disposed = true;
 			Save();
+			_disposed = true;
 			_lifetime.Cancel();
 			Backend.Dispose();
+			_lifetime.Dispose();
+			OnEntryAdded = null;
+			OnBlockAdded = null;
+			OnBlockChanged = null;
+			OnRequestRaised = null;
+			OnStateChanged = null;
 		}
 
 		public async Task EnsureStartedAsync()
@@ -132,7 +150,7 @@ namespace DTech.Parley.Editor.Sessions
 		{
 			UserTurn turn = new UserTurn { Text = text ?? string.Empty, Attachments = attachments ?? new List<ChatAttachment>() };
 			AddUserEntry(turn);
-			if (Record.Entries.Count <= 2 || Record.Title == "New chat")
+			if (Record.Entries.Count <= 2 || Record.Title == SessionRecord.DefaultTitle)
 			{
 				Record.Title = SessionStore.MakeTitle(turn.Text);
 			}
@@ -218,11 +236,16 @@ namespace DTech.Parley.Editor.Sessions
 
 		public void Save()
 		{
-			Record.BackendSessionId = Backend.SessionId;
+			if (_disposed)
+			{
+				return;
+			}
 
+			FlushDeltas();
+			Record.BackendSessionId = Backend.SessionId;
 			if (Backend is LocalAgentBackend local)
 			{
-				Record.LocalHistory = local.History;
+				Record.LocalHistory = new List<JObject>(local.History);
 			}
 
 			SessionStore.Save(Record);
@@ -234,12 +257,10 @@ namespace DTech.Parley.Editor.Sessions
 
 		private void ReportStartFailure(Exception exception)
 		{
-			string message = exception.Message;
-			AddNotice(NoticeLevel.Error, message);
-			string lower = message.ToLowerInvariant();
-			if (lower.Contains("not set") || lower.Contains("sign") || lower.Contains("login") || lower.Contains("not found") || lower.Contains("api key"))
+			AddNotice(NoticeLevel.Error, exception.Message);
+			if (exception is AgentSetupException)
 			{
-				AuthMessage = message;
+				AuthMessage = exception.Message;
 			}
 		}
 
@@ -400,8 +421,83 @@ namespace DTech.Parley.Editor.Sessions
 		{
 			OnStateChanged?.Invoke();
 		}
-		
-				void IAgentSink.CapabilitiesChanged(BackendCapabilities capabilities)
+
+		private void QueueDelta(Dictionary<TranscriptBlock, StringBuilder> pending, TranscriptBlock block, string delta)
+		{
+			if (!pending.TryGetValue(block, out StringBuilder buffer))
+			{
+				buffer = new StringBuilder();
+				pending[block] = buffer;
+			}
+
+			buffer.Append(delta);
+			if (!_deltaFlushScheduled)
+			{
+				_deltaFlushScheduled = true;
+				EditorApplication.update += DeltaFlushTick;
+			}
+		}
+
+		private void DeltaFlushTick()
+		{
+			if (EditorApplication.timeSinceStartup - _lastDeltaFlush >= DeltaFlushIntervalSeconds)
+			{
+				FlushDeltas();
+			}
+		}
+
+		private void FlushDeltas()
+		{
+			if (_deltaFlushScheduled)
+			{
+				_deltaFlushScheduled = false;
+				EditorApplication.update -= DeltaFlushTick;
+			}
+
+			_lastDeltaFlush = EditorApplication.timeSinceStartup;
+			if (_pendingText.Count == 0 && _pendingInput.Count == 0)
+			{
+				return;
+			}
+
+			foreach (KeyValuePair<TranscriptBlock, StringBuilder> pair in _pendingText)
+			{
+				pair.Key.Text += pair.Value.ToString();
+			}
+
+			foreach (KeyValuePair<TranscriptBlock, StringBuilder> pair in _pendingInput)
+			{
+				pair.Key.PartialInputJson += pair.Value.ToString();
+			}
+
+			try
+			{
+				foreach (TranscriptBlock block in _pendingText.Keys)
+				{
+					OnBlockChanged?.Invoke(block);
+				}
+
+				foreach (TranscriptBlock block in _pendingInput.Keys)
+				{
+					OnBlockChanged?.Invoke(block);
+				}
+			}
+			finally
+			{
+				_pendingText.Clear();
+				_pendingInput.Clear();
+			}
+		}
+
+		private void RefreshAssetsIfIdle()
+		{
+			if (!Backend.IsBusy)
+			{
+				AssetDatabase.Refresh();
+			}
+		}
+
+		void IAgentSink.CapabilitiesChanged(BackendCapabilities capabilities)
 		{
 			Capabilities = capabilities ?? new BackendCapabilities();
 			RaiseState();
@@ -465,21 +561,20 @@ namespace DTech.Parley.Editor.Sessions
 				AddAssistantBlock(block);
 			}
 
-			block.Text += delta;
-			OnBlockChanged?.Invoke(block);
+			QueueDelta(_pendingText, block, delta);
 		}
 
 		void IAgentSink.ToolInputDelta(string key, string partialJson)
 		{
 			if (_blocksByKey.TryGetValue(key, out TranscriptBlock block) && !string.IsNullOrEmpty(partialJson))
 			{
-				block.PartialInputJson += partialJson;
-				OnBlockChanged?.Invoke(block);
+				QueueDelta(_pendingInput, block, partialJson);
 			}
 		}
 
 		void IAgentSink.BlockFinalized(BlockFinalizeRequest request)
 		{
+			FlushDeltas();
 			if (!_blocksByKey.TryGetValue(request.Key, out TranscriptBlock block))
 			{
 				block = new TranscriptBlock { Kind = request.Kind, ParentToolUseId = request.ParentToolUseId };
@@ -518,7 +613,7 @@ namespace DTech.Parley.Editor.Sessions
 
 		void IAgentSink.ToolResult(ToolResultRequest request)
 		{
-			if (string.IsNullOrEmpty(request.ToolUserId) || !_blocksByToolId.TryGetValue(request.ToolUserId, out TranscriptBlock block))
+			if (string.IsNullOrEmpty(request.ToolUseId) || !_blocksByToolId.TryGetValue(request.ToolUseId, out TranscriptBlock block))
 			{
 				return;
 			}
@@ -527,11 +622,6 @@ namespace DTech.Parley.Editor.Sessions
 			block.IsError = request.IsError;
 			block.StructuredResult = request.Structured;
 			block.IsFinished = true;
-			if (!request.IsError && _editTools.Contains(block.ToolName ?? string.Empty))
-			{
-				_editedFiles = true;
-			}
-
 			TrackToolResult(block);
 			OnBlockChanged?.Invoke(block);
 		}
@@ -631,18 +721,8 @@ namespace DTech.Parley.Editor.Sessions
 
 			_currentAssistant = null;
 			Save();
-			if (_editedFiles)
-			{
-				_editedFiles = false;
-				EditorApplication.delayCall += () =>
-				{
-					if (!Backend.IsBusy)
-					{
-						AssetDatabase.Refresh();
-					}
-				};
-			}
-
+			EditorApplication.delayCall -= RefreshAssetsIfIdle;
+			EditorApplication.delayCall += RefreshAssetsIfIdle;
 			RaiseState();
 		}
 

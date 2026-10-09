@@ -290,7 +290,7 @@ namespace DTech.Parley.Editor.Agents.Claude
 			string executable = await ClaudeCliLocator.LocateAsync(ParleyUserSettings.instance.CliPathOverride);
 			if (executable == null)
 			{
-				throw new InvalidOperationException(
+				throw new AgentSetupException(
 					"Claude Code CLI was not found. Install it (https://code.claude.com/docs/en/setup) or set its path in Preferences > DTech > Parley.");
 			}
 
@@ -299,7 +299,7 @@ namespace DTech.Parley.Editor.Agents.Claude
 			AuthEnvironment auth = AuthEnvironmentBuilder.Build(_profile, ReadSecret);
 			if (!auth.IsValid)
 			{
-				throw new InvalidOperationException(_profile.Name + ": " + string.Join(" ", auth.Problems));
+				throw new AgentSetupException(_profile.Name + ": " + string.Join(" ", auth.Problems));
 			}
 
 			ProcessStartInfo startInfo = new ProcessStartInfo(executable, CommandLine.Join(BuildArguments(auth)))

@@ -265,7 +265,7 @@ namespace DTech.Parley.Editor.Agents.Codex
             string executable = await CodexCliLocator.LocateAsync(ParleyUserSettings.instance.CodexCliPathOverride);
             if (executable == null)
             {
-                throw new InvalidOperationException(
+                throw new AgentSetupException(
                     "Codex CLI was not found. Install it (npm install -g @openai/codex or brew install codex) or set its path in Preferences > DTech > Parley.");
             }
 
@@ -275,7 +275,7 @@ namespace DTech.Parley.Editor.Agents.Codex
                 apiKey = ReadSecret(SecretFields.OpenAiApiKey);
                 if (string.IsNullOrWhiteSpace(apiKey))
                 {
-                    throw new InvalidOperationException(_profile.Name + ": OpenAI API key is not set.");
+                    throw new AgentSetupException(_profile.Name + ": OpenAI API key is not set.");
                 }
             }
 
