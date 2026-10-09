@@ -30,6 +30,7 @@ namespace DTech.Parley.Editor.Sessions
 		private readonly Dictionary<string, TodoItem> _pendingTaskCreates = new ();
 		private readonly Dictionary<TranscriptBlock, StringBuilder> _pendingText = new ();
 		private readonly Dictionary<TranscriptBlock, StringBuilder> _pendingInput = new ();
+		private readonly List<TranscriptBlock> _flushedBlocks = new ();
 		private readonly List<TodoItem> _todos = new ();
 		private readonly Dictionary<string, BackgroundTaskInfo> _tasks = new ();
 		private readonly CancellationTokenSource _lifetime = new ();
@@ -463,29 +464,27 @@ namespace DTech.Parley.Editor.Sessions
 			foreach (KeyValuePair<TranscriptBlock, StringBuilder> pair in _pendingText)
 			{
 				pair.Key.Text += pair.Value.ToString();
+				_flushedBlocks.Add(pair.Key);
 			}
 
 			foreach (KeyValuePair<TranscriptBlock, StringBuilder> pair in _pendingInput)
 			{
 				pair.Key.PartialInputJson += pair.Value.ToString();
+				_flushedBlocks.Add(pair.Key);
 			}
 
+			_pendingText.Clear();
+			_pendingInput.Clear();
 			try
 			{
-				foreach (TranscriptBlock block in _pendingText.Keys)
-				{
-					OnBlockChanged?.Invoke(block);
-				}
-
-				foreach (TranscriptBlock block in _pendingInput.Keys)
+				foreach (TranscriptBlock block in _flushedBlocks)
 				{
 					OnBlockChanged?.Invoke(block);
 				}
 			}
 			finally
 			{
-				_pendingText.Clear();
-				_pendingInput.Clear();
+				_flushedBlocks.Clear();
 			}
 		}
 
