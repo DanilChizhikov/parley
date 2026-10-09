@@ -489,6 +489,7 @@ namespace DTech.Parley.Editor.Agents.Codex
             _threadId = threadId;
             _resumeThreadId = threadId;
             _activeModel = (string)response["model"] ?? _activeModel;
+            WarnIfModelUnavailable();
             _collaborationMode = (string)response["collaborationMode"]?["mode"];
             _sink.SessionStarted(new SessionInfo
             {
@@ -497,6 +498,25 @@ namespace DTech.Parley.Editor.Agents.Codex
                 Mode = Mode,
                 Cwd = (string)response["cwd"] ?? ProjectPaths.Root,
             });
+        }
+
+        private void WarnIfModelUnavailable()
+        {
+            if (_model != null || _models.Count == 0 || string.IsNullOrEmpty(_activeModel))
+            {
+                return;
+            }
+
+            foreach (JObject model in _models)
+            {
+                if ((string)model["model"] == _activeModel)
+                {
+                    return;
+                }
+            }
+
+            _sink.Notice(NoticeLevel.Warning, "Codex is configured to use '" + _activeModel
+                + "', which this account does not list. If turns fail, pick another model in the model menu.");
         }
 
         private string BuildDeveloperInstructions()

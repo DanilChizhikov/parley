@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Text;
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
 namespace DTech.Parley.Editor.Agents.Codex
@@ -197,6 +198,26 @@ namespace DTech.Parley.Editor.Agents.Codex
             return exitCode.HasValue && exitCode.Value != 0;
         }
 
+        private static string ErrorMessage(string message)
+        {
+            if (string.IsNullOrEmpty(message) || message[0] != '{')
+            {
+                return message;
+            }
+
+            try
+            {
+                JObject json = JObject.Parse(message);
+                JToken nested = json["error"];
+                string text = nested?.Type == JTokenType.Object ? (string)nested["message"] : (string)json["message"];
+                return string.IsNullOrEmpty(text) ? message : text;
+            }
+            catch (JsonException)
+            {
+                return message;
+            }
+        }
+
         private static long Tokens(JObject usage, string field)
         {
             return (long?)usage?[field] ?? 0;
@@ -356,7 +377,7 @@ namespace DTech.Parley.Editor.Agents.Codex
                 CacheReadTokens = Tokens(_lastTotal, "cachedInputTokens") - Tokens(_turnStartTotal, "cachedInputTokens"),
             };
 
-            string error = (string)turn?["error"]?["message"];
+            string error = ErrorMessage((string)turn?["error"]?["message"]);
             if (!string.IsNullOrEmpty(error))
             {
                 result.Errors.Add(error);
@@ -379,7 +400,7 @@ namespace DTech.Parley.Editor.Agents.Codex
         private void HandleError(JObject parameters)
         {
             JObject error = parameters["error"] as JObject;
-            string message = (string)error?["message"] ?? "Codex reported an error.";
+            string message = ErrorMessage((string)error?["message"]) ?? "Codex reported an error.";
             JToken info = error?["codexErrorInfo"];
             if (info != null && info.Type == JTokenType.String && (string)info == "unauthorized")
             {
