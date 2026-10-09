@@ -204,43 +204,6 @@ namespace DTech.Parley.Editor.Agents.Claude
 			return path;
 		}
 
-		private static IEnumerable<string> SplitExtraArguments(string text)
-		{
-			if (string.IsNullOrWhiteSpace(text))
-			{
-				yield break;
-			}
-
-			StringBuilder current = new StringBuilder();
-			bool quoted = false;
-			foreach (char character in text)
-			{
-				if (character == '"')
-				{
-					quoted = !quoted;
-					continue;
-				}
-
-				if (char.IsWhiteSpace(character) && !quoted)
-				{
-					if (current.Length > 0)
-					{
-						yield return current.ToString();
-						current.Clear();
-					}
-
-					continue;
-				}
-
-				current.Append(character);
-			}
-
-			if (current.Length > 0)
-			{
-				yield return current.ToString();
-			}
-		}
-
 		private static void FinishProcess(ChildProcess process, int processId)
 		{
 			if (!process.WaitForExit(GracefulExitMs))
@@ -427,7 +390,7 @@ namespace DTech.Parley.Editor.Agents.Claude
 				}
 			}
 
-			arguments.AddRange(SplitExtraArguments(_profile.ExtraArguments));
+			arguments.AddRange(CommandLine.Split(_profile.ExtraArguments));
 			return arguments;
 		}
 

@@ -4,5 +4,6 @@ namespace DTech.Parley.Editor
     {
         ClaudeCode = 0,
         Local = 1,
+        Codex = 2,
     }
 }
