@@ -151,7 +151,7 @@
 /* Entries */
 
 .pl-entry {
-    margin-bottom: 8px;
+    margin: 0px 8px 8px 8px;
 }
 
 .pl-entry--user {
@@ -212,6 +212,10 @@
 }
 
 /* Markdown */
+
+.pl-md {
+    margin: 8px;
+}
 
 .pl-md-p {
     white-space: normal;
@@ -329,7 +333,7 @@
 /* Tool cards */
 
 .pl-tool {
-    margin: 3px 0;
+    margin: 3px 3px;
     border-radius: 6px;
     border-width: 1px;
     border-color: var(--pl-border);

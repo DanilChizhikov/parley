@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using DTech.Parley.Editor.Sessions;
 using UnityEngine.UIElements;
@@ -72,14 +73,22 @@ namespace DTech.Parley.Editor.UI
             switch (_tab)
             {
                 case SidePanelTab.Plan:
-                    RenderPlan();
-                    break;
+                {
+                    RenderPlan();  
+                } break;
+
                 case SidePanelTab.Todos:
-                    RenderTodos();
-                    break;
-                default:
+                {
+                    RenderTodos();  
+                } break;
+
+                case SidePanelTab.Tasks:
+                {
                     RenderTasks();
-                    break;
+                } break;
+                
+                default:
+                    throw new ArgumentOutOfRangeException();
             }
         }
 
