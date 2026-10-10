@@ -4,7 +4,6 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
-using Debug = UnityEngine.Debug;
 
 namespace DTech.Parley.Editor.Tools.Builtin
 {
@@ -99,7 +98,7 @@ namespace DTech.Parley.Editor.Tools.Builtin
 				bool timedOut = finished == exited && !exited.Result;
 				if (finished != exited || timedOut)
 				{
-					KillTree(process);
+					ProcessTree.Kill(process);
 					if (finished != exited)
 					{
 						cancellationToken.ThrowIfCancellationRequested();
@@ -141,31 +140,6 @@ namespace DTech.Parley.Editor.Tools.Builtin
 				{
 					output.AppendLine(line);
 				}
-			}
-		}
-
-		private static void KillTree(Process process)
-		{
-			try
-			{
-				if (!CommandLine.IsWindows)
-				{
-					using Process pkill = Process.Start(new ProcessStartInfo("/usr/bin/pkill", "-TERM -P " + process.Id)
-					{
-						UseShellExecute = false,
-						CreateNoWindow = true,
-					});
-					pkill?.WaitForExit(2000);
-				}
-
-				if (!process.HasExited)
-				{
-					process.Kill();
-				}
-			}
-			catch (Exception exception)
-			{
-				Debug.LogException(exception);
 			}
 		}
 	}

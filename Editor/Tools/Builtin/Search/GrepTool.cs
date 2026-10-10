@@ -54,7 +54,16 @@ namespace DTech.Parley.Editor.Tools.Builtin
 			}
 
 			Regex globRegex = string.IsNullOrEmpty(glob) ? null : GlobMatcher.ToRegex(glob.Contains("/") ? glob : "**/" + glob, CommandLine.IsWindows);
-			IEnumerable<string> files = File.Exists(root) ? new[] { root } : GlobMatcher.EnumerateFiles(root, cancellationToken);
+			GrepSearchRequest request = new GrepSearchRequest(regex, globRegex, root, context.ProjectRoot, mode, contextLines, limit);
+			return Task.Run(() => Search(request, cancellationToken), cancellationToken);
+		}
+
+		private static ToolResult Search(GrepSearchRequest request, CancellationToken cancellationToken)
+		{
+			string root = request.Root;
+			int limit = request.Limit;
+			int contextLines = request.ContextLines;
+			IEnumerable<string> files = File.Exists(root) ? new[] { root } : GlobMatcher.EnumerateFiles(root, request.ProjectRoot, cancellationToken);
 			StringBuilder builder = new StringBuilder();
 			int emitted = 0;
 			foreach (string file in files)
@@ -64,7 +73,7 @@ namespace DTech.Parley.Editor.Tools.Builtin
 					break;
 				}
 
-				if (globRegex != null && !globRegex.IsMatch(GlobMatcher.Relative(root, file)))
+				if (request.Glob != null && !request.Glob.IsMatch(GlobMatcher.Relative(root, file)))
 				{
 					continue;
 				}
@@ -80,7 +89,7 @@ namespace DTech.Parley.Editor.Tools.Builtin
 				{
 					try
 					{
-						if (regex.IsMatch(lines[i]))
+						if (request.Pattern.IsMatch(lines[i]))
 						{
 							hits.Add(i);
 						}
@@ -97,12 +106,12 @@ namespace DTech.Parley.Editor.Tools.Builtin
 				}
 
 				string displayPath = file.Replace('\\', '/');
-				if (mode == "count")
+				if (request.Mode == "count")
 				{
 					builder.Append(displayPath).Append(':').Append(hits.Count).AppendLine();
 					emitted++;
 				}
-				else if (mode == "content")
+				else if (request.Mode == "content")
 				{
 					int lastPrinted = -1;
 					foreach (int hit in hits)
@@ -124,7 +133,7 @@ namespace DTech.Parley.Editor.Tools.Builtin
 
 			if (builder.Length == 0)
 			{
-				return Task.FromResult(ToolResult.Ok("No matches found."));
+				return ToolResult.Ok("No matches found.");
 			}
 
 			if (emitted >= limit)
@@ -132,7 +141,7 @@ namespace DTech.Parley.Editor.Tools.Builtin
 				builder.Append("... (head_limit reached)");
 			}
 
-			return Task.FromResult(ToolResult.Ok(builder.ToString().TrimEnd()));
+			return ToolResult.Ok(builder.ToString().TrimEnd());
 		}
 
 		private static string[] ReadText(string file)
