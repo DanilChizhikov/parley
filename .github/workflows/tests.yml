@@ -25,6 +25,16 @@ jobs:
           - empty-unity-project
 
     steps:
+      - name: Free Disk Space (GitHub Actions)
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+
       - name: Checkout repo
         uses: actions/checkout@v4
 
@@ -48,6 +58,26 @@ jobs:
                 ;;
             esac
           done
+
+      - name: Add package dependencies to project manifest
+        shell: bash
+        env:
+          PROJECT_PATH: ${{ matrix.projectPath }}
+        run: |
+          python3 - <<'PY'
+          import json, os, pathlib
+
+          package = json.loads(pathlib.Path("package.json").read_text(encoding="utf-8"))
+          manifest_path = pathlib.Path(os.environ["PROJECT_PATH"]) / "Packages" / "manifest.json"
+          manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+          dependencies = manifest.setdefault("dependencies", {})
+          for name, version in package.get("dependencies", {}).items():
+              dependencies.setdefault(name, version)
+
+          manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+          print(json.dumps(dependencies, indent=2))
+          PY
 
       - name: Run Unity Tests
         id: tests
