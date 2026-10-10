@@ -23,4 +23,6 @@
     --pl-plan-bg: #2E2843;
     --pl-request-bg: #2B3140;
     --pl-selected: #34465F;
+    --pl-update: #2F9E5B;
+    --pl-update-hover: #38B26A;
 }

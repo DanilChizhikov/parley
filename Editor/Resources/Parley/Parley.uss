@@ -93,6 +93,17 @@
     -unity-font-style: bold;
 }
 
+.pl-root .pl-toolbar .pl-update,
+.pl-root .pl-toolbar .pl-update:hover {
+    background-color: var(--pl-update);
+    color: #FFFFFF;
+    -unity-font-style: bold;
+}
+
+.pl-root .pl-toolbar .pl-update:hover {
+    background-color: var(--pl-update-hover);
+}
+
 /* Auth card */
 
 .pl-auth {
@@ -1123,4 +1134,60 @@
     min-height: 120px;
     white-space: normal;
     -unity-text-align: upper-left;
+}
+
+/* Release notes window */
+
+.pl-release {
+    padding: 20px;
+}
+
+.pl-root .pl-release__brand {
+    font-size: 40px;
+    -unity-font-style: bold;
+    -unity-text-align: middle-center;
+    color: var(--pl-accent);
+}
+
+.pl-release__headline {
+    font-size: 18px;
+    -unity-text-align: middle-center;
+    margin: 20px 0 14px 0;
+}
+
+.pl-root .pl-release__version {
+    font-size: 13px;
+    color: var(--pl-text-muted);
+}
+
+.pl-release__section {
+    font-size: 15px;
+    -unity-font-style: bold;
+    margin: 18px 0 6px 0;
+}
+
+.pl-release__notes {
+    flex-grow: 1;
+    min-height: 0;
+    border-width: 1px;
+    border-color: var(--pl-border);
+    border-radius: 4px;
+    background-color: var(--pl-surface);
+}
+
+.pl-release__title {
+    font-size: 15px;
+    -unity-font-style: bold;
+    margin: 12px 8px 0 8px;
+}
+
+.pl-root .pl-release__error {
+    color: var(--pl-error);
+    margin: 8px;
+}
+
+.pl-release__footer {
+    flex-direction: row;
+    flex-shrink: 0;
+    margin-top: 14px;
 }
