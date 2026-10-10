@@ -9,7 +9,7 @@ namespace DTech.Parley.Editor.UI
     internal static class ParleyStyles
     {
         public const string Muted = "pl-muted";
-        
+
         private const string Root = "pl-root";
         private const string Mono = "pl-mono";
 
@@ -24,7 +24,9 @@ namespace DTech.Parley.Editor.UI
         public static string LinkColor => IsDark ? "#6CB6FF" : "#0969DA";
 
         public static string MarkColor => IsDark ? "#FFFFFF14" : "#0000000F";
-        
+
+        private static Font _monospace;
+
         private static Font Monospace
         {
             get
@@ -41,8 +43,6 @@ namespace DTech.Parley.Editor.UI
                 return _monospace;
             }
         }
-
-        private static Font _monospace;
 
         public static void Apply(VisualElement root)
         {

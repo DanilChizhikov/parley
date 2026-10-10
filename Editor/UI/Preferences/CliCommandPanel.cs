@@ -21,6 +21,7 @@ namespace DTech.Parley.Editor.UI
         private string _url;
         private Action<string> _onLine;
         private Action<int> _onExit;
+        private int _generation;
 
         public CliCommandPanel()
         {
@@ -46,6 +47,7 @@ namespace DTech.Parley.Editor.UI
         public async void Run(CliCommandRequest request)
         {
             Cancel();
+            int generation = _generation;
             _output.Clear();
             _url = null;
             _onLine = request.OnLine;
@@ -53,6 +55,12 @@ namespace DTech.Parley.Editor.UI
             ParleyStyles.SetVisible(this, true);
             Append("$ claude " + string.Join(" ", request.Arguments));
             ClaudeCliCommand command = await ClaudeAuthCommands.StartAsync(request.Profile, request.Arguments);
+            if (generation != _generation)
+            {
+                command?.Dispose();
+                return;
+            }
+
             if (command == null)
             {
                 Append("Claude Code CLI was not found.");
@@ -74,6 +82,7 @@ namespace DTech.Parley.Editor.UI
 
         public void Cancel()
         {
+            _generation++;
             if (_command == null)
             {
                 return;

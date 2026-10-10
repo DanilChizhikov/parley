@@ -14,6 +14,7 @@ namespace DTech.Parley.Editor.UI
         public event Action OnStop;
 
         private const int MaxSuggestions = 12;
+        private const int MinAssetQueryLength = 2;
 
         private static readonly HashSet<string> _imageExtensions = new (StringComparer.OrdinalIgnoreCase) { ".png", ".jpg", ".jpeg", ".gif", ".webp" };
 
@@ -186,7 +187,7 @@ namespace DTech.Parley.Editor.UI
             else
             {
                 int at = before.LastIndexOf('@');
-                if (at >= 0 && (at == 0 || char.IsWhiteSpace(before[at - 1])) && before.IndexOf(' ', at) < 0 && cursor - at > 1)
+                if (at >= 0 && (at == 0 || char.IsWhiteSpace(before[at - 1])) && before.IndexOf(' ', at) < 0 && cursor - at > MinAssetQueryLength)
                 {
                     AddAssetSuggestions(before.Substring(at + 1));
                 }

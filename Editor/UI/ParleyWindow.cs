@@ -66,9 +66,11 @@ namespace DTech.Parley.Editor.UI
             SettingsService.OpenUserPreferences(PreferencesPath);
         }
 
-        private static string HistoryTitle(SessionSummary summary)
+        private static string HistoryLabel(SessionSummary summary, ParleyProfile profile)
         {
-            return (summary.Title ?? "Chat").Replace("/", "∕");
+            string label = summary.UpdatedUtc.ToLocalTime().ToString("MMM d HH:mm", CultureInfo.InvariantCulture) + "  " + (summary.Title ?? "Chat")
+                + (profile == null ? string.Empty : "  · " + profile.Name);
+            return label.Replace("/", "∕");
         }
 
         private void OnEnable()
@@ -341,13 +343,12 @@ namespace DTech.Parley.Editor.UI
 
             int count = Mathf.Min(sessions.Count, MaxHistoryItems);
             ParleyUserSettings settings = ParleyUserSettings.instance;
+            string[] labels = new string[count];
             for (int i = 0; i < count; i++)
             {
                 SessionSummary summary = sessions[i];
-                ParleyProfile profile = settings.Find(summary.ProfileId);
-                string label = summary.UpdatedUtc.ToLocalTime().ToString("MMM d HH:mm", CultureInfo.InvariantCulture) + "  " + HistoryTitle(summary)
-                    + (profile == null ? string.Empty : "  · " + profile.Name);
-                menu.AddItem(new GUIContent(label), _session?.Record.Id == summary.Id, () => Resume(summary.Id));
+                labels[i] = HistoryLabel(summary, settings.Find(summary.ProfileId));
+                menu.AddItem(new GUIContent(labels[i]), _session?.Record.Id == summary.Id, () => Resume(summary.Id));
             }
 
             if (count > 0)
@@ -356,7 +357,8 @@ namespace DTech.Parley.Editor.UI
                 for (int i = 0; i < count; i++)
                 {
                     SessionSummary summary = sessions[i];
-                    menu.AddItem(new GUIContent("Delete/" + HistoryTitle(summary)), false, () => DeleteSession(summary.Id));
+                    string label = labels[i];
+                    menu.AddItem(new GUIContent("Delete/" + label), false, () => DeleteSession(summary.Id, label));
                 }
             }
 
@@ -399,8 +401,13 @@ namespace DTech.Parley.Editor.UI
             StartSession(profile, record);
         }
 
-        private void DeleteSession(string id)
+        private void DeleteSession(string id, string label)
         {
+            if (!EditorUtility.DisplayDialog("Delete chat", "Delete '" + label + "'? This cannot be undone.", "Delete", "Cancel"))
+            {
+                return;
+            }
+
             SessionStore.Delete(id);
             if (_session?.Record.Id == id)
             {

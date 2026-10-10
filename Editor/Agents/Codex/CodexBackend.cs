@@ -22,6 +22,7 @@ namespace DTech.Parley.Editor.Agents.Codex
         private const int RequestTimeoutMs = 30000;
         private const int GracefulExitMs = 3000;
         private const int MaxModelPages = 10;
+        private const double ForceStopDelaySeconds = 3.0;
         private const string ClientVersion = "0.1.0";
         private const string ClearCommand = "/clear";
         private const string CompactCommand = "/compact";
@@ -57,6 +58,7 @@ namespace DTech.Parley.Editor.Agents.Codex
         private string _effort;
         private string _collaborationMode;
         private long _requestCounter;
+        private double _interruptRequestedAt;
         private bool _interruptRequested;
         private bool _disposed;
 
@@ -153,7 +155,7 @@ namespace DTech.Parley.Editor.Agents.Codex
 
         public void Interrupt()
         {
-            if (_interruptRequested && IsBusy)
+            if (_interruptRequested && IsBusy && EditorApplication.timeSinceStartup - _interruptRequestedAt >= ForceStopDelaySeconds)
             {
                 ForceStop();
                 return;
@@ -681,6 +683,7 @@ namespace DTech.Parley.Editor.Agents.Codex
             }
 
             _interruptRequested = _turnId != null || _childTurns.Count > 0;
+            _interruptRequestedAt = EditorApplication.timeSinceStartup;
         }
 
         private void ForceStop()

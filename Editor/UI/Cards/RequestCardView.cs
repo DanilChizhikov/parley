@@ -127,17 +127,18 @@ namespace DTech.Parley.Editor.UI
             switch (request.ToolName)
             {
                 case "Bash":
-                    return MarkdownView.CodeBlock("$ " + (string)input["command"], "bash");
+                    return MarkdownView.CodeBlock("$ " + ToolPresenter.Str(input, "command"), "bash");
                 case "Edit":
-                    return new DiffView((string)input["old_string"], (string)input["new_string"], ToolPresenter.Relative((string)input["file_path"]));
+                    return new DiffView(ToolPresenter.Str(input, "old_string"), ToolPresenter.Str(input, "new_string"),
+                        ToolPresenter.Relative(ToolPresenter.Str(input, "file_path")));
                 case "MultiEdit":
                     return ToolPresenter.MultiEdit(input["edits"] as JArray);
                 case "Write":
-                    return ToolPresenter.WritePreview(input, ReadFile((string)input["file_path"]));
+                    return ToolPresenter.WritePreview(input, ReadFile(ToolPresenter.Str(input, "file_path")));
                 case CodexApprovals.ApplyPatchTool:
                     return ToolPresenter.PatchChanges(input["changes"] as JArray);
                 case "WebFetch":
-                    return ParleyStyles.Text((string)input["url"], "pl-request__detail");
+                    return ParleyStyles.Text(ToolPresenter.Str(input, "url"), "pl-request__detail");
                 default:
                     return MarkdownView.CodeBlock(ToolPresenter.Truncate(input.ToString(Formatting.Indented), ToolPresenter.MaxOutputChars), "json");
             }
@@ -185,7 +186,7 @@ namespace DTech.Parley.Editor.UI
             RemoveFromClassList("pl-request--permission");
             AddToClassList("pl-request--resolved");
             Add(ParleyStyles.Text(ToolPresenter.DisplayName(Block.ToolName) + " — " + Block.Resolution, "pl-request__resolution"));
-            string plan = (string)Block.Input?["plan"];
+            string plan = ToolPresenter.Str(Block.Input, "plan");
             if (Block.ToolName != PendingRequest.ExitPlanModeTool || string.IsNullOrEmpty(plan))
             {
                 return;
@@ -274,10 +275,10 @@ namespace DTech.Parley.Editor.UI
             ScrollView scroll = new ScrollView(ScrollViewMode.Vertical);
             scroll.AddToClassList("pl-plan__scroll");
             MarkdownView view = new MarkdownView();
-            string plan = (string)request.Input["plan"];
+            string plan = ToolPresenter.Str(request.Input, "plan");
             if (string.IsNullOrEmpty(plan))
             {
-                plan = ReadFile((string)request.Input["planFilePath"]) ?? "(the plan text was not provided)";
+                plan = ReadFile(ToolPresenter.Str(request.Input, "planFilePath")) ?? "(the plan text was not provided)";
             }
 
             view.SetMarkdown(plan);

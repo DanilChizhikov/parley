@@ -7,7 +7,7 @@ namespace DTech.Parley.Editor.UI
 {
     internal static class MarkdownParser
     {
-        private static readonly Regex _heading = new ("^(#{1,6})\\s+(.*?)\\s*#*\\s*$");
+        private static readonly Regex _heading = new ("^(#{1,6})\\s+(.*?)(?:\\s+#+)?\\s*$");
         private static readonly Regex _fence = new ("^\\s{0,3}(```+|~~~+)\\s*([^`\\s]*)");
         private static readonly Regex _rule = new ("^\\s{0,3}((\\*\\s*){3,}|(-\\s*){3,}|(_\\s*){3,})$");
         private static readonly Regex _listItem = new ("^(\\s*)([-*+]|\\d{1,9}[.)])\\s+(.*)$");

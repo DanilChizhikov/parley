@@ -20,6 +20,7 @@ namespace DTech.Parley.Editor.UI
 
         private readonly TextField _baseUrl;
         private readonly TextField _model;
+        private readonly FloatField _temperature;
 
         public LocalProfileEditor(ParleyProfile profile) : base(profile, "Local model (OpenAI-compatible server, Parley's own agent)")
         {
@@ -36,9 +37,9 @@ namespace DTech.Parley.Editor.UI
             modelRow.Add(_model);
             modelRow.Add(ParleyStyles.Button("Pick…", PickModel, "pl-button--small"));
             Add(modelRow);
-            FloatField temperature = new FloatField("Temperature") { value = profile.Temperature };
-            temperature.RegisterValueChangedCallback(TemperatureChangedHandler);
-            Add(temperature);
+            _temperature = new FloatField("Temperature") { value = profile.Temperature };
+            _temperature.RegisterValueChangedCallback(TemperatureChangedHandler);
+            Add(_temperature);
             Add(Int("Max output tokens", profile.MaxTokens, value => Profile.MaxTokens = Mathf.Max(MinOutputTokens, value)));
             Add(Int("Context window (tokens)", profile.ContextWindow, value => Profile.ContextWindow = Mathf.Max(MinContextWindow, value)));
             Add(Int("Max model calls per turn", profile.MaxTurns, value => Profile.MaxTurns = Mathf.Clamp(value, 1, MaxModelCalls)));
@@ -50,12 +51,12 @@ namespace DTech.Parley.Editor.UI
             AddFooter(null);
         }
 
-        private static IntegerField Int(string label, int value, Action<int> apply)
+        private static IntegerField Int(string label, int value, Func<int, int> apply)
         {
             IntegerField field = new IntegerField(label) { value = value, isDelayed = true };
             field.RegisterValueChangedCallback(evt =>
             {
-                apply(evt.newValue);
+                field.SetValueWithoutNotify(apply(evt.newValue));
                 Persist();
             });
 
@@ -133,6 +134,11 @@ namespace DTech.Parley.Editor.UI
         private void TemperatureChangedHandler(ChangeEvent<float> evt)
         {
             Profile.Temperature = Mathf.Clamp(evt.newValue, MinTemperature, MaxTemperature);
+            if (Profile.Temperature != evt.newValue)
+            {
+                _temperature.SetValueWithoutNotify(Profile.Temperature);
+            }
+
             Persist();
         }
     }

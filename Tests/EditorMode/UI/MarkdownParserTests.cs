@@ -35,6 +35,13 @@ namespace DTech.Parley.Tests.EditorMode
         }
 
         [Test]
+        public void HeadingKeepsTrailingHashInText()
+        {
+            Assert.AreEqual("Using C#", MarkdownParser.Parse("## Using C#")[0].Text);
+            Assert.AreEqual("Title", MarkdownParser.Parse("## Title ##")[0].Text);
+        }
+
+        [Test]
         public void TableRowsKeepEscapedPipes()
         {
             CollectionAssert.AreEqual(new[] { "a|b", "c" }, MarkdownParser.SplitRow("| a\\|b | c |"));

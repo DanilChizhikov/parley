@@ -183,7 +183,10 @@ namespace DTech.Parley.Editor.UI
 
             foreach (JToken edit in edits)
             {
-                list.Add(new DiffView((string)edit["old_string"], (string)edit["new_string"]));
+                if (edit is JObject item)
+                {
+                    list.Add(new DiffView(Str(item, "old_string"), Str(item, "new_string")));
+                }
             }
 
             return list;
@@ -209,14 +212,19 @@ namespace DTech.Parley.Editor.UI
                 return list;
             }
 
-            foreach (JToken change in changes)
+            foreach (JToken token in changes)
             {
+                if (!(token is JObject change))
+                {
+                    continue;
+                }
+
                 VisualElement header = new VisualElement();
                 header.AddToClassList("pl-diff__header");
-                header.Add(ParleyStyles.Text(Relative((string)change["path"]), "pl-diff__title"));
+                header.Add(ParleyStyles.Text(Relative(Str(change, "path")), "pl-diff__title"));
                 header.Add(ParleyStyles.Text(ChangeKind(change), ParleyStyles.Muted));
                 list.Add(header);
-                string diff = (string)change["diff"];
+                string diff = Str(change, "diff");
                 if (!string.IsNullOrEmpty(diff))
                 {
                     list.Add(MarkdownView.CodeBlock(Truncate(diff, MaxOutputChars), "diff"));
@@ -268,6 +276,17 @@ namespace DTech.Parley.Editor.UI
             return label;
         }
 
+        public static string Str(JObject input, string name)
+        {
+            JToken token = input?[name];
+            if (token == null || token.Type == JTokenType.Null)
+            {
+                return null;
+            }
+
+            return token.Type == JTokenType.String ? (string)token : token.ToString(Formatting.None);
+        }
+
         private static string OriginalFile(JToken structuredResult)
         {
             JToken original = (structuredResult as JObject)?["originalFile"];
@@ -281,11 +300,11 @@ namespace DTech.Parley.Editor.UI
                 return string.Empty;
             }
 
-            string first = Relative((string)changes[0]["path"]);
+            string first = Relative(Str(changes[0] as JObject, "path"));
             return changes.Count == 1 ? first : first + " +" + (changes.Count - 1) + " more";
         }
 
-        private static string ChangeKind(JToken change)
+        private static string ChangeKind(JObject change)
         {
             JToken kind = change["kind"];
             if (kind == null)
@@ -298,7 +317,7 @@ namespace DTech.Parley.Editor.UI
                 return (string)kind;
             }
 
-            return (string)kind["type"] ?? string.Empty;
+            return Str(kind as JObject, "type") ?? string.Empty;
         }
 
         private static VisualElement TodoList(JArray todos)
@@ -312,7 +331,10 @@ namespace DTech.Parley.Editor.UI
 
             foreach (JToken todo in todos)
             {
-                list.Add(TodoLabel((string)todo["status"], (string)todo["content"]));
+                if (todo is JObject item)
+                {
+                    list.Add(TodoLabel(Str(item, "status"), Str(item, "content")));
+                }
             }
 
             return list;
@@ -386,17 +408,6 @@ namespace DTech.Parley.Editor.UI
             }
 
             return string.Empty;
-        }
-
-        private static string Str(JObject input, string name)
-        {
-            JToken token = input?[name];
-            if (token == null || token.Type == JTokenType.Null)
-            {
-                return null;
-            }
-
-            return token.Type == JTokenType.String ? (string)token : token.ToString(Formatting.None);
         }
 
         private static string First(string first, string second)

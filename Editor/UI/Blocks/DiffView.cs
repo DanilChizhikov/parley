@@ -63,19 +63,21 @@ namespace DTech.Parley.Editor.UI
             {
                 if (rows >= MaxRows)
                 {
-                    break;
+                    body.Add(Row("… diff truncated", "pl-diff__row--hunk"));
+                    return;
                 }
 
                 body.Add(Row(hunk.Header, "pl-diff__row--hunk"));
                 foreach (DiffLine line in hunk.Lines)
                 {
-                    if (++rows > MaxRows)
+                    if (rows >= MaxRows)
                     {
                         body.Add(Row("… diff truncated", "pl-diff__row--hunk"));
-                        break;
+                        return;
                     }
 
                     body.Add(Row(Format(line), RowClass(line.Operation)));
+                    rows++;
                 }
             }
         }

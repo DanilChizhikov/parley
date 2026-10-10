@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using DTech.Parley.Editor.Sessions;
 using UnityEngine;
@@ -17,6 +18,7 @@ namespace DTech.Parley.Editor.UI
         private readonly Dictionary<string, ToolCardView> _toolCards = new ();
         private readonly Dictionary<TranscriptEntry, VisualElement> _entries = new ();
         private readonly HashSet<BlockView> _dirty = new ();
+        private readonly List<BlockView> _flushing = new ();
 
         private ChatSession _session;
         private bool _stickToBottom = true;
@@ -109,7 +111,17 @@ namespace DTech.Parley.Editor.UI
                 return;
             }
 
-            BlockView view = CreateView(entry, block);
+            BlockView view;
+            try
+            {
+                view = CreateView(entry, block);
+            }
+            catch (Exception exception)
+            {
+                Debug.LogException(exception);
+                return;
+            }
+
             if (view == null)
             {
                 return;
@@ -161,12 +173,21 @@ namespace DTech.Parley.Editor.UI
                 return;
             }
 
-            foreach (BlockView view in _dirty)
+            _flushing.AddRange(_dirty);
+            _dirty.Clear();
+            foreach (BlockView view in _flushing)
             {
-                view.Refresh();
+                try
+                {
+                    view.Refresh();
+                }
+                catch (Exception exception)
+                {
+                    Debug.LogException(exception);
+                }
             }
 
-            _dirty.Clear();
+            _flushing.Clear();
         }
 
         private void ScrollToEnd()

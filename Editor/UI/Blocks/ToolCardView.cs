@@ -13,6 +13,7 @@ namespace DTech.Parley.Editor.UI
         public VisualElement Nested { get; }
 
         private bool _expanded;
+        private bool _errorExpanded;
         private string _renderedSignature;
 
         public ToolCardView(TranscriptBlock block) : base(block)
@@ -52,8 +53,9 @@ namespace DTech.Parley.Editor.UI
             _status.EnableInClassList("pl-tool__status--error", Block.IsError);
             _title.text = ToolPresenter.DisplayName(Block.ToolName);
             _summary.text = ToolPresenter.Summary(Block);
-            if (Block.IsError)
+            if (Block.IsError && !_errorExpanded)
             {
+                _errorExpanded = true;
                 _expanded = true;
             }
 
@@ -64,7 +66,8 @@ namespace DTech.Parley.Editor.UI
                 return;
             }
 
-            string signature = Block.IsFinished + "|" + (Block.Result?.Length ?? -1) + "|" + (Block.Input?.Count ?? -1) + "|" + Block.IsError;
+            string signature = Block.IsFinished + "|" + (Block.Result?.Length ?? -1) + "|" + (Block.Input?.Count ?? -1) + "|" + Block.IsError
+                + "|" + (Block.PartialInputJson?.Length ?? -1);
             if (signature == _renderedSignature)
             {
                 return;

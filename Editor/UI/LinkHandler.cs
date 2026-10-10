@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using UnityEditor;
 using UnityEditorInternal;
@@ -10,6 +11,12 @@ namespace DTech.Parley.Editor.UI
     internal static class LinkHandler
     {
         public const string FileScheme = "file:";
+
+        private static readonly HashSet<string> _openableExtensions = new (StringComparer.OrdinalIgnoreCase)
+        {
+            ".cs", ".shader", ".hlsl", ".cginc", ".compute", ".uss", ".uxml", ".tss", ".json", ".asmdef", ".asmref",
+            ".txt", ".md", ".xml", ".yaml", ".yml", ".csv", ".log",
+        };
 
         public static void Open(string link)
         {
@@ -42,6 +49,12 @@ namespace DTech.Parley.Editor.UI
             if (!File.Exists(full))
             {
                 Debug.LogWarning("[Parley] File not found: " + full);
+                return;
+            }
+
+            if (!ProjectPaths.IsInside(full, ProjectPaths.Root) || !_openableExtensions.Contains(Path.GetExtension(full)))
+            {
+                EditorUtility.RevealInFinder(full);
                 return;
             }
 

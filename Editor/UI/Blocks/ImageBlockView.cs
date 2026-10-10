@@ -9,18 +9,18 @@ namespace DTech.Parley.Editor.UI
     {
         private const float MaxImageSize = 220.0f;
 
+        private readonly Image _image;
+
         private Texture2D _texture;
 
         public ImageBlockView(TranscriptBlock block) : base(block)
         {
             AddToClassList("pl-block--image");
-            Image image = CreateImage(block.Data);
-            if (image != null)
-            {
-                Add(image);
-            }
-
+            _image = new Image { scaleMode = ScaleMode.ScaleToFit };
+            _image.AddToClassList("pl-image");
+            Add(_image);
             Add(ParleyStyles.Text(block.Text, ParleyStyles.Muted));
+            RegisterCallback<AttachToPanelEvent>(AttachedHandler);
             RegisterCallback<DetachFromPanelEvent>(DetachedHandler);
         }
 
@@ -28,32 +28,41 @@ namespace DTech.Parley.Editor.UI
         {
         }
 
-        private Image CreateImage(string base64)
+        private void LoadTexture()
         {
             byte[] bytes;
             try
             {
-                bytes = Convert.FromBase64String(base64 ?? string.Empty);
+                bytes = Convert.FromBase64String(Block.Data ?? string.Empty);
             }
             catch (FormatException exception)
             {
                 Debug.LogWarning("[Parley] Could not decode an image attachment: " + exception.Message);
-                return null;
+                ParleyStyles.SetVisible(_image, false);
+                return;
             }
 
             _texture = new Texture2D(2, 2) { hideFlags = HideFlags.HideAndDontSave };
             if (!_texture.LoadImage(bytes))
             {
-                return null;
+                ParleyStyles.SetVisible(_image, false);
+                return;
             }
 
-            Image image = new Image { image = _texture, scaleMode = ScaleMode.ScaleToFit };
-            image.AddToClassList("pl-image");
+            _image.image = _texture;
             float aspect = _texture.height > 0 ? (float)_texture.width / _texture.height : 1.0f;
             float height = Mathf.Min(MaxImageSize, _texture.height);
-            image.style.height = height;
-            image.style.width = height * aspect;
-            return image;
+            _image.style.height = height;
+            _image.style.width = height * aspect;
+            ParleyStyles.SetVisible(_image, true);
+        }
+
+        private void AttachedHandler(AttachToPanelEvent evt)
+        {
+            if (_texture == null)
+            {
+                LoadTexture();
+            }
         }
 
         private void DetachedHandler(DetachFromPanelEvent evt)
@@ -63,6 +72,7 @@ namespace DTech.Parley.Editor.UI
                 return;
             }
 
+            _image.image = null;
             Object.DestroyImmediate(_texture);
             _texture = null;
         }
