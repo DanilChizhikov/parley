@@ -21,7 +21,6 @@ namespace DTech.Parley.Editor.Agents.Claude
 		private const int InitializeTimeoutMs = 60000;
 		private const int ControlTimeoutMs = 30000;
 		private const int GracefulExitMs = 3000;
-		private const string MissingConversation = "No conversation found with session ID";
 
 		private static readonly string[] Efforts = { "low", "medium", "high", "xhigh", "max" };
 
@@ -51,6 +50,7 @@ namespace DTech.Parley.Editor.Agents.Claude
 		private bool _recovering;
 		private UserTurn _lastTurn;
 		private bool _disposed;
+		private bool _contextUsageUnavailable;
 		private int _requestCounter;
 
 		public ClaudeCodeBackend(
@@ -318,7 +318,7 @@ namespace DTech.Parley.Editor.Agents.Claude
 				throw new InvalidOperationException("Failed to start Claude Code: " + error);
 			}
 
-			ProcessJanitor.Track(_process.ProcessId);
+			ProcessJanitor.Track(_process.ProcessId, _process.ProcessName);
 			try
 			{
 				JObject response = await SendControlAsync(new JObject { ["subtype"] = "initialize", ["hooks"] = null }, InitializeTimeoutMs);
@@ -347,6 +347,7 @@ namespace DTech.Parley.Editor.Agents.Claude
 				"--include-partial-messages",
 				"--permission-prompt-tool", "stdio",
 				"--permission-mode", PermissionModes.ToWire(Mode),
+				"--allow-dangerously-skip-permissions",
 			};
 
 			if (!string.IsNullOrEmpty(_model))
@@ -528,6 +529,11 @@ namespace DTech.Parley.Editor.Agents.Claude
 
 		private async Task RefreshContextUsageAsync()
 		{
+			if (_contextUsageUnavailable)
+			{
+				return;
+			}
+
 			try
 			{
 				JObject usage = await SendControlAsync(new JObject { ["subtype"] = "get_context_usage", ["detail"] = "summary" }, ControlTimeoutMs);
@@ -538,9 +544,9 @@ namespace DTech.Parley.Editor.Agents.Claude
 					_sink.ContextUsage(total, max);
 				}
 			}
-			catch (Exception exception)
+			catch (Exception)
 			{
-				Debug.LogException(exception);
+				_contextUsageUnavailable = IsRunning;
 			}
 		}
 
@@ -729,7 +735,7 @@ namespace DTech.Parley.Editor.Agents.Claude
 						break;
 				}
 
-				if (type == "result" && line.Contains(MissingConversation))
+				if (type == "result" && _resumeSessionId != null && ClaudeWire.IsMissingConversation(message))
 				{
 					RecoverFromMissingConversation();
 					return;
@@ -765,7 +771,7 @@ namespace DTech.Parley.Editor.Agents.Claude
 				return;
 			}
 
-			if (stderr.Contains(MissingConversation))
+			if (_resumeSessionId != null && stderr.Contains(ClaudeWire.MissingConversation))
 			{
 				RecoverFromMissingConversation();
 				return;

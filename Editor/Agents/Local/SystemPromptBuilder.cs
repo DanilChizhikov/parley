@@ -121,7 +121,7 @@ namespace DTech.Parley.Editor.Agents.Local
 
 			foreach (string name in settings.InstructionFiles)
 			{
-				if (!string.IsNullOrWhiteSpace(name))
+				if (!string.IsNullOrWhiteSpace(name) && ProjectPaths.IsInsideWorkspace(ProjectPaths.Resolve(name.Trim()), ProjectPaths.Root, settings.AdditionalDirectories))
 				{
 					AppendInstructionFile(builder, name.Trim(), appended);
 				}

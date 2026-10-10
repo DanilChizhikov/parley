@@ -17,7 +17,7 @@ namespace DTech.Parley.Editor.Agents.Local
 
         public List<AccumulatedToolCall> Calls { get; } = new ();
         public string Text { get; private set; } = string.Empty;
-        public string PartialText => _text.ToString();
+        public string RawText => _text.ToString();
         public long PromptTokens { get; private set; }
         public long CompletionTokens { get; private set; }
 

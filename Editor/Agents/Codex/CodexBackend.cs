@@ -258,7 +258,7 @@ namespace DTech.Parley.Editor.Agents.Codex
             return string.Join("\n", lines, start, lines.Length - start).Trim();
         }
 
-        private static void FinishProcess(ChildProcess process, int processId)
+        private static void FinishProcess(ChildProcess process, int processId, string credentialsPath)
         {
             if (!process.WaitForExit(GracefulExitMs))
             {
@@ -266,6 +266,7 @@ namespace DTech.Parley.Editor.Agents.Codex
             }
 
             process.Dispose();
+            CodexEnvironment.DeleteCredentials(credentialsPath);
             MainThread.Post(() => ProcessJanitor.Untrack(processId));
         }
 
@@ -291,6 +292,7 @@ namespace DTech.Parley.Editor.Agents.Codex
             string path = await ShellEnvironment.GetLoginPathAsync();
             cancellationToken.ThrowIfCancellationRequested();
             List<string> arguments = new () { "app-server" };
+            CodexEnvironment.AddCredentialOptions(arguments, _profile);
             arguments.AddRange(CommandLine.Split(_profile.ExtraArguments));
             ProcessStartInfo startInfo = new ProcessStartInfo(executable, CommandLine.Join(arguments))
             {
@@ -308,7 +310,7 @@ namespace DTech.Parley.Editor.Agents.Codex
                 throw new InvalidOperationException("Failed to start Codex: " + error);
             }
 
-            ProcessJanitor.Track(_process.ProcessId);
+            ProcessJanitor.Track(_process.ProcessId, _process.ProcessName);
             try
             {
                 await InitializeAsync(apiKey);
@@ -709,7 +711,8 @@ namespace DTech.Parley.Editor.Agents.Codex
             Detach(process);
             process.CloseInput();
             int processId = process.ProcessId;
-            Task.Run(() => FinishProcess(process, processId));
+            string credentialsPath = CodexEnvironment.ManagedCredentialsPath(_profile);
+            Task.Run(() => FinishProcess(process, processId, credentialsPath));
         }
 
         private void Detach(ChildProcess process)
@@ -968,6 +971,7 @@ namespace DTech.Parley.Editor.Agents.Codex
             string stderr = process.RecentStderr;
             Detach(process);
             process.Dispose();
+            CodexEnvironment.DeleteCredentials(CodexEnvironment.ManagedCredentialsPath(_profile));
             if (_disposed)
             {
                 return;
