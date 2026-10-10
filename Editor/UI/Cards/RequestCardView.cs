@@ -12,6 +12,8 @@ namespace DTech.Parley.Editor.UI
 {
     internal sealed class RequestCardView : BlockView
     {
+        private const int MaxRuleLabelChars = 48;
+
         private readonly ChatSession _session;
 
         private bool _resolvedRendered;
@@ -175,6 +177,11 @@ namespace DTech.Parley.Editor.UI
             return row;
         }
 
+        private static string Shorten(string text)
+        {
+            return text.Length <= MaxRuleLabelChars ? text : text.Substring(0, MaxRuleLabelChars - 1) + "…";
+        }
+
         private void Respond(Decision decision, string resolution)
         {
             _session.Respond(Block.RequestId, decision, resolution);
@@ -230,34 +237,16 @@ namespace DTech.Parley.Editor.UI
         private void AddAlwaysButton(VisualElement buttons, PendingRequest request)
         {
             string suggestions = DescribeSuggestions(request.Suggestions);
-            ProfileKind kind = _session.Profile.Kind;
-            if (kind == ProfileKind.ClaudeCode && suggestions == null)
+            bool codex = _session.Profile.Kind == ProfileKind.Codex;
+            if (!codex && suggestions == null)
             {
                 return;
             }
 
-            string label = kind switch
-            {
-                ProfileKind.Local => "Always allow in this project",
-                ProfileKind.Codex => "Allow for this session",
-                _ => "Always allow",
-            };
-
-            string resolution = kind switch
-            {
-                ProfileKind.Local => "Always allowed",
-                ProfileKind.Codex => "Allowed for this session",
-                _ => "Always allowed (" + suggestions + ")",
-            };
-
+            string label = codex ? "Allow for this session" : "Always allow · " + Shorten(suggestions);
+            string resolution = codex ? "Allowed for this session" : "Always allowed (" + suggestions + ")";
             Button always = ParleyStyles.Button(label, () => RespondAlways(request, resolution));
-            always.tooltip = kind switch
-            {
-                ProfileKind.Local => "Remember this approval for matching calls in this project.",
-                ProfileKind.Codex => "Codex stops asking for matching calls in this chat (or saves the command rule it proposed).",
-                _ => suggestions,
-            };
-
+            always.tooltip = codex ? "Codex stops asking for matching calls in this chat (or saves the command rule it proposed)." : suggestions;
             buttons.Add(always);
         }
 
@@ -287,6 +276,11 @@ namespace DTech.Parley.Editor.UI
             VisualElement buttons = ButtonRow();
             buttons.Add(ParleyStyles.Button("Approve · auto-accept edits", () => ApprovePlan(request, PermissionMode.AcceptEdits, "Approved · auto-accept edits"), "pl-button--primary"));
             buttons.Add(ParleyStyles.Button("Approve · review each edit", () => ApprovePlan(request, PermissionMode.Default, "Approved · review each edit")));
+            if (_session.Capabilities.Modes.Contains(PermissionMode.BypassPermissions))
+            {
+                buttons.Add(ParleyStyles.Button("Approve · bypass permissions", () => ApprovePlanWithBypass(request), "pl-button--danger"));
+            }
+
             Add(buttons);
             Add(new FeedbackRow("What should change in the plan?", "Keep planning", KeepPlanning, true));
         }
@@ -296,6 +290,14 @@ namespace DTech.Parley.Editor.UI
             Decision decision = Decision.AllowWith(request.Input);
             decision.NextMode = next;
             Respond(decision, resolution);
+        }
+
+        private void ApprovePlanWithBypass(PendingRequest request)
+        {
+            if (ParleyWindow.ConfirmBypass())
+            {
+                ApprovePlan(request, PermissionMode.BypassPermissions, "Approved · bypass permissions");
+            }
         }
 
         private void KeepPlanning(string feedback)

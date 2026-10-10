@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Text;
 using System.Threading.Tasks;
+using DTech.Parley.Editor.Secrets;
 
 namespace DTech.Parley.Editor.Agents.Codex
 {
@@ -43,6 +44,16 @@ namespace DTech.Parley.Editor.Agents.Codex
 
         public static async Task<CodexAuthStatus> GetStatusAsync(ParleyProfile profile)
         {
+            if (CodexEnvironment.UsesManagedHome(profile))
+            {
+                bool stored = SecretStores.Default.TryGet(SecretStores.Key(profile.Id, SecretFields.OpenAiApiKey), out _);
+                return new CodexAuthStatus
+                {
+                    LoggedIn = stored,
+                    Text = stored ? "OpenAI API key is stored; Parley signs Codex in with it on every start." : "OpenAI API key is not set.",
+                };
+            }
+
             string executable = await CodexCliLocator.LocateAsync(ParleyUserSettings.instance.CodexCliPathOverride);
             if (executable == null)
             {

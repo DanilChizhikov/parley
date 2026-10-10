@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
 
@@ -46,6 +47,24 @@ namespace DTech.Parley.Editor
 			StringComparison comparison = CommandLine.IsWindows ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
 			return normalizedPath.Equals(normalizedFolder, comparison)
 				|| normalizedPath.StartsWith(normalizedFolder + "/", comparison);
+		}
+
+		public static bool IsInsideWorkspace(string path, string root, IReadOnlyList<string> additionalDirectories)
+		{
+			if (IsInside(path, root))
+			{
+				return true;
+			}
+
+			foreach (string directory in additionalDirectories)
+			{
+				if (!string.IsNullOrWhiteSpace(directory) && IsInside(path, Resolve(directory)))
+				{
+					return true;
+				}
+			}
+
+			return false;
 		}
 
 		public static string ToProjectRelative(string path)

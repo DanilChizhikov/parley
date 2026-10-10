@@ -42,6 +42,7 @@ namespace DTech.Parley.Editor.UI
         private SidePanel _side;
         private Composer _composer;
         private AuthCard _authCard;
+        private TrustCard _trustCard;
         private StatusBar _statusBar;
         private TwoPaneSplitView _split;
         private ToolbarButton _profileButton;
@@ -64,6 +65,12 @@ namespace DTech.Parley.Editor.UI
         public static void OpenPreferences()
         {
             SettingsService.OpenUserPreferences(PreferencesPath);
+        }
+
+        internal static bool ConfirmBypass()
+        {
+            return EditorUtility.DisplayDialog("Bypass permissions",
+                "The agent will run commands and edit files without asking. Use this only in a project you can restore from version control.", "Enable", "Cancel");
         }
 
         private static string HistoryLabel(SessionSummary summary, ParleyProfile profile)
@@ -100,6 +107,9 @@ namespace DTech.Parley.Editor.UI
             root.Add(BuildToolbar());
             _authCard = new AuthCard();
             root.Add(_authCard);
+            _trustCard = new TrustCard();
+            root.Add(_trustCard);
+            _trustCard.Refresh();
             _split = new TwoPaneSplitView(1, ParleyUserSettings.instance.SidePanelWidth, TwoPaneSplitViewOrientation.Horizontal);
             _split.AddToClassList("pl-split");
             _transcript = new TranscriptView();
@@ -223,6 +233,7 @@ namespace DTech.Parley.Editor.UI
             _composer.SetBusy(session.IsBusy);
             _statusBar.Refresh(session);
             _authCard.Refresh();
+            _trustCard.Refresh();
             _side.Refresh();
         }
 
@@ -297,9 +308,7 @@ namespace DTech.Parley.Editor.UI
                 return;
             }
 
-            if (mode == PermissionMode.BypassPermissions
-                && !EditorUtility.DisplayDialog("Bypass permissions",
-                    "The agent will run commands and edit files without asking. Use this only in a project you can restore from version control.", "Enable", "Cancel"))
+            if (mode == PermissionMode.BypassPermissions && !ConfirmBypass())
             {
                 return;
             }

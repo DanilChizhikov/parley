@@ -34,16 +34,22 @@ namespace DTech.Parley.Editor
 			}
 
 			StringBuilder current = new StringBuilder();
-			bool quoted = false;
+			char quote = '\0';
 			foreach (char character in text)
 			{
-				if (character == '"')
+				if (quote == '\0' && (character == '"' || character == '\''))
 				{
-					quoted = !quoted;
+					quote = character;
 					continue;
 				}
 
-				if (char.IsWhiteSpace(character) && !quoted)
+				if (character == quote)
+				{
+					quote = '\0';
+					continue;
+				}
+
+				if (char.IsWhiteSpace(character) && quote == '\0')
 				{
 					if (current.Length > 0)
 					{

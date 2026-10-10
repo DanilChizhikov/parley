@@ -41,5 +41,61 @@ namespace DTech.Parley.Tests.EditorMode
             Assert.AreEqual("*", rule.Pattern);
             Assert.AreEqual(ProjectPaths.Root, rule.ProjectRoot);
         }
+
+        [Test]
+        public void SafeCommandsStayInsideWorkspace()
+        {
+            PermissionGate gate = new PermissionGate(ProjectPaths.Root, () => new string[0], () => new List<AllowRule>());
+            Assert.AreEqual(GateVerdict.Allow, Bash(gate, "cat Assets/A.cs"));
+            Assert.AreEqual(GateVerdict.Allow, Bash(gate, "grep -rn \"foo bar\" Assets"));
+            Assert.AreEqual(GateVerdict.Ask, Bash(gate, "rg --pre=sh x ."));
+            Assert.AreEqual(GateVerdict.Ask, Bash(gate, "git diff --output=Assets/A.cs"));
+            Assert.AreEqual(GateVerdict.Ask, Bash(gate, "git branch -D main"));
+            Assert.AreEqual(GateVerdict.Ask, Bash(gate, "cat ~/.ssh/id_rsa"));
+            Assert.AreEqual(GateVerdict.Ask, Bash(gate, "cat '/etc/hosts'"));
+            Assert.AreEqual(GateVerdict.Ask, Bash(gate, "cat {/etc/hosts,a}"));
+            Assert.AreEqual(GateVerdict.Ask, Bash(gate, "cat Assets/../../../etc/hosts"));
+        }
+
+        [Test]
+        public void SafeCommandOptionValuesStayInsideWorkspace()
+        {
+            PermissionGate gate = new PermissionGate(ProjectPaths.Root, () => new string[0], () => new List<AllowRule>());
+            Assert.AreEqual(GateVerdict.Ask, Bash(gate, "git blame --contents=/etc/hosts Assets/A.cs"));
+            Assert.AreEqual(GateVerdict.Ask, Bash(gate, "grep -f/etc/hosts x Assets"));
+            Assert.AreEqual(GateVerdict.Allow, Bash(gate, "git log --oneline -n5"));
+            Assert.AreEqual(GateVerdict.Allow, Bash(gate, "grep -rn foo Assets"));
+            Assert.AreEqual(GateVerdict.Allow, Bash(gate, "git log --format=%h"));
+        }
+
+        [Test]
+        public void GitFolderEditsAlwaysAsk()
+        {
+            PermissionGate gate = new PermissionGate(ProjectPaths.Root, () => new string[0], () => new List<AllowRule>());
+            JObject edit = new JObject { ["file_path"] = ".git/config", ["old_string"] = "a", ["new_string"] = "b" };
+            Assert.AreEqual(GateVerdict.Ask, gate.Evaluate(new FileEditTool(), edit, PermissionMode.AcceptEdits).Verdict);
+            Assert.AreEqual(GateVerdict.Allow, gate.Evaluate(new FileEditTool(), edit, PermissionMode.BypassPermissions).Verdict);
+        }
+
+        [Test]
+        public void CommandRulesStayNarrow()
+        {
+            List<AllowRule> rules = new ();
+            PermissionGate gate = new PermissionGate(ProjectPaths.Root, () => new string[0], () => rules);
+            rules.Add(PermissionGate.SuggestRule(new BashTool(), new JObject { ["command"] = "npm test" }, ProjectPaths.Root));
+            Assert.AreEqual(GateVerdict.Ask, Bash(gate, "npm test > ~/.zshrc"));
+
+            AllowRule python = PermissionGate.SuggestRule(new BashTool(), new JObject { ["command"] = "python tools/gen.py" }, ProjectPaths.Root);
+            Assert.AreEqual("python tools/gen.py", python.Pattern);
+            rules.Add(python);
+            Assert.AreEqual(GateVerdict.Allow, Bash(gate, "python tools/gen.py"));
+            Assert.AreEqual(GateVerdict.Ask, Bash(gate, "python -c \"print(1)\""));
+            Assert.AreEqual("python tools/gen.py", (string)PermissionGate.ToSuggestions(python)[0]["rules"][0]["ruleContent"]);
+        }
+
+        private static GateVerdict Bash(PermissionGate gate, string command)
+        {
+            return gate.Evaluate(new BashTool(), new JObject { ["command"] = command }, PermissionMode.Default).Verdict;
+        }
     }
 }

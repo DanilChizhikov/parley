@@ -1,5 +1,4 @@
 using System.IO;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
@@ -39,9 +38,16 @@ namespace DTech.Parley.Editor.Tools.Builtin
                 return Task.FromResult(ToolResult.Error("File has not been read yet. Read it first before writing to it."));
             }
 
-            string original = exists ? File.ReadAllText(path) : null;
+            string original = null;
+            bool hasBom = false;
+            if (exists && TextFile.TryRead(path, out TextFileContent file))
+            {
+                original = file.Text;
+                hasBom = file.HasBom;
+            }
+
             Directory.CreateDirectory(Path.GetDirectoryName(path));
-            File.WriteAllText(path, content, new UTF8Encoding(false));
+            TextFile.Write(path, content, hasBom);
             context.ReadFiles.Add(path);
             JObject structured = new JObject
             {

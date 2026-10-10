@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using DTech.Parley.Editor.Secrets;
 using DTech.Parley.Editor.Settings;
 using DTech.Parley.Editor.Tools;
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using UnityEngine;
 
@@ -25,6 +26,7 @@ namespace DTech.Parley.Editor.Agents.Local
 		private readonly List<JObject> _history = new ();
 		private readonly Queue<UserTurn> _queued = new ();
 		private readonly Dictionary<string, TaskCompletionSource<Decision>> _waiting = new ();
+		private readonly ContextBudget _budget = new ();
 		private readonly Func<string, string, IChatCompletionClient> _clientFactory;
 
 		public bool IsRunning => _client != null;
@@ -42,6 +44,7 @@ namespace DTech.Parley.Editor.Agents.Local
 		private CancellationTokenSource _turn;
 		private bool _running;
 		private int _blockCounter;
+		private int _lastPromptChars;
 		private RoundStream _round;
 
 		public LocalAgentBackend(
@@ -209,7 +212,7 @@ namespace DTech.Parley.Editor.Agents.Local
 			catch (OperationCanceledException)
 			{
 				result.Subtype = "interrupted";
-				_queued.Clear();
+				DropQueued();
 				RepairAfterInterrupt();
 				_sink.Notice(NoticeLevel.Info, "Interrupted.");
 			}
@@ -218,6 +221,7 @@ namespace DTech.Parley.Editor.Agents.Local
 				result.IsError = true;
 				result.Subtype = "error";
 				result.Errors.Add(exception.Message);
+				DropQueued();
 				RepairAfterInterrupt();
 				_sink.Notice(NoticeLevel.Error, exception.Message);
 			}
@@ -253,7 +257,7 @@ namespace DTech.Parley.Editor.Agents.Local
 				result.InputTokens += output.PromptTokens;
 				result.OutputTokens += output.CompletionTokens;
 				result.NumTurns = round + 1;
-				JObject assistant = new JObject { ["role"] = "assistant", ["content"] = output.Text };
+				JObject assistant = new JObject { ["role"] = "assistant", ["content"] = _profile.TextToolCalls ? output.RawText : output.Text };
 				if (output.Calls.Count > 0 && !_profile.TextToolCalls)
 				{
 					JArray toolCalls = new JArray();
@@ -338,15 +342,20 @@ namespace DTech.Parley.Editor.Agents.Local
 			int maxTokens = Mathf.Clamp(_profile.MaxTokens, 256, window / 2);
 			SystemPromptRequest promptRequest = new SystemPromptRequest(Mode, _catalog, _profile.TextToolCalls, ParleyProjectSettings.instance, Application.unityVersion);
 			string system = SystemPromptBuilder.Build(promptRequest);
-			int budget = window - maxTokens - (int)(system.Length / 3.5) - 256;
-			List<JObject> messages = ContextBudget.Fit(_history, Mathf.Max(1024, (int)(budget * 0.9)), out int estimate);
-			_sink.ContextUsage(estimate + (int)(system.Length / 3.5), window);
+			JArray tools = includeTools && !_profile.TextToolCalls && _catalog.Tools.Count > 0 ? SystemPromptBuilder.FunctionTools(_catalog) : null;
+			int fixedChars = system.Length + (tools == null ? 0 : tools.ToString(Formatting.None).Length);
+			int budget = window - maxTokens - _budget.Tokens(fixedChars) - 256;
+			List<JObject> messages = _budget.Fit(_history, Mathf.Max(1024, (int)(budget * 0.9)), out int estimate);
+			_sink.ContextUsage(estimate + _budget.Tokens(fixedChars), window);
 			JArray array = new JArray { new JObject { ["role"] = "system", ["content"] = system } };
+			int messageChars = 0;
 			foreach (JObject message in messages)
 			{
 				array.Add(message);
+				messageChars += ContextBudget.EstimateChars(message);
 			}
 
+			_lastPromptChars = fixedChars + messageChars;
 			JObject body = new JObject
 			{
 				["model"] = _model ?? string.Empty,
@@ -357,9 +366,9 @@ namespace DTech.Parley.Editor.Agents.Local
 				["max_tokens"] = maxTokens,
 			};
 
-			if (includeTools && !_profile.TextToolCalls && _catalog.Tools.Count > 0)
+			if (tools != null)
 			{
-				body["tools"] = SystemPromptBuilder.FunctionTools(_catalog);
+				body["tools"] = tools;
 			}
 
 			return body;
@@ -409,6 +418,7 @@ namespace DTech.Parley.Editor.Agents.Local
 			_round = round;
 			await _client.StreamChatAsync(body, round.HandleChunk, cancellationToken);
 			round.Complete(_profile.TextToolCalls);
+			_budget.Calibrate(_lastPromptChars, round.PromptTokens);
 			return round;
 		}
 
@@ -433,11 +443,13 @@ namespace DTech.Parley.Editor.Agents.Local
 
 			if (gate.Verdict == GateVerdict.Ask)
 			{
+				AllowRule suggested = PermissionGate.SuggestRule(tool, input, ProjectPaths.Root);
 				Decision decision = await AskAsync(new PendingRequest
 				{
 					Id = Guid.NewGuid().ToString("N"),
 					ToolName = tool.Name,
 					Input = input,
+					Suggestions = gate.Reason == null ? PermissionGate.ToSuggestions(suggested) : null,
 					ToolUseId = call.Id,
 					Title = tool.Summarize(input),
 					DecisionReason = gate.Reason,
@@ -456,7 +468,7 @@ namespace DTech.Parley.Editor.Agents.Local
 
 				if (decision.Remember)
 				{
-					ParleyUserSettings.instance.AddRule(PermissionGate.SuggestRule(tool, input, ProjectPaths.Root));
+					ParleyUserSettings.instance.AddRule(suggested);
 				}
 
 				input = decision.UpdatedInput ?? input;
@@ -505,9 +517,19 @@ namespace DTech.Parley.Editor.Agents.Local
 			_waiting.Clear();
 		}
 
+		private void DropQueued()
+		{
+			int dropped = _queued.Count;
+			_queued.Clear();
+			if (dropped > 0)
+			{
+				_sink.Notice(NoticeLevel.Warning, dropped + " queued message(s) were not sent.");
+			}
+		}
+
 		private void RepairAfterInterrupt()
 		{
-			string partialText = _round?.PartialText;
+			string partialText = _round?.RawText;
 			_round = null;
 			if (!string.IsNullOrEmpty(partialText))
 			{

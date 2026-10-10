@@ -13,6 +13,8 @@ namespace DTech.Parley.Editor.UI
 {
     internal static class ParleyPreferencesProvider
     {
+        private const long TrustPollMs = 500;
+
         [SettingsProvider]
         public static SettingsProvider Create()
         {
@@ -60,16 +62,17 @@ namespace DTech.Parley.Editor.UI
         {
             ParleyProjectSettings project = ParleyProjectSettings.instance;
             VisualElement section = Section("This project (ProjectSettings/ParleySettings.asset)");
-            TextField prompt = new TextField("Extra instructions") { value = project.AppendSystemPrompt ?? string.Empty, multiline = true, isDelayed = true };
+            section.Add(BuildTrustRow(project));
+            TextField prompt = new TextField("Extra instructions") { value = project.ConfiguredAppendSystemPrompt ?? string.Empty, multiline = true, isDelayed = true };
             prompt.AddToClassList("pl-prefs__multiline");
-            prompt.RegisterValueChangedCallback(evt => project.AppendSystemPrompt = evt.newValue);
+            prompt.RegisterValueChangedCallback(evt => project.ConfiguredAppendSystemPrompt = evt.newValue);
             section.Add(prompt);
-            TextField directories = ListField("Extra directories", project.AdditionalDirectories, project.SetAdditionalDirectories);
+            TextField directories = ListField("Extra directories", project.ConfiguredAdditionalDirectories, project.SetAdditionalDirectories);
             directories.textEdition.placeholder = "Comma-separated folders the agent may access";
             section.Add(directories);
             section.Add(BoolField("Include project instruction files (CLAUDE.md, AGENTS.md, CODEX.md, …) for local models", project.IncludeProjectInstructions,
                 value => project.IncludeProjectInstructions = value));
-            TextField instructionFiles = ListField("Extra instruction files", project.InstructionFiles, project.SetInstructionFiles);
+            TextField instructionFiles = ListField("Extra instruction files", project.ConfiguredInstructionFiles, project.SetInstructionFiles);
             instructionFiles.textEdition.placeholder = "Comma-separated files added to the local agent's instructions";
             section.Add(instructionFiles);
             Toggle unityTools = BoolField("Unity editor tools", project.UnityToolsEnabled, value => project.UnityToolsEnabled = value);
@@ -84,6 +87,17 @@ namespace DTech.Parley.Editor.UI
             }
 
             return section;
+        }
+
+        private static VisualElement BuildTrustRow(ParleyProjectSettings project)
+        {
+            VisualElement row = new VisualElement();
+            row.AddToClassList("pl-request__buttons");
+            row.Add(ParleyStyles.Text("Not trusted: these values were changed outside Parley and are ignored until you trust them.", ParleyStyles.Muted));
+            row.Add(ParleyStyles.Button("Trust", project.Trust, "pl-button--small"));
+            ParleyStyles.SetVisible(row, !project.IsTrusted);
+            row.schedule.Execute(() => ParleyStyles.SetVisible(row, !project.IsTrusted)).Every(TrustPollMs);
+            return row;
         }
 
         private static async Task<string> DetectClaudeAsync()

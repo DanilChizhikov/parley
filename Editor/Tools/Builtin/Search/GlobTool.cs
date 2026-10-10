@@ -12,6 +12,7 @@ namespace DTech.Parley.Editor.Tools.Builtin
     internal sealed class GlobTool : IParleyTool
     {
         private const int Limit = 250;
+        private const string MetaExtension = ".meta";
 
         public string Name => "Glob";
 
@@ -44,15 +45,22 @@ namespace DTech.Parley.Editor.Tools.Builtin
             }
 
             Regex regex = GlobMatcher.ToRegex(pattern, CommandLine.IsWindows);
+            bool includeMeta = pattern.EndsWith(MetaExtension, StringComparison.OrdinalIgnoreCase);
+            GlobSearchRequest request = new GlobSearchRequest(regex, root, context.ProjectRoot, includeMeta);
+            return Task.Run(() => Search(request, cancellationToken), cancellationToken);
+        }
+
+        private static ToolResult Search(GlobSearchRequest request, CancellationToken cancellationToken)
+        {
             List<(string path, DateTime time)> matches = new ();
-            foreach (string file in GlobMatcher.EnumerateFiles(root, cancellationToken))
+            foreach (string file in GlobMatcher.EnumerateFiles(request.Root, request.ProjectRoot, cancellationToken))
             {
-                if (file.EndsWith(".meta", StringComparison.OrdinalIgnoreCase) && !pattern.EndsWith(".meta", StringComparison.OrdinalIgnoreCase))
+                if (!request.IncludeMeta && file.EndsWith(MetaExtension, StringComparison.OrdinalIgnoreCase))
                 {
                     continue;
                 }
 
-                if (regex.IsMatch(GlobMatcher.Relative(root, file)))
+                if (request.Pattern.IsMatch(GlobMatcher.Relative(request.Root, file)))
                 {
                     matches.Add((file, File.GetLastWriteTimeUtc(file)));
                 }
@@ -61,7 +69,7 @@ namespace DTech.Parley.Editor.Tools.Builtin
             matches.Sort((left, right) => right.time.CompareTo(left.time));
             if (matches.Count == 0)
             {
-                return Task.FromResult(ToolResult.Ok("No files found."));
+                return ToolResult.Ok("No files found.");
             }
 
             StringBuilder builder = new StringBuilder();
@@ -75,7 +83,7 @@ namespace DTech.Parley.Editor.Tools.Builtin
                 builder.Append("... ").Append(matches.Count - Limit).Append(" more. Narrow the pattern.");
             }
 
-            return Task.FromResult(ToolResult.Ok(builder.ToString().TrimEnd()));
+            return ToolResult.Ok(builder.ToString().TrimEnd());
         }
     }
 }

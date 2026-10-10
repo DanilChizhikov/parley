@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Text;
@@ -16,6 +17,7 @@ namespace DTech.Parley.Editor
 
 		private const int DefaultMaxLineChars = 32 * 1024 * 1024;
 		private const int StderrHistory = 200;
+		private const int ExitWaitMs = 5000;
 
 		private static readonly UTF8Encoding Utf8 = new UTF8Encoding(false);
 
@@ -25,6 +27,8 @@ namespace DTech.Parley.Editor
 		private readonly LinkedList<string> _stderr = new ();
 
 		public int ProcessId { get; private set; }
+
+		public string ProcessName { get; private set; }
 
 		public bool IsRunning
 		{
@@ -55,7 +59,7 @@ namespace DTech.Parley.Editor
 		private Process _process;
 		private Stream _stdin;
 		private int _openStreams;
-		private bool _disposed;
+		private volatile bool _disposed;
 
 		public ChildProcess(ProcessStartInfo startInfo, int maxLineChars = DefaultMaxLineChars)
 		{
@@ -107,6 +111,7 @@ namespace DTech.Parley.Editor
 			}
 
 			ProcessId = _process.Id;
+			ProcessName = ReadProcessName(_process);
 			lock (_writeLock)
 			{
 				_stdin = _process.StandardInput.BaseStream;
@@ -120,18 +125,19 @@ namespace DTech.Parley.Editor
 
 		public bool WriteLine(string line)
 		{
-			if (_stdin == null)
-			{
-				return false;
-			}
-
 			byte[] bytes = Utf8.GetBytes(line + "\n");
 			lock (_writeLock)
 			{
+				Stream stdin = _stdin;
+				if (stdin == null)
+				{
+					return false;
+				}
+
 				try
 				{
-					_stdin.Write(bytes, 0, bytes.Length);
-					_stdin.Flush();
+					stdin.Write(bytes, 0, bytes.Length);
+					stdin.Flush();
 					return true;
 				}
 				catch (Exception exception)
@@ -164,17 +170,7 @@ namespace DTech.Parley.Editor
 		public void Kill()
 		{
 			CloseInput();
-			try
-			{
-				if (_process != null && !_process.HasExited)
-				{
-					_process.Kill();
-				}
-			}
-			catch (Exception exception)
-			{
-				Debug.LogException(exception);
-			}
+			ProcessTree.Kill(_process);
 		}
 
 		public bool WaitForExit(int milliseconds)
@@ -205,6 +201,18 @@ namespace DTech.Parley.Editor
 			catch (Exception exception)
 			{
 				Debug.LogException(exception);
+				return null;
+			}
+		}
+
+		private static string ReadProcessName(Process process)
+		{
+			try
+			{
+				return process.ProcessName;
+			}
+			catch (Exception exception) when (exception is InvalidOperationException || exception is NotSupportedException || exception is Win32Exception)
+			{
 				return null;
 			}
 		}
@@ -256,7 +264,10 @@ namespace DTech.Parley.Editor
 			}
 			catch (Exception exception)
 			{
-				Debug.LogException(exception);
+				if (!_disposed)
+				{
+					Debug.LogException(exception);
+				}
 			}
 
 			if (line.Length > 0)
@@ -289,11 +300,19 @@ namespace DTech.Parley.Editor
 
 		private void NotifyExit()
 		{
+			if (_disposed)
+			{
+				return;
+			}
+
 			int code = -1;
 			try
 			{
-				_process.WaitForExit(5000);
+				_process.WaitForExit(ExitWaitMs);
 				code = _process.HasExited ? _process.ExitCode : -1;
+			}
+			catch (InvalidOperationException)
+			{
 			}
 			catch (Exception exception)
 			{

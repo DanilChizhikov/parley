@@ -94,6 +94,7 @@ namespace DTech.Parley.Editor
 		[SerializeField] private float _sidePanelWidth = 260.0f;
 		[SerializeField] private string _lastSessionId;
 		[SerializeField] private List<AllowRule> _allowRules = new ();
+		[SerializeField] private List<TrustedProjectSettings> _trustedSettings = new ();
 
 		private bool _saveQueued;
 
@@ -175,6 +176,41 @@ namespace DTech.Parley.Editor
 			{
 				MarkDirty();
 			}
+		}
+
+		public bool IsTrusted(string projectRoot, string fingerprint)
+		{
+			foreach (TrustedProjectSettings trusted in _trustedSettings)
+			{
+				if (trusted.ProjectRoot == projectRoot)
+				{
+					return trusted.Fingerprint == fingerprint;
+				}
+			}
+
+			return false;
+		}
+
+		public void Trust(string projectRoot, string fingerprint)
+		{
+			for (int i = 0; i < _trustedSettings.Count; i++)
+			{
+				if (_trustedSettings[i].ProjectRoot != projectRoot)
+				{
+					continue;
+				}
+
+				if (_trustedSettings[i].Fingerprint == fingerprint)
+				{
+					return;
+				}
+
+				_trustedSettings.RemoveAt(i);
+				break;
+			}
+
+			_trustedSettings.Add(new TrustedProjectSettings(projectRoot, fingerprint));
+			MarkDirty();
 		}
 
 		public void MarkDirty()

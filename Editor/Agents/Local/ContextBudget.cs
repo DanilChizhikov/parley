@@ -1,19 +1,25 @@
+using System;
 using System.Collections.Generic;
 using Newtonsoft.Json.Linq;
 
 namespace DTech.Parley.Editor.Agents.Local
 {
-	internal static class ContextBudget
+	internal sealed class ContextBudget
 	{
 		public const string ElidedText = "[older tool output removed to save context]";
+		public const double DefaultCharsPerToken = 3.5;
 
-		private const double CharsPerToken = 3.5;
-		private const int ImageTokens = 800;
+		private const double MinCharsPerToken = 1.5;
+		private const double MaxCharsPerToken = 6.0;
+		private const int ImageChars = 2800;
+		private const int MessageOverheadChars = 8;
 		private const int KeepRecentMessages = 6;
 
-		public static int Estimate(JObject message)
+		public double CharsPerToken { get; private set; } = DefaultCharsPerToken;
+
+		public static int EstimateChars(JObject message)
 		{
-			int chars = 8;
+			int chars = MessageOverheadChars;
 			JToken content = message["content"];
 			if (content != null && content.Type == JTokenType.String)
 			{
@@ -25,7 +31,7 @@ namespace DTech.Parley.Editor.Agents.Local
 				{
 					if ((string)part["type"] == "image_url")
 					{
-						chars += (int)(ImageTokens * CharsPerToken);
+						chars += ImageChars;
 					}
 					else
 					{
@@ -39,10 +45,30 @@ namespace DTech.Parley.Editor.Agents.Local
 				chars += calls.ToString().Length;
 			}
 
+			return chars;
+		}
+
+		public void Calibrate(long promptChars, long promptTokens)
+		{
+			if (promptChars <= 0 || promptTokens <= 0)
+			{
+				return;
+			}
+
+			CharsPerToken = Math.Max(MinCharsPerToken, Math.Min(MaxCharsPerToken, (double)promptChars / promptTokens));
+		}
+
+		public int Tokens(int chars)
+		{
 			return (int)(chars / CharsPerToken);
 		}
 
-		public static int Estimate(IEnumerable<JObject> messages)
+		public int Estimate(JObject message)
+		{
+			return Tokens(EstimateChars(message));
+		}
+
+		public int Estimate(IEnumerable<JObject> messages)
 		{
 			int total = 0;
 			foreach (JObject message in messages)
@@ -53,7 +79,7 @@ namespace DTech.Parley.Editor.Agents.Local
 			return total;
 		}
 
-		public static List<JObject> Fit(IReadOnlyList<JObject> history, int budget, out int estimate)
+		public List<JObject> Fit(IReadOnlyList<JObject> history, int budget, out int estimate)
 		{
 			List<JObject> messages = new (history);
 			estimate = Estimate(messages);

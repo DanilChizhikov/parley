@@ -22,7 +22,7 @@ namespace DTech.Parley.Tests.EditorMode
                 history.Add(new JObject { ["role"] = i % 2 == 0 ? "user" : "assistant", ["content"] = "short " + i });
             }
 
-            List<JObject> fitted = ContextBudget.Fit(history, 500, out int estimate);
+            List<JObject> fitted = new ContextBudget().Fit(history, 500, out int estimate);
             Assert.AreEqual(ContextBudget.ElidedText, (string)fitted[2]["content"]);
             Assert.LessOrEqual(estimate, 500);
             Assert.AreEqual(new string('x', 7000), (string)history[2]["content"], "original history must not be modified");

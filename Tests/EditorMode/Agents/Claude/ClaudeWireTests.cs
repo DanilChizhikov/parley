@@ -49,5 +49,15 @@ namespace DTech.Parley.Tests.EditorMode
             Assert.AreEqual("t9", parsed.ToolUseId);
             Assert.AreEqual(1, parsed.Suggestions.Count);
         }
+
+        [Test]
+        public void MissingConversationIgnoresModelText()
+        {
+            JObject answer = new JObject { ["type"] = "result", ["is_error"] = false, ["result"] = ClaudeWire.MissingConversation + " means the session file is gone." };
+            Assert.IsFalse(ClaudeWire.IsMissingConversation(answer));
+
+            JObject failure = new JObject { ["type"] = "result", ["is_error"] = true, ["errors"] = new JArray(ClaudeWire.MissingConversation + ": abc") };
+            Assert.IsTrue(ClaudeWire.IsMissingConversation(failure));
+        }
     }
 }

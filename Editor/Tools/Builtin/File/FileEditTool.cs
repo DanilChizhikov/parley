@@ -1,6 +1,5 @@
 using System;
 using System.IO;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
@@ -66,7 +65,12 @@ namespace DTech.Parley.Editor.Tools.Builtin
 				return Task.FromResult(ToolResult.Error("old_string and new_string are identical."));
 			}
 
-			string content = File.ReadAllText(path);
+			if (!TextFile.TryRead(path, out TextFileContent file))
+			{
+				return Task.FromResult(ToolResult.Error(path + " is not valid UTF-8 text. Edit it another way."));
+			}
+
+			string content = file.Text;
 			int count = Count(content, oldText);
 			if (count == 0 && content.Contains("\r\n") && !oldText.Contains("\r\n"))
 			{
@@ -86,7 +90,7 @@ namespace DTech.Parley.Editor.Tools.Builtin
 			}
 
 			string updated = replaceAll ? content.Replace(oldText, newText) : ReplaceFirst(content, oldText, newText);
-			File.WriteAllText(path, updated, new UTF8Encoding(false));
+			TextFile.Write(path, updated, file.HasBom);
 			JObject structured = new JObject { ["filePath"] = path, ["replacements"] = replaceAll ? count : 1 };
 			return Task.FromResult(ToolResult.Ok($"Edited {path} ({(replaceAll ? count : 1)} replacement(s)).", structured));
 		}

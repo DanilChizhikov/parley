@@ -2,12 +2,16 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
 namespace DTech.Parley.Editor.Agents.Codex
 {
     internal static class CodexCliLocator
     {
+        private static readonly Regex VersionPattern = new ("\\d+\\.\\d+\\.\\d+");
+        private static readonly Dictionary<string, Version> ParsedVersions = new ();
+
         private static string _cached;
 
         public static IEnumerable<string> Candidates(string home, bool windows)
@@ -64,6 +68,29 @@ namespace DTech.Parley.Editor.Agents.Codex
         public static Task<string> GetVersionAsync(string executable, string path)
         {
             return Task.Run(() => ReadVersion(executable, path));
+        }
+
+        public static async Task<Version> GetParsedVersionAsync(string executable, string path)
+        {
+            string key = executable + "|" + File.GetLastWriteTimeUtc(executable).Ticks;
+            if (ParsedVersions.TryGetValue(key, out Version cached))
+            {
+                return cached;
+            }
+
+            Version version = ParseVersion(await GetVersionAsync(executable, path));
+            if (version != null)
+            {
+                ParsedVersions[key] = version;
+            }
+
+            return version;
+        }
+
+        internal static Version ParseVersion(string output)
+        {
+            Match match = VersionPattern.Match(output ?? string.Empty);
+            return match.Success && Version.TryParse(match.Value, out Version version) ? version : null;
         }
 
         private static string ReadVersion(string executable, string path)

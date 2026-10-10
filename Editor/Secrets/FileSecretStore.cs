@@ -8,6 +8,11 @@ namespace DTech.Parley.Editor.Secrets
 {
 	internal sealed class FileSecretStore : ISecretStore
 	{
+		private const string ChmodTool = "/bin/chmod";
+		private const string PrivateFolderMode = "700";
+		private const string PrivateFileMode = "600";
+		private const string TempSuffix = ".tmp";
+
 		private readonly string _path = Path.Combine(ProjectPaths.HomeFolder, ".config", "dtech-parley", "credentials.json");
 
 		public string Description => "File " + _path + " (0600)";
@@ -30,6 +35,23 @@ namespace DTech.Parley.Editor.Secrets
 			return values.Remove(key) && Save(values, out _);
 		}
 
+		private static bool Chmod(string mode, string path)
+		{
+			return SecretProcess.Run(ChmodTool, CommandLine.Join(new[] { mode, path }, false), null).ExitCode == 0;
+		}
+
+		private static void DeleteQuietly(string path)
+		{
+			try
+			{
+				File.Delete(path);
+			}
+			catch (Exception exception) when (exception is IOException || exception is UnauthorizedAccessException)
+			{
+				Debug.LogWarning("[Parley] Could not delete " + path + ": " + exception.Message);
+			}
+		}
+
 		private Dictionary<string, string> Load()
 		{
 			try
@@ -49,19 +71,36 @@ namespace DTech.Parley.Editor.Secrets
 
 		private bool Save(Dictionary<string, string> values, out string error)
 		{
+			string temp = _path + TempSuffix;
 			try
 			{
 				string directoryName = Path.GetDirectoryName(_path);
 				Directory.CreateDirectory(directoryName);
-				string valuesJson = JsonConvert.SerializeObject(values);
-				File.WriteAllText(_path, valuesJson);
-				string arguments = CommandLine.Join(new[] { "600", _path }, false);
-				SecretProcess.Run("chmod", arguments, null);
+				Chmod(PrivateFolderMode, directoryName);
+				File.WriteAllText(temp, string.Empty);
+				if (!Chmod(PrivateFileMode, temp))
+				{
+					DeleteQuietly(temp);
+					error = "Could not restrict permissions of " + temp + ".";
+					return false;
+				}
+
+				File.WriteAllText(temp, JsonConvert.SerializeObject(values));
+				if (File.Exists(_path))
+				{
+					File.Replace(temp, _path, null);
+				}
+				else
+				{
+					File.Move(temp, _path);
+				}
+
 				error = null;
 				return true;
 			}
 			catch (Exception exception)
 			{
+				DeleteQuietly(temp);
 				error = exception.Message;
 				return false;
 			}

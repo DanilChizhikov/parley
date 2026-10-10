@@ -6,6 +6,30 @@ namespace DTech.Parley.Editor.Agents.Claude
 {
 	internal static class ClaudeWire
 	{
+		public const string MissingConversation = "No conversation found with session ID";
+
+		public static bool IsMissingConversation(JObject result)
+		{
+			if ((bool?)result?["is_error"] != true)
+			{
+				return false;
+			}
+
+			if (result["errors"] is JArray errors)
+			{
+				foreach (JToken error in errors)
+				{
+					if (error.ToString().Contains(MissingConversation))
+					{
+						return true;
+					}
+				}
+			}
+
+			JToken text = result["result"];
+			return text != null && text.Type == JTokenType.String && ((string)text).Contains(MissingConversation);
+		}
+
 		public static string Serialize(JObject message)
 		{
 			return message.ToString(Formatting.None);

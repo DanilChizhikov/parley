@@ -13,8 +13,11 @@ namespace DTech.Parley.Editor
 		private const string Marker = "__PARLEY_VALUE__";
 		private const string PathCacheKey = "DTech.Parley.LoginShellPath";
 		private const int TimeoutMs = 8000;
+		private const double RetryCaptureMinutes = 5.0;
 
 		private static string _loginPath;
+		private static Task<string> _pendingCapture;
+		private static DateTime _retryCaptureAfterUtc;
 
 		public static string LoginShell
 		{
@@ -57,16 +60,34 @@ namespace DTech.Parley.Editor
 				return Task.FromResult(cached);
 			}
 
+			string fallback = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
+			if (DateTime.UtcNow < _retryCaptureAfterUtc)
+			{
+				return Task.FromResult(fallback);
+			}
+
+			if (_pendingCapture != null && !_pendingCapture.IsCompleted)
+			{
+				return _pendingCapture;
+			}
+
 			string shell = LoginShell;
-			return Task.Run(() => Capture(shell, "printf '" + Marker + "%s" + Marker + "' \"$PATH\"")).ContinueWith(task =>
+			_pendingCapture = Task.Run(() => Capture(shell, "printf '" + Marker + "%s" + Marker + "' \"$PATH\"")).ContinueWith(task =>
 			{
 				string value = task.Result;
-				string fallback = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
+				if (value == null)
+				{
+					_retryCaptureAfterUtc = DateTime.UtcNow.AddMinutes(RetryCaptureMinutes);
+					return fallback;
+				}
+
 				string merged = Merge(value, fallback);
 				MainThread.Post(() => SessionState.SetString(PathCacheKey, merged));
 				_loginPath = merged;
 				return merged;
 			}, TaskScheduler.Default);
+
+			return _pendingCapture;
 		}
 
 		public static Task<string> WhichAsync(string executable)
