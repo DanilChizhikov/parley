@@ -133,6 +133,7 @@ namespace DTech.Parley.Tests.EditorMode
 			Assert.IsNull(client.Bodies[0]["tools"]);
 			JArray second = (JArray)client.Bodies[1]["messages"];
 			StringAssert.Contains("<tool_response name=\"Read\">", (string)second[second.Count - 1]["content"]);
+			StringAssert.Contains("<tool_call>", (string)second[second.Count - 2]["content"]);
 		}
 
 		private static LocalAgentBackend CreateBackend(RecordingSink sink, ScriptedClient client, PermissionMode mode)

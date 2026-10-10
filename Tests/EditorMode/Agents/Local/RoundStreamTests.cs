@@ -16,7 +16,7 @@ namespace DTech.Parley.Tests.EditorMode
             round.HandleChunk(JObject.Parse("{\"choices\":[{\"delta\":{\"content\":\"Hello\"}}]}"));
             round.HandleChunk(JObject.Parse("{\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"c1\",\"function\":{\"name\":\"Read\",\"arguments\":\"{}\"}}]}}]}"));
             round.HandleChunk(JObject.Parse("{\"choices\":[],\"usage\":{\"prompt_tokens\":12,\"completion_tokens\":3}}"));
-            Assert.AreEqual("Hello", round.PartialText);
+            Assert.AreEqual("Hello", round.RawText);
             round.Complete(false);
 
             Assert.AreEqual("Hello", round.Text);
