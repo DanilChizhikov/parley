@@ -19,11 +19,12 @@ namespace DTech.Parley.Editor.UI
 
         private readonly TextField _input;
         private readonly VisualElement _chips;
-        private readonly VisualElement _suggestions;
+        private readonly ScrollView _suggestions;
         private readonly Button _send;
         private readonly Button _stop;
         private readonly List<ChatAttachment> _attachments = new ();
-        private readonly List<(string insert, string label)> _suggestionItems = new ();
+        private readonly List<(string insert, string name, string detail)> _suggestionItems = new ();
+        private readonly HashSet<string> _suggestedNames = new (StringComparer.OrdinalIgnoreCase);
 
         private Func<IReadOnlyList<SlashCommandInfo>> _commands = () => Array.Empty<SlashCommandInfo>();
         private int _selectedSuggestion;
@@ -31,7 +32,7 @@ namespace DTech.Parley.Editor.UI
         public Composer()
         {
             AddToClassList("pl-composer");
-            _suggestions = new VisualElement();
+            _suggestions = new ScrollView(ScrollViewMode.Vertical) { horizontalScrollerVisibility = ScrollerVisibility.Hidden };
             _suggestions.AddToClassList("pl-suggestions");
             ParleyStyles.SetVisible(_suggestions, false);
             Add(_suggestions);
@@ -197,15 +198,16 @@ namespace DTech.Parley.Editor.UI
 
         private void AddCommandSuggestions(string query)
         {
+            _suggestedNames.Clear();
             foreach (SlashCommandInfo command in _commands())
             {
-                if (command.Name == null || !command.Name.StartsWith(query, StringComparison.OrdinalIgnoreCase))
+                if (command.Name == null || !command.Name.StartsWith(query, StringComparison.OrdinalIgnoreCase) || !_suggestedNames.Add(command.Name))
                 {
                     continue;
                 }
 
-                string label = "/" + command.Name + (string.IsNullOrEmpty(command.Description) ? string.Empty : "  —  " + command.Description);
-                _suggestionItems.Add(("/" + command.Name + " ", label));
+                string name = "/" + command.Name + (string.IsNullOrEmpty(command.ArgumentHint) ? string.Empty : " " + command.ArgumentHint);
+                _suggestionItems.Add(("/" + command.Name + " ", name, command.Description));
                 if (_suggestionItems.Count >= MaxSuggestions)
                 {
                     return;
@@ -223,7 +225,7 @@ namespace DTech.Parley.Editor.UI
                     continue;
                 }
 
-                _suggestionItems.Add((path + " ", path));
+                _suggestionItems.Add((path + " ", path, null));
                 if (_suggestionItems.Count >= MaxSuggestions)
                 {
                     return;
@@ -234,11 +236,25 @@ namespace DTech.Parley.Editor.UI
         private void RenderSuggestions()
         {
             _suggestions.Clear();
+            VisualElement selected = null;
             for (int i = 0; i < _suggestionItems.Count; i++)
             {
                 int index = i;
-                Label row = ParleyStyles.Text(_suggestionItems[i].label, "pl-suggestion");
+                string name = _suggestionItems[i].name;
+                string detail = _suggestionItems[i].detail;
+                VisualElement row = new VisualElement { tooltip = detail };
+                row.AddToClassList("pl-suggestion");
                 row.EnableInClassList("pl-suggestion--selected", i == _selectedSuggestion);
+                Label nameLabel = new Label(name) { enableRichText = false };
+                nameLabel.AddToClassList("pl-suggestion__name");
+                row.Add(nameLabel);
+                if (!string.IsNullOrEmpty(detail))
+                {
+                    Label detailLabel = new Label(detail) { enableRichText = false };
+                    detailLabel.AddToClassList("pl-suggestion__detail");
+                    row.Add(detailLabel);
+                }
+
                 row.RegisterCallback<PointerDownEvent>(evt =>
                 {
                     ApplySuggestion(index);
@@ -246,9 +262,17 @@ namespace DTech.Parley.Editor.UI
                 });
 
                 _suggestions.Add(row);
+                if (i == _selectedSuggestion)
+                {
+                    selected = row;
+                }
             }
 
             ParleyStyles.SetVisible(_suggestions, _suggestionItems.Count > 0);
+            if (selected != null)
+            {
+                schedule.Execute(() => _suggestions.ScrollTo(selected));
+            }
         }
 
         private void HideSuggestions()
