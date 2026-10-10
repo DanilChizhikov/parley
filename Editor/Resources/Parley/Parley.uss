@@ -761,6 +761,180 @@
     padding: 6px 8px;
 }
 
+/* MCP */
+
+.pl-mcp__header {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 6px;
+}
+
+.pl-mcp__title {
+    -unity-font-style: bold;
+}
+
+.pl-root .pl-mcp__section {
+    margin: 8px 0 4px 0;
+    font-size: 11px;
+    -unity-font-style: bold;
+    color: var(--pl-text-muted);
+}
+
+.pl-mcp__row {
+    flex-direction: row;
+    align-items: flex-start;
+    margin-bottom: 4px;
+    padding: 4px 6px;
+    border-radius: 4px;
+    background-color: var(--pl-surface-2);
+}
+
+.pl-mcp__toggle {
+    margin: 1px 6px 0 0;
+}
+
+.pl-mcp__main {
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-width: 0;
+}
+
+.pl-mcp__name {
+    -unity-font-style: bold;
+}
+
+.pl-root .pl-mcp__detail {
+    font-size: 11px;
+    overflow: hidden;
+}
+
+.pl-mcp__state {
+    flex-direction: row;
+    align-items: center;
+    margin-top: 2px;
+}
+
+.pl-mcp__state-text {
+    font-size: 11px;
+}
+
+.pl-mcp__dot {
+    width: 7px;
+    height: 7px;
+    margin-right: 5px;
+    border-radius: 4px;
+    background-color: var(--pl-text-muted);
+}
+
+.pl-mcp__dot--connected {
+    background-color: var(--pl-success);
+}
+
+.pl-mcp__dot--pending {
+    background-color: var(--pl-warning);
+}
+
+.pl-mcp__dot--failed {
+    background-color: var(--pl-error);
+}
+
+.pl-mcp__dot--off {
+    background-color: var(--pl-border);
+}
+
+.pl-root .pl-mcp__error {
+    margin-top: 2px;
+    font-size: 11px;
+    color: var(--pl-error);
+}
+
+.pl-root .pl-mcp__hint {
+    margin-top: 8px;
+    padding: 4px 6px;
+    border-radius: 4px;
+    font-size: 11px;
+    background-color: var(--pl-warning-bg);
+}
+
+.pl-mcp__actions {
+    flex-direction: row;
+    margin-top: 4px;
+}
+
+.pl-mcp__form {
+    margin-bottom: 8px;
+    padding: 6px;
+    border-width: 1px;
+    border-radius: 4px;
+    border-color: var(--pl-border);
+    background-color: var(--pl-surface-2);
+}
+
+.pl-mcp__form .unity-text-field,
+.pl-mcp__form .unity-enum-field {
+    flex-direction: column;
+    margin: 2px 0;
+}
+
+.pl-mcp__form .unity-text-field > .unity-base-field__label,
+.pl-mcp__form .unity-enum-field > .unity-base-field__label {
+    min-width: 0;
+    margin-bottom: 2px;
+}
+
+.pl-mcp__form .pl-mcp__var-fields .unity-text-field {
+    flex-direction: row;
+}
+
+.pl-root .pl-mcp__subtitle {
+    margin: 4px 0;
+    -unity-font-style: bold;
+}
+
+.pl-mcp__vars {
+    margin: 4px 0;
+}
+
+.pl-mcp__vars-header {
+    flex-direction: row;
+    align-items: center;
+}
+
+.pl-mcp__var {
+    margin-bottom: 4px;
+    padding-bottom: 4px;
+    border-bottom-width: 1px;
+    border-bottom-color: var(--pl-border);
+}
+
+.pl-mcp__var-fields {
+    flex-direction: row;
+    align-items: flex-start;
+}
+
+.pl-mcp__var-key {
+    width: 40%;
+    flex-shrink: 0;
+}
+
+.pl-mcp__var-value {
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-width: 0;
+}
+
+.pl-mcp__var-actions {
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-end;
+}
+
+.pl-mcp__form-buttons {
+    flex-direction: row;
+    justify-content: flex-end;
+    margin-top: 6px;
+}
+
 /* Status bar */
 
 .pl-status {

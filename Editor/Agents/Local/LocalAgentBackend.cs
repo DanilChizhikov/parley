@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using DTech.Parley.Editor.Mcp;
 using DTech.Parley.Editor.Secrets;
 using DTech.Parley.Editor.Settings;
 using DTech.Parley.Editor.Tools;
@@ -17,6 +18,7 @@ namespace DTech.Parley.Editor.Agents.Local
 	{
 		private const string ClearCommand = "/clear";
 		private const string CompactCommand = "/compact";
+		private const int McpWaitMs = 30000;
 
 		private readonly ParleyProfile _profile;
 		private readonly IAgentSink _sink;
@@ -27,6 +29,8 @@ namespace DTech.Parley.Editor.Agents.Local
 		private readonly Queue<UserTurn> _queued = new ();
 		private readonly Dictionary<string, TaskCompletionSource<Decision>> _waiting = new ();
 		private readonly ContextBudget _budget = new ();
+		private readonly McpHub _hub = new ();
+		private readonly List<IParleyTool> _roundTools = new ();
 		private readonly Func<string, string, IChatCompletionClient> _clientFactory;
 
 		public bool IsRunning => _client != null;
@@ -37,6 +41,8 @@ namespace DTech.Parley.Editor.Agents.Local
 
 		public PermissionMode Mode { get; private set; }
 
+		public bool HasPendingRestart => false;
+
 		public IReadOnlyList<JObject> History => _history;
 
 		private IChatCompletionClient _client;
@@ -46,6 +52,7 @@ namespace DTech.Parley.Editor.Agents.Local
 		private int _blockCounter;
 		private int _lastPromptChars;
 		private RoundStream _round;
+		private ToolCatalog _roundCatalog;
 
 		public LocalAgentBackend(
 			ParleyProfile profile,
@@ -63,6 +70,8 @@ namespace DTech.Parley.Editor.Agents.Local
 			SessionId = string.IsNullOrEmpty(sessionId) ? Guid.NewGuid().ToString("N") : sessionId;
 			Mode = mode == PermissionMode.Auto ? PermissionMode.Default : mode;
 			_clientFactory = clientFactory ?? ((url, key) => new OpenAiCompatClient(url, key));
+			_roundCatalog = catalog;
+			_hub.OnChanged += HubChangedHandler;
 			string root = ProjectPaths.Root;
 			_gate = new PermissionGate(root, () => ParleyProjectSettings.instance.AdditionalDirectories, () => ParleyUserSettings.instance.RulesFor(root));
 			_context = new ToolContext
@@ -90,6 +99,8 @@ namespace DTech.Parley.Editor.Agents.Local
 		{
 			_turn?.Cancel();
 			CancelWaiting();
+			_hub.OnChanged -= HubChangedHandler;
+			_hub.Dispose();
 		}
 
 		public async Task StartAsync(CancellationToken token)
@@ -190,6 +201,17 @@ namespace DTech.Parley.Editor.Agents.Local
 		{
 		}
 
+		public void SetMcpConfiguration(McpConfiguration configuration)
+		{
+			_hub.Apply(configuration);
+		}
+
+		public void RefreshMcpStatus()
+		{
+			_hub.ReconnectFailed();
+			_sink.McpStatusChanged(_hub.Statuses());
+		}
+
 		private async Task RunAsync(bool compact)
 		{
 			_running = true;
@@ -206,6 +228,7 @@ namespace DTech.Parley.Editor.Agents.Local
 				}
 				else
 				{
+					await WaitForMcpAsync(cancellationToken);
 					await LoopAsync(result, cancellationToken);
 				}
 			}
@@ -340,9 +363,10 @@ namespace DTech.Parley.Editor.Agents.Local
 		{
 			int window = Mathf.Max(2048, _profile.ContextWindow);
 			int maxTokens = Mathf.Clamp(_profile.MaxTokens, 256, window / 2);
-			SystemPromptRequest promptRequest = new SystemPromptRequest(Mode, _catalog, _profile.TextToolCalls, ParleyProjectSettings.instance, Application.unityVersion);
+			_roundCatalog = BuildRoundCatalog();
+			SystemPromptRequest promptRequest = new SystemPromptRequest(Mode, _roundCatalog, _profile.TextToolCalls, ParleyProjectSettings.instance, Application.unityVersion);
 			string system = SystemPromptBuilder.Build(promptRequest);
-			JArray tools = includeTools && !_profile.TextToolCalls && _catalog.Tools.Count > 0 ? SystemPromptBuilder.FunctionTools(_catalog) : null;
+			JArray tools = includeTools && !_profile.TextToolCalls && _roundCatalog.Tools.Count > 0 ? SystemPromptBuilder.FunctionTools(_roundCatalog) : null;
 			int fixedChars = system.Length + (tools == null ? 0 : tools.ToString(Formatting.None).Length);
 			int budget = window - maxTokens - _budget.Tokens(fixedChars) - 256;
 			List<JObject> messages = _budget.Fit(_history, Mathf.Max(1024, (int)(budget * 0.9)), out int estimate);
@@ -424,7 +448,7 @@ namespace DTech.Parley.Editor.Agents.Local
 
 		private async Task<ToolResult> ExecuteCallAsync(AccumulatedToolCall call, CancellationToken cancellationToken)
 		{
-			if (!_catalog.TryGet(call.Name, out IParleyTool tool))
+			if (!_roundCatalog.TryGet(call.Name, out IParleyTool tool))
 			{
 				return ToolResult.Error("Unknown tool '" + call.Name + "'. Available tools: " + string.Join(", ", ToolNames()));
 			}
@@ -568,10 +592,42 @@ namespace DTech.Parley.Editor.Agents.Local
 
 		private IEnumerable<string> ToolNames()
 		{
-			foreach (IParleyTool tool in _catalog.Tools)
+			foreach (IParleyTool tool in _roundCatalog.Tools)
 			{
 				yield return tool.Name;
 			}
+		}
+
+		private async Task WaitForMcpAsync(CancellationToken cancellationToken)
+		{
+			if (!_hub.IsConnecting())
+			{
+				return;
+			}
+
+			_sink.Notice(NoticeLevel.Info, "Waiting for MCP servers to start…");
+			if (!await _hub.WhenReadyAsync(McpWaitMs, cancellationToken))
+			{
+				_sink.Notice(NoticeLevel.Warning, "Some MCP servers are still starting; continuing without their tools for now.");
+			}
+		}
+
+		private ToolCatalog BuildRoundCatalog()
+		{
+			_roundTools.Clear();
+			_hub.CollectTools(_roundTools);
+			if (_roundTools.Count == 0)
+			{
+				return _catalog;
+			}
+
+			_roundTools.InsertRange(0, _catalog.Tools);
+			return new ToolCatalog(_roundTools);
+		}
+
+		private void HubChangedHandler()
+		{
+			_sink.McpStatusChanged(_hub.Statuses());
 		}
 	}
 }

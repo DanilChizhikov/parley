@@ -6,6 +6,8 @@ using System.Threading.Tasks;
 using DTech.Parley.Editor.Agents.Claude;
 using DTech.Parley.Editor.Agents.Codex;
 using DTech.Parley.Editor.Agents.Local;
+using DTech.Parley.Editor.Mcp;
+using DTech.Parley.Editor.Secrets;
 using DTech.Parley.Editor.Settings;
 using DTech.Parley.Editor.Tools;
 using Newtonsoft.Json.Linq;
@@ -33,6 +35,7 @@ namespace DTech.Parley.Editor.Sessions
 		private readonly List<TranscriptBlock> _flushedBlocks = new ();
 		private readonly List<TodoItem> _todos = new ();
 		private readonly Dictionary<string, BackgroundTaskInfo> _tasks = new ();
+		private readonly List<McpServerStatus> _mcpStatuses = new ();
 		private readonly CancellationTokenSource _lifetime = new ();
 
 		public ParleyProfile Profile { get; }
@@ -69,11 +72,14 @@ namespace DTech.Parley.Editor.Sessions
 
 		public IReadOnlyCollection<PendingRequest> OpenRequests => _requests.Values;
 
+		public IReadOnlyList<McpServerStatus> McpStatuses => _mcpStatuses;
+
 		private TranscriptEntry _currentAssistant;
 		private bool _sending;
 		private bool _disposed;
 		private bool _deltaFlushScheduled;
 		private double _lastDeltaFlush;
+		private string _appliedMcpFingerprint;
 
 		public ChatSession(ParleyProfile profile, SessionRecord record)
 		{
@@ -99,6 +105,8 @@ namespace DTech.Parley.Editor.Sessions
 			};
 
 			Record.Mode = Backend.Mode;
+			InitializeMcp();
+			ApplyMcp();
 		}
 
 		public void Dispose()
@@ -206,6 +214,79 @@ namespace DTech.Parley.Editor.Sessions
 			Backend.StopTask(taskId);
 		}
 
+		public bool IsMcpServerEnabled(string definitionId)
+		{
+			return Record.EnabledMcpServerIds.Contains(definitionId);
+		}
+
+		public bool IsExternalMcpServerEnabled(string name)
+		{
+			return !Record.DisabledExternalMcpServers.Contains(name);
+		}
+
+		public void SetMcpServerEnabled(string definitionId, bool enabled)
+		{
+			if (enabled == IsMcpServerEnabled(definitionId))
+			{
+				return;
+			}
+
+			if (enabled)
+			{
+				Record.EnabledMcpServerIds.Add(definitionId);
+			}
+			else
+			{
+				Record.EnabledMcpServerIds.Remove(definitionId);
+			}
+
+			ApplyMcp();
+			Save();
+		}
+
+		public void SetExternalMcpServerEnabled(string name, bool enabled)
+		{
+			if (enabled == IsExternalMcpServerEnabled(name))
+			{
+				return;
+			}
+
+			if (enabled)
+			{
+				Record.DisabledExternalMcpServers.Remove(name);
+			}
+			else
+			{
+				Record.DisabledExternalMcpServers.Add(name);
+			}
+
+			ApplyMcp();
+			Save();
+		}
+
+		public void ReapplyMcp()
+		{
+			ApplyMcp();
+		}
+
+		public void RefreshMcpStatus()
+		{
+			Backend.RefreshMcpStatus();
+		}
+
+		public McpServerStatus FindMcpStatus(string name, bool external)
+		{
+			foreach (McpServerStatus status in _mcpStatuses)
+			{
+				if (status.IsExternal == external && status.Name == name)
+				{
+					return status;
+				}
+			}
+
+			return null;
+		}
+
 		public void ClearAuthMessage()
 		{
 			AuthMessage = null;
@@ -254,6 +335,62 @@ namespace DTech.Parley.Editor.Sessions
 			{
 				ParleyUserSettings.instance.LastSessionId = Record.Id;
 			}
+		}
+
+		private void InitializeMcp()
+		{
+			Record.DisabledExternalMcpServers ??= new List<string>();
+			if (Record.EnabledMcpServerIds != null)
+			{
+				return;
+			}
+
+			Record.EnabledMcpServerIds = new List<string>();
+			foreach (McpServerDefinition definition in ParleyUserSettings.instance.McpServers)
+			{
+				if (definition.EnabledByDefault)
+				{
+					Record.EnabledMcpServerIds.Add(definition.Id);
+				}
+			}
+		}
+
+		private void ApplyMcp()
+		{
+			McpConfiguration configuration = BuildMcpConfiguration();
+			string fingerprint = McpServerResolver.Fingerprint(configuration);
+			if (fingerprint != _appliedMcpFingerprint)
+			{
+				_appliedMcpFingerprint = fingerprint;
+				Backend.SetMcpConfiguration(configuration);
+			}
+
+			RaiseState();
+		}
+
+		private McpConfiguration BuildMcpConfiguration()
+		{
+			McpConfiguration configuration = new McpConfiguration();
+			ParleyUserSettings settings = ParleyUserSettings.instance;
+			ISecretStore store = SecretStores.Default;
+			Record.EnabledMcpServerIds.RemoveAll(id => settings.FindMcpServer(id) == null);
+			foreach (string id in Record.EnabledMcpServerIds)
+			{
+				configuration.Servers.Add(McpServerResolver.Resolve(settings.FindMcpServer(id), store));
+			}
+
+			if (Profile.Kind != ProfileKind.Local)
+			{
+				foreach (string name in Record.DisabledExternalMcpServers)
+				{
+					if (!configuration.HasServer(name))
+					{
+						configuration.DisabledExternal.Add(name);
+					}
+				}
+			}
+
+			return configuration;
 		}
 
 		private void ReportStartFailure(Exception exception)
@@ -702,6 +839,24 @@ namespace DTech.Parley.Editor.Sessions
 		{
 			ContextUsed = usedTokens;
 			ContextMax = maxTokens;
+			RaiseState();
+		}
+
+		void IAgentSink.McpStatusChanged(IReadOnlyList<McpServerStatus> servers)
+		{
+			_mcpStatuses.Clear();
+			_mcpStatuses.AddRange(servers);
+			if (Profile.Kind != ProfileKind.Local)
+			{
+				foreach (string name in Record.DisabledExternalMcpServers)
+				{
+					if (FindMcpStatus(name, true) == null)
+					{
+						_mcpStatuses.Add(new McpServerStatus { Name = name, State = McpConnectionState.Disabled, IsExternal = true });
+					}
+				}
+			}
+
 			RaiseState();
 		}
 

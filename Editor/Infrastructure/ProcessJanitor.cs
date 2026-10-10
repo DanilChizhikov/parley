@@ -12,6 +12,8 @@ namespace DTech.Parley.Editor
 		private const char EntrySeparator = ',';
 		private const char NameSeparator = ':';
 
+		private static readonly HashSet<string> TrackedThisDomain = new (StringComparer.Ordinal);
+
 		static ProcessJanitor()
 		{
 			EditorApplication.delayCall += KillOrphans;
@@ -27,6 +29,7 @@ namespace DTech.Parley.Editor
 
 			List<string> entries = Load();
 			string entry = processId.ToString() + NameSeparator + name;
+			TrackedThisDomain.Add(entry);
 			if (!entries.Contains(entry))
 			{
 				entries.Add(entry);
@@ -46,8 +49,15 @@ namespace DTech.Parley.Editor
 
 		private static void KillOrphans()
 		{
+			List<string> alive = new ();
 			foreach (string entry in Load())
 			{
+				if (TrackedThisDomain.Contains(entry))
+				{
+					alive.Add(entry);
+					continue;
+				}
+
 				int separator = entry.IndexOf(NameSeparator);
 				if (separator > 0 && int.TryParse(entry.Substring(0, separator), out int processId))
 				{
@@ -55,7 +65,7 @@ namespace DTech.Parley.Editor
 				}
 			}
 
-			Store(new List<string>());
+			Store(alive);
 		}
 
 		private static void KillOrphan(int processId, string processName)

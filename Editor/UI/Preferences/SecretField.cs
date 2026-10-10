@@ -36,23 +36,37 @@ namespace DTech.Parley.Editor.UI
             RefreshStatus();
         }
 
-        private void Save()
+        public bool CommitPending(out string error)
         {
+            error = null;
             string value = _field.value?.Trim();
             if (string.IsNullOrEmpty(value))
+            {
+                return true;
+            }
+
+            if (!SecretStores.Default.Set(_key, value, out error))
+            {
+                return false;
+            }
+
+            _field.value = string.Empty;
+            RefreshStatus();
+            return true;
+        }
+
+        private void Save()
+        {
+            if (string.IsNullOrEmpty(_field.value?.Trim()))
             {
                 _status.text = "Enter a value first.";
                 return;
             }
 
-            if (!SecretStores.Default.Set(_key, value, out string error))
+            if (!CommitPending(out string error))
             {
                 _status.text = "Could not save: " + error;
-                return;
             }
-
-            _field.value = string.Empty;
-            RefreshStatus();
         }
 
         private void Clear()

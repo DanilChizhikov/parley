@@ -1,4 +1,6 @@
+using System.Collections.Generic;
 using System.Text;
+using DTech.Parley.Editor.Mcp;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
@@ -175,6 +177,112 @@ namespace DTech.Parley.Editor.Agents.Claude
 			};
 		}
 
+		public static JObject McpServers(McpConfiguration configuration, JObject passthrough, bool includeUnity)
+		{
+			JObject servers = passthrough == null ? new JObject() : (JObject)passthrough.DeepClone();
+			if (includeUnity)
+			{
+				servers[SdkMcpBridge.ServerName] = new JObject { ["type"] = "sdk", ["name"] = SdkMcpBridge.ServerName };
+			}
+
+			foreach (McpServerLaunch server in configuration.Servers)
+			{
+				servers[server.Name] = server.Transport == McpTransport.Stdio
+					? new JObject
+					{
+						["type"] = "stdio",
+						["command"] = server.Command,
+						["args"] = new JArray(server.Arguments.ToArray()),
+						["env"] = JObject.FromObject(server.Environment),
+					}
+					: new JObject
+					{
+						["type"] = "http",
+						["url"] = server.Url,
+						["headers"] = JObject.FromObject(server.Headers),
+					};
+			}
+
+			return servers;
+		}
+
+		public static string McpServersFingerprint(McpConfiguration configuration)
+		{
+			return McpServers(configuration, null, false).ToString(Formatting.None);
+		}
+
+		public static JObject PassthroughMcpServers(JObject status)
+		{
+			JObject servers = new JObject();
+			if (!(status?["mcpServers"] is JArray entries))
+			{
+				return servers;
+			}
+
+			foreach (JToken entry in entries)
+			{
+				string name = (string)entry["name"];
+				if (string.IsNullOrEmpty(name) || (string)entry["scope"] != "dynamic" || (string)entry["source"] == "sdk" || !(entry["config"] is JObject config))
+				{
+					continue;
+				}
+
+				JObject copy = (JObject)config.DeepClone();
+				copy.Remove("scope");
+				servers[name] = copy;
+			}
+
+			return servers;
+		}
+
+		public static string McpDenyRules(IEnumerable<string> serverNames)
+		{
+			List<string> rules = new ();
+			foreach (string name in serverNames)
+			{
+				rules.Add(McpServerResolver.ToolNamePrefix + McpServerResolver.Normalize(name));
+			}
+
+			return string.Join(",", rules);
+		}
+
+		public static List<McpServerStatus> ParseMcpStatus(JObject response, McpConfiguration configuration)
+		{
+			List<McpServerStatus> statuses = new ();
+			if (!(response?["mcpServers"] is JArray servers))
+			{
+				return statuses;
+			}
+
+			foreach (JToken server in servers)
+			{
+				string name = (string)server["name"];
+				if (string.IsNullOrEmpty(name) || (string)server["source"] == "sdk")
+				{
+					continue;
+				}
+
+				bool external = (string)server["scope"] != "dynamic" || !configuration.HasServer(name);
+				McpServerStatus status = new McpServerStatus
+				{
+					Name = name,
+					IsExternal = external,
+					State = McpState((string)server["status"]),
+					Error = (string)server["error"],
+					ToolCount = server["tools"] is JArray tools ? tools.Count : -1,
+				};
+
+				if (external && configuration.DisabledExternal.Contains(name))
+				{
+					status.State = McpConnectionState.Disabled;
+				}
+
+				statuses.Add(status);
+			}
+
+			return statuses;
+		}
+
 		public static string ToolResultText(JToken content)
 		{
 			if (content == null || content.Type == JTokenType.Null)
@@ -212,6 +320,18 @@ namespace DTech.Parley.Editor.Agents.Claude
 			}
 
 			return content.ToString(Formatting.Indented);
+		}
+
+		private static McpConnectionState McpState(string status)
+		{
+			return status switch
+			{
+				"connected" => McpConnectionState.Connected,
+				"failed" => McpConnectionState.Failed,
+				"needs-auth" => McpConnectionState.NeedsAuth,
+				"disabled" => McpConnectionState.Disabled,
+				_ => McpConnectionState.Pending,
+			};
 		}
 	}
 }

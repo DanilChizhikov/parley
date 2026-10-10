@@ -22,6 +22,7 @@ namespace DTech.Parley.Editor.Agents.Codex
         private const int RequestTimeoutMs = 30000;
         private const int GracefulExitMs = 3000;
         private const int MaxModelPages = 10;
+        private const int MaxStatusPages = 10;
         private const double ForceStopDelaySeconds = 3.0;
         private const string ClientVersion = "0.1.0";
         private const string ClearCommand = "/clear";
@@ -47,6 +48,8 @@ namespace DTech.Parley.Editor.Agents.Codex
 
         public PermissionMode Mode { get; private set; }
 
+        public bool HasPendingRestart => _restartPending;
+
         private ChildProcess _process;
         private Task _starting;
         private PendingRequest _planRequest;
@@ -60,7 +63,10 @@ namespace DTech.Parley.Editor.Agents.Codex
         private long _requestCounter;
         private double _interruptRequestedAt;
         private bool _interruptRequested;
+        private bool _restartPending;
+        private bool _mcpStatusUnavailable;
         private bool _disposed;
+        private McpConfiguration _mcp = new ();
 
         public CodexBackend(
             ParleyProfile profile,
@@ -92,7 +98,7 @@ namespace DTech.Parley.Editor.Agents.Codex
 
             _disposed = true;
             _lifetime.Cancel();
-            StopProcess();
+            _ = StopProcess();
         }
 
         public async Task StartAsync(CancellationToken token)
@@ -121,6 +127,12 @@ namespace DTech.Parley.Editor.Agents.Codex
 
         public async Task SendAsync(UserTurn turn, CancellationToken token)
         {
+            if (_restartPending && !IsBusy && _process != null)
+            {
+                _restartPending = false;
+                await StopProcess();
+            }
+
             if (!IsRunning)
             {
                 await StartAsync(token);
@@ -223,6 +235,20 @@ namespace DTech.Parley.Editor.Agents.Codex
         {
         }
 
+        public void SetMcpConfiguration(McpConfiguration configuration)
+        {
+            _mcp = configuration;
+            if (_process != null && _process.IsRunning)
+            {
+                _restartPending = true;
+            }
+        }
+
+        public void RefreshMcpStatus()
+        {
+            _ = RefreshMcpStatusAsync();
+        }
+
         private static string DescribeAccount(JObject account)
         {
             switch ((string)account?["type"])
@@ -313,13 +339,14 @@ namespace DTech.Parley.Editor.Agents.Codex
             }
 
             ProcessJanitor.Track(_process.ProcessId, _process.ProcessName);
+            _restartPending = false;
             try
             {
                 await InitializeAsync(apiKey);
             }
             catch (Exception)
             {
-                StopProcess();
+                _ = StopProcess();
                 throw;
             }
         }
@@ -483,6 +510,12 @@ namespace DTech.Parley.Editor.Agents.Codex
                 parameters["model"] = _model;
             }
 
+            JObject mcp = CodexMcp.Config(_mcp);
+            if (mcp != null)
+            {
+                parameters["config"] = mcp;
+            }
+
             if (resume)
             {
                 parameters["threadId"] = _resumeThreadId;
@@ -516,6 +549,8 @@ namespace DTech.Parley.Editor.Agents.Codex
                 Mode = Mode,
                 Cwd = (string)response["cwd"] ?? ProjectPaths.Root,
             });
+
+            _ = RefreshMcpStatusAsync();
         }
 
         private void WarnIfModelUnavailable()
@@ -692,7 +727,7 @@ namespace DTech.Parley.Editor.Agents.Codex
 
         private void ForceStop()
         {
-            StopProcess();
+            _ = StopProcess();
             _sink.Notice(NoticeLevel.Warning, "Codex did not stop, so Parley restarted it. The conversation continues with your next message.");
             _mapper.Handle("turn/completed", new JObject { ["turn"] = new JObject { ["status"] = "interrupted" } });
         }
@@ -702,19 +737,19 @@ namespace DTech.Parley.Editor.Agents.Codex
             return SecretStores.Default.TryGet(SecretStores.Key(_profile.Id, field), out string secret) ? secret : null;
         }
 
-        private void StopProcess()
+        private Task StopProcess()
         {
             ChildProcess process = _process;
             if (process == null)
             {
-                return;
+                return Task.CompletedTask;
             }
 
             Detach(process);
             process.CloseInput();
             int processId = process.ProcessId;
             string credentialsPath = CodexEnvironment.ManagedCredentialsPath(_profile);
-            Task.Run(() => FinishProcess(process, processId, credentialsPath));
+            return Task.Run(() => FinishProcess(process, processId, credentialsPath));
         }
 
         private void Detach(ChildProcess process)
@@ -784,6 +819,38 @@ namespace DTech.Parley.Editor.Agents.Codex
             }
 
             return await completion.Task;
+        }
+
+        private async Task RefreshMcpStatusAsync()
+        {
+            if (!IsRunning || _mcpStatusUnavailable)
+            {
+                return;
+            }
+
+            List<McpServerStatus> statuses = new ();
+            string cursor = null;
+            try
+            {
+                for (int page = 0; page < MaxStatusPages; page++)
+                {
+                    JToken response = await SendRequestAsync(CodexMcp.StatusListMethod, CodexMcp.StatusParameters(_threadId, cursor), RequestTimeoutMs);
+                    CodexMcp.ParseStatus(response, _mcp, statuses);
+                    cursor = (string)response["nextCursor"];
+                    if (string.IsNullOrEmpty(cursor))
+                    {
+                        break;
+                    }
+                }
+            }
+            catch (Exception exception)
+            {
+                _mcpStatusUnavailable = IsRunning;
+                Debug.LogWarning("[Parley] Could not read Codex MCP status: " + exception.Message);
+                return;
+            }
+
+            _sink.McpStatusChanged(statuses);
         }
 
         private void MarkBusy()
@@ -893,6 +960,14 @@ namespace DTech.Parley.Editor.Agents.Codex
                     }
 
                     break;
+                case CodexMcp.StartupStatusNotification:
+                    string startup = (string)parameters["status"];
+                    if (!child && startup != "starting")
+                    {
+                        _ = RefreshMcpStatusAsync();
+                    }
+
+                    break;
                 case "serverRequest/resolved":
                     string requestId = CodexWire.RequestKey(parameters["requestId"]);
                     if (requestId != null && _openRequests.Remove(requestId))
@@ -919,6 +994,7 @@ namespace DTech.Parley.Editor.Agents.Codex
                 _interruptRequested = false;
                 ReleaseBusy();
                 RaisePlanApproval(parameters["turn"] as JObject);
+                _ = RefreshMcpStatusAsync();
             }
         }
 

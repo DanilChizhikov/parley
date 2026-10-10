@@ -45,6 +45,8 @@ namespace DTech.Parley.Editor.Agents.Claude
 
 		public PermissionMode Mode { get; private set; }
 
+		public bool HasPendingRestart => _restartPending;
+
 		private ChildProcess _process;
 		private Task _starting;
 		private string _resumeSessionId;
@@ -53,6 +55,10 @@ namespace DTech.Parley.Editor.Agents.Claude
 		private bool _restartPending;
 		private bool _recovering;
 		private UserTurn _lastTurn;
+		private McpConfiguration _mcp = new ();
+		private JObject _passthroughMcpServers = new ();
+		private bool _mcpStatusUnavailable;
+		private bool _mcpReady;
 		private bool _disposed;
 		private bool _contextUsageUnavailable;
 		private int _requestCounter;
@@ -233,6 +239,32 @@ namespace DTech.Parley.Editor.Agents.Claude
 			}
 		}
 
+		public void SetMcpConfiguration(McpConfiguration configuration)
+		{
+			bool externalChanged = !_mcp.DisabledExternal.SetEquals(configuration.DisabledExternal);
+			bool serversChanged = ClaudeWire.McpServersFingerprint(_mcp) != ClaudeWire.McpServersFingerprint(configuration);
+			_mcp = configuration;
+			if (!IsRunning)
+			{
+				return;
+			}
+
+			if (externalChanged)
+			{
+				_restartPending = true;
+			}
+
+			if (_mcpReady)
+			{
+				_ = serversChanged ? ApplyMcpServersAsync() : RefreshMcpStatusAsync();
+			}
+		}
+
+		public void RefreshMcpStatus()
+		{
+			_ = RefreshMcpStatusAsync();
+		}
+
 		private static string WriteRunFile(string name, JObject content)
 		{
 			string path = Path.Combine(ProjectPaths.RunFolder, name);
@@ -368,6 +400,19 @@ namespace DTech.Parley.Editor.Agents.Claude
 			catch (TimeoutException)
 			{
 				_sink.Notice(NoticeLevel.Warning, "Claude Code did not answer the initialize request; continuing without model and command lists.");
+				return;
+			}
+
+			JObject status = await ReadMcpStatusAsync();
+			_passthroughMcpServers = ClaudeWire.PassthroughMcpServers(status);
+			_mcpReady = true;
+			if (_mcp.Servers.Count > 0)
+			{
+				await ApplyMcpServersAsync();
+			}
+			else if (status != null)
+			{
+				_sink.McpStatusChanged(ClaudeWire.ParseMcpStatus(status, _mcp));
 			}
 		}
 
@@ -417,6 +462,12 @@ namespace DTech.Parley.Editor.Agents.Claude
 					arguments.Add("--allowedTools");
 					arguments.Add(string.Join(",", readOnly));
 				}
+			}
+
+			if (_mcp.DisabledExternal.Count > 0)
+			{
+				arguments.Add("--disallowedTools");
+				arguments.Add(ClaudeWire.McpDenyRules(_mcp.DisabledExternal));
 			}
 
 			if (auth.Settings.Count > 0)
@@ -509,6 +560,7 @@ namespace DTech.Parley.Editor.Agents.Claude
 			process.OnStdoutLine -= StdoutLineHandler;
 			process.OnExited -= ExitedHandler;
 			_process = null;
+			_mcpReady = false;
 			ReleaseBusy();
 			foreach (TaskCompletionSource<JObject> completion in _pendingControl.Values)
 			{
@@ -587,6 +639,61 @@ namespace DTech.Parley.Editor.Agents.Claude
 			catch (Exception)
 			{
 				_contextUsageUnavailable = IsRunning;
+			}
+		}
+
+		private async Task ApplyMcpServersAsync()
+		{
+			try
+			{
+				JObject request = new JObject
+				{
+					["subtype"] = "mcp_set_servers",
+					["servers"] = ClaudeWire.McpServers(_mcp, _passthroughMcpServers, _unityTools.Tools.Count > 0),
+				};
+
+				JObject response = await SendControlAsync(request, InitializeTimeoutMs);
+				if (response["errors"] is JObject errors)
+				{
+					foreach (JProperty error in errors.Properties())
+					{
+						_sink.Notice(NoticeLevel.Warning, "MCP server '" + error.Name + "': " + error.Value);
+					}
+				}
+			}
+			catch (Exception exception)
+			{
+				_sink.Notice(NoticeLevel.Warning, "Could not update MCP servers: " + exception.Message);
+			}
+
+			await RefreshMcpStatusAsync();
+		}
+
+		private async Task RefreshMcpStatusAsync()
+		{
+			JObject response = await ReadMcpStatusAsync();
+			if (response != null)
+			{
+				_sink.McpStatusChanged(ClaudeWire.ParseMcpStatus(response, _mcp));
+			}
+		}
+
+		private async Task<JObject> ReadMcpStatusAsync()
+		{
+			if (!IsRunning || _mcpStatusUnavailable)
+			{
+				return null;
+			}
+
+			try
+			{
+				return await SendControlAsync(new JObject { ["subtype"] = "mcp_status" }, ControlTimeoutMs);
+			}
+			catch (Exception exception)
+			{
+				_mcpStatusUnavailable = IsRunning;
+				Debug.LogWarning("[Parley] Could not read MCP status: " + exception.Message);
+				return null;
 			}
 		}
 
@@ -786,6 +893,7 @@ namespace DTech.Parley.Editor.Agents.Claude
 				{
 					ReleaseBusy();
 					_ = RefreshContextUsageAsync();
+					_ = RefreshMcpStatusAsync();
 				}
 			}
 			catch (Exception exception)

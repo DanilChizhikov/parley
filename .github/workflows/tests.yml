@@ -25,6 +25,16 @@ jobs:
           - empty-unity-project
 
     steps:
+      - name: Free Disk Space (GitHub Actions)
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+
       - name: Checkout repo
         uses: actions/checkout@v4
 

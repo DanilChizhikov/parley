@@ -44,5 +44,11 @@ namespace DTech.Parley.Editor.Sessions
 
 		[JsonProperty("history")]
 		public List<JObject> LocalHistory { get; set; }
+
+		[JsonProperty("mcpEnabled")]
+		public List<string> EnabledMcpServerIds { get; set; }
+
+		[JsonProperty("mcpDisabledExternal")]
+		public List<string> DisabledExternalMcpServers { get; set; }
 	}
 }

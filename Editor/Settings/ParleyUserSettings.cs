@@ -76,6 +76,8 @@ namespace DTech.Parley.Editor
 			set => Set(ref _sidePanelWidth, value);
 		}
 
+		public IReadOnlyList<McpServerDefinition> McpServers => _mcpServers;
+
 		public string LastSessionId
 		{
 			get => _lastSessionId;
@@ -95,6 +97,7 @@ namespace DTech.Parley.Editor
 		[SerializeField] private string _lastSessionId;
 		[SerializeField] private List<AllowRule> _allowRules = new ();
 		[SerializeField] private List<TrustedProjectSettings> _trustedSettings = new ();
+		[SerializeField] private List<McpServerDefinition> _mcpServers = new ();
 
 		private bool _saveQueued;
 
@@ -143,6 +146,61 @@ namespace DTech.Parley.Editor
 			}
 
 			MarkDirty();
+		}
+
+		public McpServerDefinition FindMcpServer(string id)
+		{
+			if (string.IsNullOrEmpty(id))
+			{
+				return null;
+			}
+
+			foreach (McpServerDefinition server in _mcpServers)
+			{
+				if (server.Id == id)
+				{
+					return server;
+				}
+			}
+
+			return null;
+		}
+
+		public bool IsMcpServerNameTaken(string name, string exceptId)
+		{
+			foreach (McpServerDefinition server in _mcpServers)
+			{
+				if (server.Id != exceptId && string.Equals(server.Name, name, StringComparison.OrdinalIgnoreCase))
+				{
+					return true;
+				}
+			}
+
+			return false;
+		}
+
+		public void SaveMcpServer(McpServerDefinition definition)
+		{
+			for (int i = 0; i < _mcpServers.Count; i++)
+			{
+				if (_mcpServers[i].Id == definition.Id)
+				{
+					_mcpServers[i] = definition;
+					MarkDirty();
+					return;
+				}
+			}
+
+			_mcpServers.Add(definition);
+			MarkDirty();
+		}
+
+		public void RemoveMcpServer(McpServerDefinition definition)
+		{
+			if (_mcpServers.Remove(definition))
+			{
+				MarkDirty();
+			}
 		}
 
 		public IEnumerable<AllowRule> RulesFor(string projectRoot)
