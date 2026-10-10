@@ -17,6 +17,7 @@ namespace DTech.Parley.Editor
         void ModeChanged(PermissionMode mode);
         void ContextUsage(long usedTokens, long maxTokens);
         void McpStatusChanged(IReadOnlyList<McpServerStatus> servers);
+        void SkillsChanged(IReadOnlyList<SkillInfo> skills);
         void Notice(NoticeLevel level, string text);
         void TurnCompleted(TurnResult result);
         void AuthRequired(string message);

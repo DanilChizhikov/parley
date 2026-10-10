@@ -22,5 +22,7 @@ namespace DTech.Parley.Editor
 		void StopTask(string taskId);
 		void SetMcpConfiguration(McpConfiguration configuration);
 		void RefreshMcpStatus();
+		void SetSkillConfiguration(SkillConfiguration configuration);
+		void RefreshSkills();
 	}
 }

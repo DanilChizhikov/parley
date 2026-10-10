@@ -36,6 +36,9 @@ namespace DTech.Parley.Editor.Agents.Claude
 		private readonly Dictionary<string, TaskCompletionSource<JObject>> _pendingControl = new ();
 		private readonly Dictionary<string, PendingRequest> _openRequests = new ();
 		private readonly CancellationTokenSource _lifetime = new ();
+		private readonly List<SlashCommandInfo> _commands = new ();
+		private readonly List<SkillInfo> _reportedSkills = new ();
+		private readonly string _runId = Guid.NewGuid().ToString("N").Substring(0, 8);
 
 		public bool IsRunning => _process != null && _process.IsRunning;
 
@@ -58,6 +61,10 @@ namespace DTech.Parley.Editor.Agents.Claude
 		private McpConfiguration _mcp = new ();
 		private JObject _passthroughMcpServers = new ();
 		private bool _mcpStatusUnavailable;
+		private SkillConfiguration _skills = new ();
+		private TaskCompletionSource<bool> _skillTurn;
+		private TaskCompletionSource<bool> _skillGate;
+		private string _settingsPath;
 		private bool _mcpReady;
 		private bool _disposed;
 		private bool _contextUsageUnavailable;
@@ -122,6 +129,7 @@ namespace DTech.Parley.Editor.Agents.Claude
 			_disposed = true;
 			_lifetime.Cancel();
 			StopProcess();
+			DeleteSettingsFile();
 		}
 
 		public async Task StartAsync(CancellationToken token)
@@ -150,29 +158,63 @@ namespace DTech.Parley.Editor.Agents.Claude
 
 		public async Task SendAsync(UserTurn turn, CancellationToken token)
 		{
-			if (_restartPending && IsRunning && !IsBusy)
+			if (_skillGate != null)
 			{
-				_resumeSessionId = SessionId;
-				StopProcess();
-				_restartPending = false;
+				await _skillGate.Task;
 			}
 
-			if (!IsRunning)
+			TaskCompletionSource<bool> gate = null;
+			if (turn.Skills.Count > 0)
 			{
-				await StartAsync(token);
+				gate = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+				_skillGate = gate;
 			}
 
-			if (!Write(ClaudeWire.UserMessage(turn, _mapper.SessionId)))
+			try
 			{
-				throw new InvalidOperationException("Claude Code is not accepting input.");
-			}
+				if (_restartPending && IsRunning && !IsBusy)
+				{
+					_resumeSessionId = SessionId;
+					StopProcess();
+					_restartPending = false;
+				}
 
-			_lastTurn = turn;
-			MarkBusy();
+				if (!IsRunning)
+				{
+					await StartAsync(token);
+				}
+
+				if (gate != null && !await RunSkillTurnsAsync(turn.Skills, token))
+				{
+					_sink.Notice(NoticeLevel.Warning, "Auto skills were interrupted, so your message was not sent.");
+					return;
+				}
+
+				if (!Write(ClaudeWire.UserMessage(turn, _mapper.SessionId)))
+				{
+					throw new InvalidOperationException("Claude Code is not accepting input.");
+				}
+
+				_lastTurn = turn;
+				MarkBusy();
+			}
+			finally
+			{
+				if (gate != null)
+				{
+					if (_skillGate == gate)
+					{
+						_skillGate = null;
+					}
+
+					gate.TrySetResult(true);
+				}
+			}
 		}
 
 		public void Interrupt()
 		{
+			_skillTurn?.TrySetResult(false);
 			foreach (PendingRequest request in new List<PendingRequest>(_openRequests.Values))
 			{
 				Respond(request, Decision.Deny("The user interrupted.", true));
@@ -265,6 +307,21 @@ namespace DTech.Parley.Editor.Agents.Claude
 			_ = RefreshMcpStatusAsync();
 		}
 
+		public void SetSkillConfiguration(SkillConfiguration configuration)
+		{
+			bool changed = configuration.Fingerprint() != _skills.Fingerprint();
+			_skills = configuration;
+			if (changed && IsRunning)
+			{
+				_restartPending = true;
+			}
+		}
+
+		public void RefreshSkills()
+		{
+			_sink.SkillsChanged(_reportedSkills);
+		}
+
 		private static string WriteRunFile(string name, JObject content)
 		{
 			string path = Path.Combine(ProjectPaths.RunFolder, name);
@@ -312,12 +369,26 @@ namespace DTech.Parley.Editor.Agents.Claude
 			{
 				foreach (JToken command in commands)
 				{
-					capabilities.Commands.Add(new SlashCommandInfo
+					SlashCommandInfo info = new SlashCommandInfo
 					{
 						Name = (string)command["name"],
 						Description = (string)command["description"],
 						ArgumentHint = (string)command["argumentHint"],
-					});
+						IsBuiltin = (bool?)command["builtin"] == true,
+					};
+
+					if (command["aliases"] is JArray aliases)
+					{
+						foreach (JToken alias in aliases)
+						{
+							if (alias.Type == JTokenType.String)
+							{
+								info.Aliases.Add((string)alias);
+							}
+						}
+					}
+
+					capabilities.Commands.Add(info);
 				}
 			}
 
@@ -389,7 +460,13 @@ namespace DTech.Parley.Editor.Agents.Claude
 			try
 			{
 				JObject response = await SendControlAsync(new JObject { ["subtype"] = "initialize", ["hooks"] = null }, InitializeTimeoutMs);
-				_sink.CapabilitiesChanged(ParseCapabilities(response, !restricted));
+				BackendCapabilities capabilities = ParseCapabilities(response, !restricted);
+				_sink.CapabilitiesChanged(capabilities);
+				_commands.Clear();
+				_commands.AddRange(capabilities.Commands);
+				_reportedSkills.Clear();
+				_reportedSkills.AddRange(ClaudeWire.ParseSkills(_commands, _skills.LibraryNames));
+				_sink.SkillsChanged(_reportedSkills);
 				string currentMode = (string)response["current_permission_mode"];
 				if (!string.IsNullOrEmpty(currentMode))
 				{
@@ -464,16 +541,35 @@ namespace DTech.Parley.Editor.Agents.Claude
 				}
 			}
 
+			List<string> denyRules = new ();
 			if (_mcp.DisabledExternal.Count > 0)
 			{
-				arguments.Add("--disallowedTools");
-				arguments.Add(ClaudeWire.McpDenyRules(_mcp.DisabledExternal));
+				denyRules.Add(ClaudeWire.McpDenyRules(_mcp.DisabledExternal));
 			}
 
-			if (auth.Settings.Count > 0)
+			if (_skills.Disabled.Count > 0)
+			{
+				denyRules.Add(ClaudeWire.SkillDenyRules(_skills.Disabled));
+			}
+
+			if (denyRules.Count > 0)
+			{
+				arguments.Add("--disallowedTools");
+				arguments.Add(string.Join(",", denyRules));
+			}
+
+			JObject settings = ClaudeWire.LaunchSettings(auth.Settings, _skills.Disabled);
+			if (settings.Count > 0)
 			{
 				arguments.Add("--settings");
-				arguments.Add(WriteRunFile("settings-" + _profile.Id + ".json", auth.Settings));
+				_settingsPath = WriteRunFile("settings-" + _profile.Id + "-" + _runId + ".json", settings);
+				arguments.Add(_settingsPath);
+			}
+
+			if (_skills.HasEnabledLibrarySkill && Directory.Exists(_skills.LibraryRoot))
+			{
+				arguments.Add("--add-dir");
+				arguments.Add(_skills.LibraryRoot);
 			}
 
 			arguments.Add("--append-system-prompt");
@@ -521,6 +617,87 @@ namespace DTech.Parley.Editor.Agents.Claude
 			}
 		}
 
+		private async Task<bool> RunSkillTurnsAsync(List<SkillInvocation> skills, CancellationToken token)
+		{
+			foreach (SkillInvocation skill in skills)
+			{
+				if (!HasCommand(skill.Name))
+				{
+					_sink.Notice(NoticeLevel.Warning, "Skill '" + skill.Name + "' is not available in Claude Code; skipped.");
+					continue;
+				}
+
+				TaskCompletionSource<bool> completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+				_skillTurn = completion;
+				_sink.Notice(NoticeLevel.Info, "Running " + skill.ToCommand() + "…");
+				if (!Write(ClaudeWire.UserMessage(new UserTurn { Text = skill.ToCommand() }, _mapper.SessionId)))
+				{
+					_skillTurn = null;
+					throw new InvalidOperationException("Claude Code is not accepting input.");
+				}
+
+				MarkBusy();
+				bool completed;
+				using (token.Register(() => completion.TrySetCanceled()))
+				{
+					try
+					{
+						completed = await completion.Task;
+					}
+					finally
+					{
+						if (_skillTurn == completion)
+						{
+							_skillTurn = null;
+						}
+					}
+				}
+
+				if (!completed)
+				{
+					return false;
+				}
+			}
+
+			return true;
+		}
+
+		private bool HasCommand(string name)
+		{
+			if (_commands.Count == 0)
+			{
+				return true;
+			}
+
+			foreach (SlashCommandInfo command in _commands)
+			{
+				if (command.Name == name || command.Aliases.Contains(name))
+				{
+					return true;
+				}
+			}
+
+			return false;
+		}
+
+		private void DeleteSettingsFile()
+		{
+			if (_settingsPath == null)
+			{
+				return;
+			}
+
+			try
+			{
+				File.Delete(_settingsPath);
+			}
+			catch (Exception exception) when (exception is IOException || exception is UnauthorizedAccessException)
+			{
+			}
+
+			_settingsPath = null;
+		}
+
 		private void ApplyEnvironment(ProcessStartInfo startInfo, AuthEnvironment auth, string path)
 		{
 			startInfo.Environment["PATH"] = path;
@@ -562,6 +739,7 @@ namespace DTech.Parley.Editor.Agents.Claude
 			_process = null;
 			_mcpReady = false;
 			ReleaseBusy();
+			_skillTurn?.TrySetException(new InvalidOperationException("Claude Code exited."));
 			foreach (TaskCompletionSource<JObject> completion in _pendingControl.Values)
 			{
 				completion.TrySetException(new InvalidOperationException("Claude Code exited."));
@@ -892,6 +1070,7 @@ namespace DTech.Parley.Editor.Agents.Claude
 				if (type == "result")
 				{
 					ReleaseBusy();
+					_skillTurn?.TrySetResult(true);
 					_ = RefreshContextUsageAsync();
 					_ = RefreshMcpStatusAsync();
 				}

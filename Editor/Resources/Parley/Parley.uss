@@ -736,6 +736,7 @@
 
 .pl-side__tabs {
     flex-direction: row;
+    flex-wrap: wrap;
     padding: 4px;
     border-bottom-width: 1px;
     border-bottom-color: var(--pl-border);
@@ -1092,4 +1093,34 @@
 
 .pl-cli__log {
     white-space: normal;
+}
+
+/* Skills */
+
+.pl-root .pl-skills__description {
+    max-height: 28px;
+    overflow: hidden;
+}
+
+.pl-skills__auto-row {
+    align-items: center;
+}
+
+.pl-skills__auto-name {
+    width: 35%;
+    flex-shrink: 1;
+    margin: 0;
+}
+
+.pl-skills__auto-args {
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-width: 40px;
+    margin: 0 4px;
+}
+
+.pl-skills__body > .unity-base-text-field__input {
+    min-height: 120px;
+    white-space: normal;
+    -unity-text-align: upper-left;
 }

@@ -78,6 +78,8 @@ namespace DTech.Parley.Editor
 
 		public IReadOnlyList<McpServerDefinition> McpServers => _mcpServers;
 
+		public IReadOnlyList<AutoSkill> AutoSkills => _autoSkills;
+
 		public string LastSessionId
 		{
 			get => _lastSessionId;
@@ -98,6 +100,8 @@ namespace DTech.Parley.Editor
 		[SerializeField] private List<AllowRule> _allowRules = new ();
 		[SerializeField] private List<TrustedProjectSettings> _trustedSettings = new ();
 		[SerializeField] private List<McpServerDefinition> _mcpServers = new ();
+		[SerializeField] private List<AutoSkill> _autoSkills = new ();
+		[SerializeField] private List<string> _defaultLibrarySkills = new ();
 
 		private bool _saveQueued;
 
@@ -198,6 +202,114 @@ namespace DTech.Parley.Editor
 		public void RemoveMcpServer(McpServerDefinition definition)
 		{
 			if (_mcpServers.Remove(definition))
+			{
+				MarkDirty();
+			}
+		}
+
+		public AutoSkill FindAutoSkill(string name)
+		{
+			foreach (AutoSkill skill in _autoSkills)
+			{
+				if (skill.Name == name)
+				{
+					return skill;
+				}
+			}
+
+			return null;
+		}
+
+		public void SetAutoSkill(string name, string arguments)
+		{
+			if (string.IsNullOrWhiteSpace(name))
+			{
+				return;
+			}
+
+			name = name.Trim().TrimStart('/');
+			arguments = (arguments ?? string.Empty).Trim();
+			AutoSkill existing = FindAutoSkill(name);
+			if (existing == null)
+			{
+				_autoSkills.Add(new AutoSkill { Name = name, Arguments = arguments });
+			}
+			else if (existing.Arguments != arguments)
+			{
+				existing.Arguments = arguments;
+			}
+			else
+			{
+				return;
+			}
+
+			MarkDirty();
+		}
+
+		public void RemoveAutoSkill(string name)
+		{
+			AutoSkill existing = FindAutoSkill(name);
+			if (existing != null && _autoSkills.Remove(existing))
+			{
+				MarkDirty();
+			}
+		}
+
+		public bool IsLibrarySkillDefault(string name)
+		{
+			return _defaultLibrarySkills.Contains(name);
+		}
+
+		public void SetLibrarySkillDefault(string name, bool enabled)
+		{
+			if (enabled == IsLibrarySkillDefault(name))
+			{
+				return;
+			}
+
+			if (enabled)
+			{
+				_defaultLibrarySkills.Add(name);
+			}
+			else
+			{
+				_defaultLibrarySkills.Remove(name);
+			}
+
+			MarkDirty();
+		}
+
+		public void RenameLibrarySkill(string previousName, string name)
+		{
+			if (string.IsNullOrEmpty(previousName) || previousName == name)
+			{
+				return;
+			}
+
+			bool changed = false;
+			int index = _defaultLibrarySkills.IndexOf(previousName);
+			if (index >= 0)
+			{
+				_defaultLibrarySkills[index] = name;
+				changed = true;
+			}
+
+			AutoSkill auto = FindAutoSkill(previousName);
+			if (auto != null)
+			{
+				if (FindAutoSkill(name) == null)
+				{
+					auto.Name = name;
+				}
+				else
+				{
+					_autoSkills.Remove(auto);
+				}
+
+				changed = true;
+			}
+
+			if (changed)
 			{
 				MarkDirty();
 			}

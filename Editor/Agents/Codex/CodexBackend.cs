@@ -38,6 +38,7 @@ namespace DTech.Parley.Editor.Agents.Codex
         private readonly Dictionary<string, CodexServerRequest> _openRequests = new ();
         private readonly Dictionary<string, string> _childTurns = new ();
         private readonly List<JObject> _models = new ();
+        private readonly List<SkillInfo> _skillList = new ();
         private readonly CancellationTokenSource _lifetime = new ();
 
         public bool IsRunning => _process != null && _process.IsRunning && _threadId != null;
@@ -65,8 +66,12 @@ namespace DTech.Parley.Editor.Agents.Codex
         private bool _interruptRequested;
         private bool _restartPending;
         private bool _mcpStatusUnavailable;
+        private bool _skillsUnavailable;
         private bool _disposed;
         private McpConfiguration _mcp = new ();
+        private SkillConfiguration _skills = new ();
+        private BackendCapabilities _capabilities;
+        private Task _skillsLoading;
 
         public CodexBackend(
             ParleyProfile profile,
@@ -154,7 +159,13 @@ namespace DTech.Parley.Editor.Agents.Codex
                 return;
             }
 
-            JArray input = CodexWire.UserInput(turn);
+            if (_skillsLoading != null && (turn.Skills.Count > 0 || text.StartsWith("/", StringComparison.Ordinal)))
+            {
+                await _skillsLoading;
+            }
+
+            List<SkillInfo> invoked = new ();
+            JArray input = CodexWire.UserInput(ResolveSkills(turn, invoked), invoked);
             if (IsBusy && _turnId != null)
             {
                 JObject parameters = new JObject { ["threadId"] = _threadId, ["expectedTurnId"] = _turnId, ["input"] = input };
@@ -249,6 +260,22 @@ namespace DTech.Parley.Editor.Agents.Codex
             _ = RefreshMcpStatusAsync();
         }
 
+        public void SetSkillConfiguration(SkillConfiguration configuration)
+        {
+            bool changed = configuration.Fingerprint() != _skills.Fingerprint();
+            _skills = configuration;
+            if (changed && _process != null && _process.IsRunning)
+            {
+                _restartPending = true;
+            }
+        }
+
+        public void RefreshSkills()
+        {
+            _skillsUnavailable = false;
+            _ = RefreshSkillsAsync();
+        }
+
         private static string DescribeAccount(JObject account)
         {
             switch ((string)account?["type"])
@@ -340,6 +367,7 @@ namespace DTech.Parley.Editor.Agents.Codex
 
             ProcessJanitor.Track(_process.ProcessId, _process.ProcessName);
             _restartPending = false;
+            _skillsUnavailable = false;
             try
             {
                 await InitializeAsync(apiKey);
@@ -363,7 +391,9 @@ namespace DTech.Parley.Editor.Agents.Codex
             Write(CodexWire.Notification("initialized"));
             string account = await EnsureAccountAsync(apiKey);
             await LoadModelsAsync();
-            _sink.CapabilitiesChanged(BuildCapabilities(account));
+            _capabilities = BuildCapabilities(account);
+            _sink.CapabilitiesChanged(_capabilities);
+            await SetSkillRootsAsync();
             await OpenThreadAsync();
         }
 
@@ -435,8 +465,8 @@ namespace DTech.Parley.Editor.Agents.Codex
         {
             BackendCapabilities capabilities = new BackendCapabilities { Account = account };
             capabilities.Modes.AddRange(CodexPermissions.Supported);
-            capabilities.Commands.Add(new SlashCommandInfo { Name = "compact", Description = "Summarize the conversation to free context" });
-            capabilities.Commands.Add(new SlashCommandInfo { Name = "clear", Description = "Start a new Codex thread" });
+            capabilities.Commands.Add(new SlashCommandInfo { Name = "compact", Description = "Summarize the conversation to free context", IsBuiltin = true });
+            capabilities.Commands.Add(new SlashCommandInfo { Name = "clear", Description = "Start a new Codex thread", IsBuiltin = true });
             foreach (JObject model in _models)
             {
                 capabilities.Models.Add(new ModelOption
@@ -510,10 +540,11 @@ namespace DTech.Parley.Editor.Agents.Codex
                 parameters["model"] = _model;
             }
 
-            JObject mcp = CodexMcp.Config(_mcp);
-            if (mcp != null)
+            JObject config = CodexMcp.Config(_mcp) ?? new JObject();
+            CodexSkills.AddConfig(config, _skills);
+            if (config.Count > 0)
             {
-                parameters["config"] = mcp;
+                parameters["config"] = config;
             }
 
             if (resume)
@@ -551,6 +582,7 @@ namespace DTech.Parley.Editor.Agents.Codex
             });
 
             _ = RefreshMcpStatusAsync();
+            _skillsLoading = RefreshSkillsAsync();
         }
 
         private void WarnIfModelUnavailable()
@@ -853,6 +885,134 @@ namespace DTech.Parley.Editor.Agents.Codex
             _sink.McpStatusChanged(statuses);
         }
 
+        private async Task SetSkillRootsAsync()
+        {
+            if (!_skills.HasEnabledLibrarySkill)
+            {
+                return;
+            }
+
+            try
+            {
+                await SendRequestAsync(CodexSkills.ExtraRootsMethod, CodexSkills.ExtraRootsParameters(_skills), RequestTimeoutMs);
+            }
+            catch (Exception exception) when (!(exception is OperationCanceledException))
+            {
+                _sink.Notice(NoticeLevel.Warning, "Codex could not load the Parley skill library: " + exception.Message);
+            }
+        }
+
+        private async Task RefreshSkillsAsync()
+        {
+            if (!IsRunning || _skillsUnavailable)
+            {
+                return;
+            }
+
+            JToken response;
+            try
+            {
+                response = await SendRequestAsync(CodexSkills.ListMethod, CodexSkills.ListParameters(), RequestTimeoutMs);
+            }
+            catch (Exception exception)
+            {
+                _skillsUnavailable = IsRunning;
+                Debug.LogWarning("[Parley] Could not list Codex skills: " + exception.Message);
+                return;
+            }
+
+            _skillList.Clear();
+            _skillList.AddRange(CodexSkills.Parse(response, _skills));
+            _sink.SkillsChanged(_skillList);
+            UpdateSkillCommands();
+        }
+
+        private void UpdateSkillCommands()
+        {
+            if (_capabilities == null)
+            {
+                return;
+            }
+
+            _capabilities.Commands.RemoveAll(command => !command.IsBuiltin);
+            foreach (SkillInfo skill in _skillList)
+            {
+                if (_skills.IsEnabled(skill.Name))
+                {
+                    _capabilities.Commands.Add(new SlashCommandInfo { Name = skill.Name, Description = skill.Description });
+                }
+            }
+
+            _sink.CapabilitiesChanged(_capabilities);
+        }
+
+        private UserTurn ResolveSkills(UserTurn turn, List<SkillInfo> invoked)
+        {
+            StringBuilder prefix = new StringBuilder();
+            foreach (SkillInvocation skill in turn.Skills)
+            {
+                SkillInfo info = FindSkill(skill.Name);
+                if (info == null)
+                {
+                    _sink.Notice(NoticeLevel.Warning, "Skill '" + skill.Name + "' is not available in Codex; skipped.");
+                    continue;
+                }
+
+                invoked.Add(info);
+                prefix.Append('$').Append(skill.ToCommand().Substring(1)).Append('\n');
+            }
+
+            string text = turn.Text ?? string.Empty;
+            SkillInfo typed = MatchTypedSkill(text);
+            if (typed != null)
+            {
+                invoked.Add(typed);
+                text = "$" + text.TrimStart().Substring(1);
+            }
+
+            if (invoked.Count == 0)
+            {
+                return turn;
+            }
+
+            return new UserTurn { Text = (prefix + text).TrimEnd(), Attachments = turn.Attachments };
+        }
+
+        private SkillInfo MatchTypedSkill(string text)
+        {
+            string trimmed = text.TrimStart();
+            if (trimmed.Length < 2 || trimmed[0] != '/')
+            {
+                return null;
+            }
+
+            int end = 1;
+            while (end < trimmed.Length && !char.IsWhiteSpace(trimmed[end]))
+            {
+                end++;
+            }
+
+            return FindSkill(trimmed.Substring(1, end - 1));
+        }
+
+        private SkillInfo FindSkill(string name)
+        {
+            if (!_skills.IsEnabled(name))
+            {
+                return null;
+            }
+
+            foreach (SkillInfo skill in _skillList)
+            {
+                if (skill.Name == name)
+                {
+                    return skill;
+                }
+            }
+
+            return null;
+        }
+
         private void MarkBusy()
         {
             if (IsBusy)
@@ -959,6 +1119,9 @@ namespace DTech.Parley.Editor.Agents.Codex
                         return;
                     }
 
+                    break;
+                case CodexSkills.ChangedNotification:
+                    _ = RefreshSkillsAsync();
                     break;
                 case CodexMcp.StartupStatusNotification:
                     string startup = (string)parameters["status"];

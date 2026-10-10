@@ -50,6 +50,7 @@ namespace DTech.Parley.Editor.UI
         private ToolbarButton _modeButton;
         private ToolbarButton _effortButton;
         private ToolbarButton _mcpButton;
+        private ToolbarButton _skillsButton;
         private ToolbarToggle _sideToggle;
         private bool _stateDirty = true;
 
@@ -139,11 +140,13 @@ namespace DTech.Parley.Editor.UI
             _modeButton = new ToolbarButton(ShowModeMenu) { tooltip = "Permission mode" };
             _effortButton = new ToolbarButton(ShowEffortMenu) { tooltip = "Reasoning effort" };
             _mcpButton = new ToolbarButton(ShowMcpPanel) { tooltip = "MCP servers in this chat" };
+            _skillsButton = new ToolbarButton(ShowSkillsPanel) { tooltip = "Skills in this chat" };
             toolbar.Add(_profileButton);
             toolbar.Add(_modelButton);
             toolbar.Add(_modeButton);
             toolbar.Add(_effortButton);
             toolbar.Add(_mcpButton);
+            toolbar.Add(_skillsButton);
             toolbar.Add(new ToolbarSpacer { flex = true });
             toolbar.Add(new ToolbarButton(NewChat) { text = "New", tooltip = "Start a new chat" });
             toolbar.Add(new ToolbarButton(ShowHistoryMenu) { text = "History ▾", tooltip = "Resume or delete earlier chats" });
@@ -235,6 +238,8 @@ namespace DTech.Parley.Editor.UI
             ParleyStyles.SetVisible(_effortButton, profile.Kind != ProfileKind.Local);
             int mcpCount = McpPanel.EnabledCount(session);
             _mcpButton.text = mcpCount > 0 ? "MCP " + mcpCount : "MCP";
+            int skillCount = SkillsPanel.EnabledCount(session);
+            _skillsButton.text = skillCount > 0 ? "Skills " + skillCount : "Skills";
             _composer.SetBusy(session.IsBusy);
             _statusBar.Refresh(session);
             _authCard.Refresh();
@@ -355,6 +360,17 @@ namespace DTech.Parley.Editor.UI
 
             _sideToggle.value = true;
             _side.ShowTab(SidePanelTab.Mcp);
+        }
+
+        private void ShowSkillsPanel()
+        {
+            if (_side == null)
+            {
+                return;
+            }
+
+            _sideToggle.value = true;
+            _side.ShowTab(SidePanelTab.Skills);
         }
 
         private void ShowHistoryMenu()

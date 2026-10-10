@@ -246,6 +246,57 @@ namespace DTech.Parley.Editor.Agents.Claude
 			return string.Join(",", rules);
 		}
 
+		public static string SkillDenyRules(IEnumerable<string> skillNames)
+		{
+			List<string> rules = new ();
+			foreach (string name in skillNames)
+			{
+				rules.Add("Skill(" + name + ")");
+			}
+
+			rules.Sort(string.CompareOrdinal);
+			return string.Join(",", rules);
+		}
+
+		public static JObject LaunchSettings(JObject authSettings, IEnumerable<string> disabledSkills)
+		{
+			JObject settings = authSettings == null ? new JObject() : (JObject)authSettings.DeepClone();
+			JObject overrides = new JObject();
+			foreach (string name in disabledSkills)
+			{
+				overrides[name] = "off";
+			}
+
+			if (overrides.Count > 0)
+			{
+				settings["skillOverrides"] = overrides;
+			}
+
+			return settings;
+		}
+
+		public static List<SkillInfo> ParseSkills(IEnumerable<SlashCommandInfo> commands, ICollection<string> libraryNames)
+		{
+			List<SkillInfo> skills = new ();
+			foreach (SlashCommandInfo command in commands)
+			{
+				if (command.IsBuiltin || string.IsNullOrEmpty(command.Name) || command.Name[0] == '_' || command.Name.StartsWith(McpServerResolver.ToolNamePrefix, System.StringComparison.Ordinal))
+				{
+					continue;
+				}
+
+				skills.Add(new SkillInfo
+				{
+					Name = command.Name,
+					Description = command.Description,
+					ArgumentHint = command.ArgumentHint,
+					IsLibrary = libraryNames.Contains(command.Name),
+				});
+			}
+
+			return skills;
+		}
+
 		public static List<McpServerStatus> ParseMcpStatus(JObject response, McpConfiguration configuration)
 		{
 			List<McpServerStatus> statuses = new ();
