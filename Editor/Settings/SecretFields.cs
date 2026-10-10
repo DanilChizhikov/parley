@@ -12,5 +12,10 @@ namespace DTech.Parley.Editor
         public const string FoundryApiKey = "foundryApiKey";
         public const string LocalApiKey = "localApiKey";
         public const string OpenAiApiKey = "openAiApiKey";
+
+        public static readonly string[] All =
+        {
+            ApiKey, AuthToken, OAuthToken, AwsAccessKeyId, AwsSecretAccessKey, AwsSessionToken, BedrockBearerToken, FoundryApiKey, LocalApiKey, OpenAiApiKey,
+        };
     }
 }
