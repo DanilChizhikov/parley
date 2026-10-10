@@ -172,7 +172,7 @@ namespace DTech.Parley.Editor.Agents.Codex
             {
                 foreach (JToken change in changes)
                 {
-                    builder.Append((string)change["kind"]?["type"] ?? "update").Append(' ').AppendLine((string)change["path"]);
+                    builder.Append((string)(change["kind"] as JObject)?["type"] ?? "update").Append(' ').AppendLine((string)change["path"]);
                 }
             }
 
@@ -182,8 +182,8 @@ namespace DTech.Parley.Editor.Agents.Codex
 
         private static string McpOutput(JObject item)
         {
-            string error = (string)item["error"]?["message"];
-            return string.IsNullOrEmpty(error) ? Join(item["result"]?["content"], "\n") : error;
+            string error = (string)(item["error"] as JObject)?["message"];
+            return string.IsNullOrEmpty(error) ? Join((item["result"] as JObject)?["content"], "\n") : error;
         }
 
         private static bool IsFailed(JObject item)
@@ -316,7 +316,7 @@ namespace DTech.Parley.Editor.Agents.Codex
                 _ => string.Empty,
             };
 
-            JToken structured = type == "mcpToolCall" ? item["result"]?["structuredContent"] : null;
+            JToken structured = type == "mcpToolCall" ? (item["result"] as JObject)?["structuredContent"] : null;
             _sink.ToolResult(new ToolResultRequest(id, output, IsFailed(item), structured));
         }
 
@@ -377,7 +377,7 @@ namespace DTech.Parley.Editor.Agents.Codex
                 CacheReadTokens = Tokens(_lastTotal, "cachedInputTokens") - Tokens(_turnStartTotal, "cachedInputTokens"),
             };
 
-            string error = ErrorMessage((string)turn?["error"]?["message"]);
+            string error = ErrorMessage((string)(turn?["error"] as JObject)?["message"]);
             if (!string.IsNullOrEmpty(error))
             {
                 result.Errors.Add(error);

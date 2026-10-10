@@ -22,6 +22,7 @@ namespace DTech.Parley.Editor.Agents.Codex
         private const int RequestTimeoutMs = 30000;
         private const int GracefulExitMs = 3000;
         private const int MaxModelPages = 10;
+        private const double ForceStopDelaySeconds = 3.0;
         private const string ClientVersion = "0.1.0";
         private const string ClearCommand = "/clear";
         private const string CompactCommand = "/compact";
@@ -34,6 +35,7 @@ namespace DTech.Parley.Editor.Agents.Codex
         private readonly CodexToolBridge _tools;
         private readonly Dictionary<long, TaskCompletionSource<JToken>> _pendingCalls = new ();
         private readonly Dictionary<string, CodexServerRequest> _openRequests = new ();
+        private readonly Dictionary<string, string> _childTurns = new ();
         private readonly List<JObject> _models = new ();
         private readonly CancellationTokenSource _lifetime = new ();
 
@@ -51,12 +53,13 @@ namespace DTech.Parley.Editor.Agents.Codex
         private string _resumeThreadId;
         private string _threadId;
         private string _turnId;
-        private string _interruptedTurnId;
         private string _model;
         private string _activeModel;
         private string _effort;
         private string _collaborationMode;
         private long _requestCounter;
+        private double _interruptRequestedAt;
+        private bool _interruptRequested;
         private bool _disposed;
 
         public CodexBackend(
@@ -152,6 +155,12 @@ namespace DTech.Parley.Editor.Agents.Codex
 
         public void Interrupt()
         {
+            if (_interruptRequested && IsBusy && EditorApplication.timeSinceStartup - _interruptRequestedAt >= ForceStopDelaySeconds)
+            {
+                ForceStop();
+                return;
+            }
+
             foreach (CodexServerRequest server in new List<CodexServerRequest>(_openRequests.Values))
             {
                 Respond(server.Request, Decision.Deny("The user interrupted.", true));
@@ -495,7 +504,7 @@ namespace DTech.Parley.Editor.Agents.Codex
             _resumeThreadId = threadId;
             _activeModel = (string)response["model"] ?? _activeModel;
             WarnIfModelUnavailable();
-            _collaborationMode = (string)response["collaborationMode"]?["mode"];
+            _collaborationMode = (string)(response["collaborationMode"] as JObject)?["mode"];
             _sink.SessionStarted(new SessionInfo
             {
                 SessionId = threadId,
@@ -658,13 +667,30 @@ namespace DTech.Parley.Editor.Agents.Codex
 
         private void InterruptTurn()
         {
-            if (!IsRunning || _turnId == null || _interruptedTurnId == _turnId)
+            if (!IsRunning || _interruptRequested)
             {
                 return;
             }
 
-            _interruptedTurnId = _turnId;
-            FireRequest("turn/interrupt", new JObject { ["threadId"] = _threadId, ["turnId"] = _turnId });
+            foreach (KeyValuePair<string, string> child in _childTurns)
+            {
+                FireRequest("turn/interrupt", new JObject { ["threadId"] = child.Key, ["turnId"] = child.Value });
+            }
+
+            if (_turnId != null)
+            {
+                FireRequest("turn/interrupt", new JObject { ["threadId"] = _threadId, ["turnId"] = _turnId });
+            }
+
+            _interruptRequested = _turnId != null || _childTurns.Count > 0;
+            _interruptRequestedAt = EditorApplication.timeSinceStartup;
+        }
+
+        private void ForceStop()
+        {
+            StopProcess();
+            _sink.Notice(NoticeLevel.Warning, "Codex did not stop, so Parley restarted it. The conversation continues with your next message.");
+            _mapper.Handle("turn/completed", new JObject { ["turn"] = new JObject { ["status"] = "interrupted" } });
         }
 
         private string ReadSecret(string field)
@@ -694,6 +720,8 @@ namespace DTech.Parley.Editor.Agents.Codex
             _resumeThreadId = _threadId ?? _resumeThreadId;
             _threadId = null;
             _turnId = null;
+            _childTurns.Clear();
+            _interruptRequested = false;
             ReleaseBusy();
             foreach (TaskCompletionSource<JToken> completion in _pendingCalls.Values)
             {
@@ -831,11 +859,34 @@ namespace DTech.Parley.Editor.Agents.Codex
 
         private void HandleNotification(string method, JObject parameters)
         {
+            string threadId = (string)parameters["threadId"];
+            bool child = threadId != null && _threadId != null && threadId != _threadId;
             switch (method)
             {
                 case "turn/started":
+                    if (child)
+                    {
+                        _childTurns[threadId] = (string)parameters["turn"]?["id"];
+                        return;
+                    }
+
                     _turnId = (string)parameters["turn"]?["id"];
                     MarkBusy();
+                    break;
+                case "turn/completed":
+                    if (child)
+                    {
+                        _childTurns.Remove(threadId);
+                        return;
+                    }
+
+                    break;
+                case "thread/tokenUsage/updated":
+                    if (child)
+                    {
+                        return;
+                    }
+
                     break;
                 case "serverRequest/resolved":
                     string requestId = CodexWire.RequestKey(parameters["requestId"]);
@@ -847,10 +898,20 @@ namespace DTech.Parley.Editor.Agents.Codex
                     break;
             }
 
-            _mapper.Handle(method, parameters);
-            if (method == "turn/completed")
+            if (method != "turn/completed")
+            {
+                _mapper.Handle(method, parameters);
+                return;
+            }
+
+            try
+            {
+                _mapper.Handle(method, parameters);
+            }
+            finally
             {
                 _turnId = null;
+                _interruptRequested = false;
                 ReleaseBusy();
                 RaisePlanApproval(parameters["turn"] as JObject);
             }

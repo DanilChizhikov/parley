@@ -159,6 +159,29 @@ namespace DTech.Parley.Tests.EditorMode
         }
 
         [Test]
+        public void TurnWithNullErrorCompletes()
+        {
+            RecordingSink sink = new RecordingSink();
+            CodexEventMapper mapper = new CodexEventMapper(sink);
+            mapper.Handle("turn/completed", JObject.Parse("{\"threadId\":\"th1\",\"turn\":{\"id\":\"t1\",\"items\":[],\"status\":\"completed\",\"error\":null}}"));
+            mapper.Handle("turn/completed", JObject.Parse("{\"threadId\":\"th1\",\"turn\":{\"id\":\"t2\",\"items\":[],\"status\":\"interrupted\",\"error\":null}}"));
+
+            Assert.AreEqual(2, sink.Turns.Count);
+            Assert.AreEqual("success", sink.Turns[0].Subtype);
+            Assert.IsEmpty(sink.Turns[0].Errors);
+            Assert.AreEqual("interrupted", sink.Turns[1].Subtype);
+        }
+
+        [Test]
+        public void McpCallWithNullErrorAndResultCompletes()
+        {
+            RecordingSink sink = new RecordingSink();
+            CodexEventMapper mapper = new CodexEventMapper(sink);
+            mapper.Handle("item/completed", Item("{\"type\":\"mcpToolCall\",\"id\":\"m1\",\"server\":\"unity\",\"tool\":\"ping\",\"arguments\":{},\"status\":\"completed\",\"error\":null,\"result\":null}"));
+            CollectionAssert.Contains(sink.Events, "final:ToolUse:m1");
+        }
+
+        [Test]
         public void ErrorsRequestSignInOrWarnAboutRetries()
         {
             RecordingSink sink = new RecordingSink();
