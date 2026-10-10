@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Globalization;
 using DTech.Parley.Editor.Sessions;
+using DTech.Parley.Editor.Updates;
 using UnityEditor;
 using UnityEditor.UIElements;
 using UnityEngine;
@@ -17,6 +18,8 @@ namespace DTech.Parley.Editor.UI
         private const long StateRefreshMs = 100;
         private const int MaxHistoryItems = 30;
         private const double NotificationSeconds = 2.0;
+        private const string UpdateDialogTitle = "Update Parley";
+        private const string UpdateAvailableText = "Update Available ▾";
 
         private static readonly PermissionMode[] _claudeModes =
         {
@@ -51,6 +54,7 @@ namespace DTech.Parley.Editor.UI
         private ToolbarButton _effortButton;
         private ToolbarButton _mcpButton;
         private ToolbarButton _skillsButton;
+        private ToolbarButton _updateButton;
         private ToolbarToggle _sideToggle;
         private bool _stateDirty = true;
 
@@ -73,6 +77,28 @@ namespace DTech.Parley.Editor.UI
         {
             return EditorUtility.DisplayDialog("Bypass permissions",
                 "The agent will run commands and edit files without asking. Use this only in a project you can restore from version control.", "Enable", "Cancel");
+        }
+
+        internal static void RunUpdate()
+        {
+            if (ParleyUpdates.Status != UpdateStatus.Available)
+            {
+                return;
+            }
+
+            if (ReloadGuard.IsLocked)
+            {
+                EditorUtility.DisplayDialog(UpdateDialogTitle, "Finish or stop the current turn first: Unity can't reload scripts while the agent is working.", "OK");
+                return;
+            }
+
+            string message = "Update Parley from v" + ParleyUpdates.Current + " to v" + ParleyUpdates.Latest + "?\n\nUnity will recompile scripts. Running chats are interrupted by the reload.";
+            if (!EditorUtility.DisplayDialog(UpdateDialogTitle, message, "Update", "Cancel"))
+            {
+                return;
+            }
+
+            _ = ParleyUpdates.InstallAsync();
         }
 
         private static string HistoryLabel(SessionSummary summary, ParleyProfile profile)
@@ -99,6 +125,7 @@ namespace DTech.Parley.Editor.UI
 
         private void OnDisable()
         {
+            ParleyUpdates.OnChanged -= MarkDirty;
             EndSession();
         }
 
@@ -129,6 +156,9 @@ namespace DTech.Parley.Editor.UI
             root.schedule.Execute(RefreshStateIfDirty).Every(StateRefreshMs);
             ApplySideVisibility();
             BindViews();
+            ParleyUpdates.OnChanged -= MarkDirty;
+            ParleyUpdates.OnChanged += MarkDirty;
+            ParleyUpdates.EnsureChecked();
         }
 
         private VisualElement BuildToolbar()
@@ -148,6 +178,10 @@ namespace DTech.Parley.Editor.UI
             toolbar.Add(_mcpButton);
             toolbar.Add(_skillsButton);
             toolbar.Add(new ToolbarSpacer { flex = true });
+            _updateButton = new ToolbarButton(ShowUpdateMenu) { text = UpdateAvailableText };
+            _updateButton.AddToClassList("pl-update");
+            ParleyStyles.SetVisible(_updateButton, false);
+            toolbar.Add(_updateButton);
             toolbar.Add(new ToolbarButton(NewChat) { text = "New", tooltip = "Start a new chat" });
             toolbar.Add(new ToolbarButton(ShowHistoryMenu) { text = "History ▾", tooltip = "Resume or delete earlier chats" });
             _sideToggle = new ToolbarToggle { text = "Panel", tooltip = "Show plan, todos and background tasks", value = ParleyUserSettings.instance.SidePanelVisible };
@@ -240,11 +274,41 @@ namespace DTech.Parley.Editor.UI
             _mcpButton.text = mcpCount > 0 ? "MCP " + mcpCount : "MCP";
             int skillCount = SkillsPanel.EnabledCount(session);
             _skillsButton.text = skillCount > 0 ? "Skills " + skillCount : "Skills";
+            RefreshUpdateButton();
             _composer.SetBusy(session.IsBusy);
             _statusBar.Refresh(session);
             _authCard.Refresh();
             _trustCard.Refresh();
             _side.Refresh();
+        }
+
+        private void RefreshUpdateButton()
+        {
+            UpdateStatus status = ParleyUpdates.Status;
+            bool installing = status == UpdateStatus.Installing;
+            ParleyStyles.SetVisible(_updateButton, installing || status == UpdateStatus.Available);
+            _updateButton.text = installing ? "Updating…" : UpdateAvailableText;
+            _updateButton.tooltip = "Parley v" + ParleyUpdates.Current + " → v" + ParleyUpdates.Latest;
+        }
+
+        private void ShowUpdateMenu()
+        {
+            GenericMenu menu = new GenericMenu();
+            menu.AddItem(new GUIContent("What`s new"), false, ReleaseNotesWindow.Open);
+            if (ParleyUpdates.Status != UpdateStatus.Available)
+            {
+                menu.AddDisabledItem(new GUIContent("Updating…"));
+            }
+            else if (ReloadGuard.IsLocked || (_session != null && _session.IsBusy))
+            {
+                menu.AddDisabledItem(new GUIContent("Update (finish the current turn first)"));
+            }
+            else
+            {
+                menu.AddItem(new GUIContent("Update"), false, RunUpdate);
+            }
+
+            menu.DropDown(_updateButton.worldBound);
         }
 
         private void ShowProfileMenu()
