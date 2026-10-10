@@ -10,6 +10,10 @@ namespace DTech.Parley.Editor
     {
         private const int CommandTimeoutMs = 3000;
         private const int MaxDescendants = 256;
+        private const string PsTool = "/bin/ps";
+        private const string PsArguments = "-A -o pid=,ppid=";
+
+        private static readonly char[] ColumnSeparators = { ' ', '\t', '\r' };
 
         public static void Kill(Process process)
         {
@@ -34,8 +38,7 @@ namespace DTech.Parley.Editor
             }
             else
             {
-                List<int> descendants = new ();
-                CollectDescendants(processId, descendants);
+                List<int> descendants = Descendants(Run(PsTool, PsArguments), processId);
                 if (descendants.Count > 0)
                 {
                     Run("/bin/kill", "-TERM " + string.Join(" ", descendants));
@@ -58,27 +61,57 @@ namespace DTech.Parley.Editor
             }
         }
 
-        private static void CollectDescendants(int processId, List<int> descendants)
+        internal static List<int> Descendants(string psOutput, int processId)
         {
-            string output = Run("/usr/bin/pgrep", "-P " + processId);
-            if (string.IsNullOrEmpty(output))
+            List<int> descendants = new ();
+            if (string.IsNullOrEmpty(psOutput))
             {
-                return;
+                return descendants;
             }
 
-            foreach (string line in output.Split('\n'))
+            Dictionary<int, List<int>> children = new ();
+            foreach (string line in psOutput.Split('\n'))
             {
-                if (descendants.Count >= MaxDescendants)
+                string[] columns = line.Split(ColumnSeparators, StringSplitOptions.RemoveEmptyEntries);
+                if (columns.Length < 2 || !int.TryParse(columns[0], out int child) || !int.TryParse(columns[1], out int parent))
                 {
-                    return;
+                    continue;
                 }
 
-                if (int.TryParse(line.Trim(), out int child) && !descendants.Contains(child))
+                if (!children.TryGetValue(parent, out List<int> siblings))
                 {
-                    descendants.Add(child);
-                    CollectDescendants(child, descendants);
+                    siblings = new List<int>();
+                    children[parent] = siblings;
+                }
+
+                siblings.Add(child);
+            }
+
+            Queue<int> pending = new ();
+            pending.Enqueue(processId);
+            while (pending.Count > 0 && descendants.Count < MaxDescendants)
+            {
+                if (!children.TryGetValue(pending.Dequeue(), out List<int> siblings))
+                {
+                    continue;
+                }
+
+                foreach (int child in siblings)
+                {
+                    if (descendants.Count >= MaxDescendants)
+                    {
+                        break;
+                    }
+
+                    if (child != processId && !descendants.Contains(child))
+                    {
+                        descendants.Add(child);
+                        pending.Enqueue(child);
+                    }
                 }
             }
+
+            return descendants;
         }
 
         private static string Run(string fileName, string arguments)

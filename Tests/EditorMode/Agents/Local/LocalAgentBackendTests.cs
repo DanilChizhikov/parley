@@ -87,9 +87,36 @@ namespace DTech.Parley.Tests.EditorMode
 
 			Assert.AreEqual(1, sink.Requests.Count);
 			Assert.AreEqual("Bash", sink.Requests[0].ToolName);
+			Assert.IsNotNull(sink.Requests[0].Suggestions);
 			Assert.AreEqual(1, sink.Turns.Count);
 			Assert.IsTrue(sink.ToolResults[0].error);
 			StringAssert.Contains("not now", sink.ToolResults[0].text);
+		}
+
+		[UnityTest]
+		public IEnumerator OutsideReadOffersNoRememberRule()
+		{
+			ScriptedClient client = new ScriptedClient();
+			client.Rounds.Enqueue(new[]
+			{
+				Chunk("{\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"c4\",\"function\":{\"name\":\"Read\",\"arguments\":\"{\\\"file_path\\\":\\\"" + Escape(_file) + "\\\"}\"}}]}}]}"),
+			});
+			client.Rounds.Enqueue(new[] { Chunk("{\"choices\":[{\"delta\":{\"content\":\"OK.\"}}]}") });
+
+			RecordingSink sink = new RecordingSink();
+			LocalAgentBackend backend = CreateBackend(sink, client, PermissionMode.Default);
+			sink.OnRequest = request => backend.Respond(request, Decision.Deny("no"));
+			backend.SendAsync(new UserTurn { Text = "read" }, CancellationToken.None);
+
+			for (int frame = 0; frame < 300 && sink.Turns.Count == 0; frame++)
+			{
+				yield return null;
+			}
+
+			Assert.AreEqual(1, sink.Requests.Count);
+			Assert.AreEqual("Read", sink.Requests[0].ToolName);
+			Assert.IsNotNull(sink.Requests[0].BlockedPath);
+			Assert.IsNull(sink.Requests[0].Suggestions);
 		}
 
 		[Test]

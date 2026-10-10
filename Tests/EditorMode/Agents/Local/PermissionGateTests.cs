@@ -58,6 +58,17 @@ namespace DTech.Parley.Tests.EditorMode
         }
 
         [Test]
+        public void SafeCommandOptionValuesStayInsideWorkspace()
+        {
+            PermissionGate gate = new PermissionGate(ProjectPaths.Root, () => new string[0], () => new List<AllowRule>());
+            Assert.AreEqual(GateVerdict.Ask, Bash(gate, "git blame --contents=/etc/hosts Assets/A.cs"));
+            Assert.AreEqual(GateVerdict.Ask, Bash(gate, "grep -f/etc/hosts x Assets"));
+            Assert.AreEqual(GateVerdict.Allow, Bash(gate, "git log --oneline -n5"));
+            Assert.AreEqual(GateVerdict.Allow, Bash(gate, "grep -rn foo Assets"));
+            Assert.AreEqual(GateVerdict.Allow, Bash(gate, "git log --format=%h"));
+        }
+
+        [Test]
         public void GitFolderEditsAlwaysAsk()
         {
             PermissionGate gate = new PermissionGate(ProjectPaths.Root, () => new string[0], () => new List<AllowRule>());

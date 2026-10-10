@@ -228,6 +228,17 @@ namespace DTech.Parley.Editor.Agents.Local
 				|| normalized.EndsWith(GitFolderSuffix, StringComparison.OrdinalIgnoreCase);
 		}
 
+		private static string OptionValue(string argument)
+		{
+			int equals = argument.IndexOf('=');
+			if (equals >= 0)
+			{
+				return argument.Substring(equals + 1);
+			}
+
+			return argument.Length > 2 && argument[1] != '-' ? argument.Substring(2) : string.Empty;
+		}
+
 		private static string ResolveArgument(string argument)
 		{
 			try
@@ -258,24 +269,30 @@ namespace DTech.Parley.Editor.Agents.Local
 					continue;
 				}
 
-				if ((git && index == 1) || argument.Length == 0 || argument[0] == '-')
+				if ((git && index == 1) || argument.Length == 0)
 				{
 					continue;
 				}
 
-				if (argument[0] == '~')
-				{
-					return false;
-				}
-
-				string resolved = ResolveArgument(argument);
-				if (resolved == null || !IsInsideWorkspace(resolved))
+				string candidate = argument[0] == '-' ? OptionValue(argument) : argument;
+				if (candidate.Length > 0 && !IsWorkspaceArgument(candidate))
 				{
 					return false;
 				}
 			}
 
 			return true;
+		}
+
+		private bool IsWorkspaceArgument(string argument)
+		{
+			if (argument[0] == '~')
+			{
+				return false;
+			}
+
+			string resolved = ResolveArgument(argument);
+			return resolved != null && IsInsideWorkspace(resolved);
 		}
 
 		private bool HasRule(string tool, string pattern)

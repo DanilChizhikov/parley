@@ -449,7 +449,7 @@ namespace DTech.Parley.Editor.Agents.Local
 					Id = Guid.NewGuid().ToString("N"),
 					ToolName = tool.Name,
 					Input = input,
-					Suggestions = PermissionGate.ToSuggestions(suggested),
+					Suggestions = gate.Reason == null ? PermissionGate.ToSuggestions(suggested) : null,
 					ToolUseId = call.Id,
 					Title = tool.Summarize(input),
 					DecisionReason = gate.Reason,

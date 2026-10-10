@@ -13,6 +13,7 @@ namespace DTech.Parley.Editor.Agents.Codex
         private const string CredentialsFile = "auth.json";
 
         private static readonly string[] InheritedVariables = { "CODEX_SANDBOX", "CODEX_SANDBOX_NETWORK_DISABLED", "CODEX_THREAD_ID" };
+        private static readonly Version EphemeralCredentialsVersion = new (0, 162, 0);
 
         public static bool UsesManagedHome(ParleyProfile profile)
         {
@@ -41,9 +42,9 @@ namespace DTech.Parley.Editor.Agents.Codex
             return UsesManagedHome(profile) ? Path.Combine(Home(profile), CredentialsFile) : null;
         }
 
-        public static void AddCredentialOptions(List<string> arguments, ParleyProfile profile)
+        public static void AddCredentialOptions(List<string> arguments, ParleyProfile profile, Version cliVersion)
         {
-            if (UsesManagedHome(profile))
+            if (UsesManagedHome(profile) && cliVersion != null && cliVersion >= EphemeralCredentialsVersion)
             {
                 arguments.Add(ConfigOption);
                 arguments.Add(EphemeralCredentials);

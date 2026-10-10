@@ -276,7 +276,11 @@ namespace DTech.Parley.Editor.UI
             VisualElement buttons = ButtonRow();
             buttons.Add(ParleyStyles.Button("Approve · auto-accept edits", () => ApprovePlan(request, PermissionMode.AcceptEdits, "Approved · auto-accept edits"), "pl-button--primary"));
             buttons.Add(ParleyStyles.Button("Approve · review each edit", () => ApprovePlan(request, PermissionMode.Default, "Approved · review each edit")));
-            buttons.Add(ParleyStyles.Button("Approve · bypass permissions", () => ApprovePlanWithBypass(request), "pl-button--danger"));
+            if (_session.Capabilities.Modes.Contains(PermissionMode.BypassPermissions))
+            {
+                buttons.Add(ParleyStyles.Button("Approve · bypass permissions", () => ApprovePlanWithBypass(request), "pl-button--danger"));
+            }
+
             Add(buttons);
             Add(new FeedbackRow("What should change in the plan?", "Keep planning", KeepPlanning, true));
         }

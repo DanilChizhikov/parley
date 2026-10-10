@@ -291,15 +291,17 @@ namespace DTech.Parley.Editor.Agents.Codex
 
             string path = await ShellEnvironment.GetLoginPathAsync();
             cancellationToken.ThrowIfCancellationRequested();
+            string environmentPath = ShellEnvironment.Merge(Path.GetDirectoryName(executable), path);
+            Version version = CodexEnvironment.UsesManagedHome(_profile) ? await CodexCliLocator.GetParsedVersionAsync(executable, environmentPath) : null;
+            cancellationToken.ThrowIfCancellationRequested();
             List<string> arguments = new () { "app-server" };
-            CodexEnvironment.AddCredentialOptions(arguments, _profile);
+            CodexEnvironment.AddCredentialOptions(arguments, _profile, version);
             arguments.AddRange(CommandLine.Split(_profile.ExtraArguments));
             ProcessStartInfo startInfo = new ProcessStartInfo(executable, CommandLine.Join(arguments))
             {
                 WorkingDirectory = ProjectPaths.Root,
             };
 
-            string environmentPath = ShellEnvironment.Merge(Path.GetDirectoryName(executable), path);
             CodexEnvironment.Apply(startInfo, _profile, environmentPath);
             _process = new ChildProcess(startInfo);
             _process.OnStdoutLine += StdoutLineHandler;

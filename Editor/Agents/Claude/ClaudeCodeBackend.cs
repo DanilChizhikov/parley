@@ -21,8 +21,12 @@ namespace DTech.Parley.Editor.Agents.Claude
 		private const int InitializeTimeoutMs = 60000;
 		private const int ControlTimeoutMs = 30000;
 		private const int GracefulExitMs = 3000;
+		private const string AllowBypassFlag = "--allow-dangerously-skip-permissions";
+		private const string RestrictedFlag = "--restricted";
+		private const string RestrictedVariable = "CLAUDE_CODE_RESTRICTED";
 
 		private static readonly string[] Efforts = { "low", "medium", "high", "xhigh", "max" };
+		private static readonly string[] RestrictedTruthyValues = { "1", "true", "yes", "on" };
 
 		private readonly ParleyProfile _profile;
 		private readonly IAgentSink _sink;
@@ -73,6 +77,33 @@ namespace DTech.Parley.Editor.Agents.Claude
 				AdditionalDirectories = ParleyProjectSettings.instance.AdditionalDirectories,
 				GetMode = () => Mode,
 			});
+		}
+
+		public static bool IsRestrictedMode(string extraArguments, string restrictedVariable)
+		{
+			foreach (string argument in CommandLine.Split(extraArguments))
+			{
+				if (argument == RestrictedFlag)
+				{
+					return true;
+				}
+			}
+
+			string value = restrictedVariable?.Trim();
+			if (string.IsNullOrEmpty(value))
+			{
+				return false;
+			}
+
+			foreach (string truthy in RestrictedTruthyValues)
+			{
+				if (string.Equals(value, truthy, StringComparison.OrdinalIgnoreCase))
+				{
+					return true;
+				}
+			}
+
+			return false;
 		}
 
 		public void Dispose()
@@ -220,13 +251,16 @@ namespace DTech.Parley.Editor.Agents.Claude
 			MainThread.Post(() => ProcessJanitor.Untrack(processId));
 		}
 
-		private static BackendCapabilities ParseCapabilities(JObject response)
+		private static BackendCapabilities ParseCapabilities(JObject response, bool allowBypass)
 		{
 			BackendCapabilities capabilities = new BackendCapabilities();
-			capabilities.Modes.AddRange(new[]
+			capabilities.Modes.AddRange(new[] { PermissionMode.Default, PermissionMode.AcceptEdits, PermissionMode.Plan, PermissionMode.Auto });
+			if (allowBypass)
 			{
-				PermissionMode.Default, PermissionMode.AcceptEdits, PermissionMode.Plan, PermissionMode.Auto, PermissionMode.BypassPermissions, PermissionMode.DontAsk,
-			});
+				capabilities.Modes.Add(PermissionMode.BypassPermissions);
+			}
+
+			capabilities.Modes.Add(PermissionMode.DontAsk);
 
 			capabilities.Efforts.AddRange(Efforts);
 			if (response?["models"] is JArray models)
@@ -302,7 +336,8 @@ namespace DTech.Parley.Editor.Agents.Claude
 				throw new AgentSetupException(_profile.Name + ": " + string.Join(" ", auth.Problems));
 			}
 
-			ProcessStartInfo startInfo = new ProcessStartInfo(executable, CommandLine.Join(BuildArguments(auth)))
+			bool restricted = IsRestrictedMode(_profile.ExtraArguments, Environment.GetEnvironmentVariable(RestrictedVariable));
+			ProcessStartInfo startInfo = new ProcessStartInfo(executable, CommandLine.Join(BuildArguments(auth, restricted)))
 			{
 				WorkingDirectory = ProjectPaths.Root,
 			};
@@ -322,7 +357,7 @@ namespace DTech.Parley.Editor.Agents.Claude
 			try
 			{
 				JObject response = await SendControlAsync(new JObject { ["subtype"] = "initialize", ["hooks"] = null }, InitializeTimeoutMs);
-				_sink.CapabilitiesChanged(ParseCapabilities(response));
+				_sink.CapabilitiesChanged(ParseCapabilities(response, !restricted));
 				string currentMode = (string)response["current_permission_mode"];
 				if (!string.IsNullOrEmpty(currentMode))
 				{
@@ -336,8 +371,9 @@ namespace DTech.Parley.Editor.Agents.Claude
 			}
 		}
 
-		private List<string> BuildArguments(AuthEnvironment auth)
+		private List<string> BuildArguments(AuthEnvironment auth, bool restricted)
 		{
+			PermissionMode launchMode = restricted && Mode == PermissionMode.BypassPermissions ? PermissionMode.Default : Mode;
 			List<string> arguments = new ()
 			{
 				"-p",
@@ -346,9 +382,13 @@ namespace DTech.Parley.Editor.Agents.Claude
 				"--verbose",
 				"--include-partial-messages",
 				"--permission-prompt-tool", "stdio",
-				"--permission-mode", PermissionModes.ToWire(Mode),
-				"--allow-dangerously-skip-permissions",
+				"--permission-mode", PermissionModes.ToWire(launchMode),
 			};
+
+			if (!restricted)
+			{
+				arguments.Add(AllowBypassFlag);
+			}
 
 			if (!string.IsNullOrEmpty(_model))
 			{
