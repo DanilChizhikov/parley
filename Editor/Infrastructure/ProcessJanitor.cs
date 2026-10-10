@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using UnityEditor;
-using Debug = UnityEngine.Debug;
 
 namespace DTech.Parley.Editor
 {
@@ -10,70 +9,104 @@ namespace DTech.Parley.Editor
 	internal static class ProcessJanitor
 	{
 		private const string Key = "DTech.Parley.ChildProcesses";
+		private const char EntrySeparator = ',';
+		private const char NameSeparator = ':';
 
 		static ProcessJanitor()
 		{
 			EditorApplication.delayCall += KillOrphans;
 		}
 
-		public static void Track(int processId)
+		public static void Track(int processId, string processName)
 		{
-			List<int> ids = Load();
-			if (!ids.Contains(processId))
+			string name = Sanitize(processName);
+			if (name.Length == 0)
 			{
-				ids.Add(processId);
-				Store(ids);
+				return;
+			}
+
+			List<string> entries = Load();
+			string entry = processId.ToString() + NameSeparator + name;
+			if (!entries.Contains(entry))
+			{
+				entries.Add(entry);
+				Store(entries);
 			}
 		}
 
 		public static void Untrack(int processId)
 		{
-			List<int> ids = Load();
-			if (ids.Remove(processId))
+			string prefix = processId.ToString() + NameSeparator;
+			List<string> entries = Load();
+			if (entries.RemoveAll(entry => entry.StartsWith(prefix, StringComparison.Ordinal)) > 0)
 			{
-				Store(ids);
+				Store(entries);
 			}
 		}
 
 		private static void KillOrphans()
 		{
-			foreach (int id in Load())
+			foreach (string entry in Load())
+			{
+				int separator = entry.IndexOf(NameSeparator);
+				if (separator > 0 && int.TryParse(entry.Substring(0, separator), out int processId))
+				{
+					KillOrphan(processId, entry.Substring(separator + 1));
+				}
+			}
+
+			Store(new List<string>());
+		}
+
+		private static void KillOrphan(int processId, string processName)
+		{
+			Process process;
+			try
+			{
+				process = Process.GetProcessById(processId);
+			}
+			catch (Exception exception) when (exception is ArgumentException || exception is InvalidOperationException)
+			{
+				return;
+			}
+
+			using (process)
 			{
 				try
 				{
-					using Process process = Process.GetProcessById(id);
-					string name = process.ProcessName.ToLowerInvariant();
-					if (!process.HasExited && (name.Contains("claude") || name.Contains("node")))
+					if (!process.HasExited && string.Equals(Sanitize(process.ProcessName), processName, StringComparison.OrdinalIgnoreCase))
 					{
-						process.Kill();
+						ProcessTree.Kill(process);
 					}
 				}
-				catch (Exception exception)
+				catch (InvalidOperationException)
 				{
-					Debug.LogException(exception);
 				}
 			}
-
-			Store(new List<int>());
 		}
 
-		private static List<int> Load()
+		private static string Sanitize(string processName)
 		{
-			List<int> ids = new ();
-			foreach (string part in SessionState.GetString(Key, string.Empty).Split(','))
+			return (processName ?? string.Empty).Replace(EntrySeparator.ToString(), string.Empty).Trim();
+		}
+
+		private static List<string> Load()
+		{
+			List<string> entries = new ();
+			foreach (string part in SessionState.GetString(Key, string.Empty).Split(EntrySeparator))
 			{
-				if (int.TryParse(part, out int id))
+				if (part.Length > 0)
 				{
-					ids.Add(id);
+					entries.Add(part);
 				}
 			}
 
-			return ids;
+			return entries;
 		}
 
-		private static void Store(List<int> ids)
+		private static void Store(List<string> entries)
 		{
-			SessionState.SetString(Key, string.Join(",", ids));
+			SessionState.SetString(Key, string.Join(EntrySeparator.ToString(), entries));
 		}
 	}
 }

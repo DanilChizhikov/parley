@@ -62,6 +62,11 @@ namespace DTech.Parley.Editor
 			{
 				string value = task.Result;
 				string fallback = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
+				if (value == null)
+				{
+					return fallback;
+				}
+
 				string merged = Merge(value, fallback);
 				MainThread.Post(() => SessionState.SetString(PathCacheKey, merged));
 				_loginPath = merged;
