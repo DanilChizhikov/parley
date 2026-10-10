@@ -1,3 +1,4 @@
+using System.Threading.Tasks;
 using DTech.Parley.Editor.Secrets;
 using UnityEngine.UIElements;
 
@@ -10,6 +11,8 @@ namespace DTech.Parley.Editor.UI
         private readonly string _key;
         private readonly TextField _field;
         private readonly Label _status;
+
+        private int _generation;
 
         public SecretField(string label, string profileId, string field, string hint = null)
         {
@@ -58,16 +61,26 @@ namespace DTech.Parley.Editor.UI
             RefreshStatus();
         }
 
-        private void RefreshStatus()
+        private async void RefreshStatus()
         {
-            if (!SecretStores.Default.TryGet(_key, out string secret))
+            int generation = ++_generation;
+            ISecretStore store = SecretStores.Default;
+            string key = _key;
+            _status.text = "Checking…";
+            string secret = await Task.Run(() => store.TryGet(key, out string value) ? value : null);
+            if (generation != _generation)
+            {
+                return;
+            }
+
+            if (secret == null)
             {
                 _status.text = "Not set";
                 return;
             }
 
             string suffix = secret.Length > VisibleSuffixLength ? secret.Substring(secret.Length - VisibleSuffixLength) : string.Empty;
-            _status.text = "Stored in " + SecretStores.Default.Description + " (…" + suffix + ")";
+            _status.text = "Stored in " + store.Description + " (…" + suffix + ")";
         }
     }
 }
