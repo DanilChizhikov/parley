@@ -12,6 +12,7 @@ namespace DTech.Parley.Editor.UI
         private readonly Image _image;
 
         private Texture2D _texture;
+        private bool _failed;
 
         public ImageBlockView(TranscriptBlock block) : base(block)
         {
@@ -38,6 +39,7 @@ namespace DTech.Parley.Editor.UI
             catch (FormatException exception)
             {
                 Debug.LogWarning("[Parley] Could not decode an image attachment: " + exception.Message);
+                _failed = true;
                 ParleyStyles.SetVisible(_image, false);
                 return;
             }
@@ -45,6 +47,9 @@ namespace DTech.Parley.Editor.UI
             _texture = new Texture2D(2, 2) { hideFlags = HideFlags.HideAndDontSave };
             if (!_texture.LoadImage(bytes))
             {
+                Object.DestroyImmediate(_texture);
+                _texture = null;
+                _failed = true;
                 ParleyStyles.SetVisible(_image, false);
                 return;
             }
@@ -59,7 +64,7 @@ namespace DTech.Parley.Editor.UI
 
         private void AttachedHandler(AttachToPanelEvent evt)
         {
-            if (_texture == null)
+            if (_texture == null && !_failed)
             {
                 LoadTexture();
             }
