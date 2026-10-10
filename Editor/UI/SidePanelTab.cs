@@ -5,5 +5,7 @@ namespace DTech.Parley.Editor.UI
         Plan = 0,
         Todos = 1,
         Tasks = 2,
+        Mcp = 3,
+        Skills = 4,
     }
 }

@@ -7,5 +7,6 @@ namespace DTech.Parley.Editor.Tools
         Execute = 2,
         Network = 3,
         Interactive = 4,
+        External = 5,
     }
 }

@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Text;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -52,6 +53,17 @@ namespace DTech.Parley.Editor.Agents.Codex
         public static JArray TextInput(string text)
         {
             return new JArray { new JObject { ["type"] = "text", ["text"] = text ?? string.Empty } };
+        }
+
+        public static JArray UserInput(UserTurn turn, IReadOnlyList<SkillInfo> skills)
+        {
+            JArray input = UserInput(turn);
+            for (int i = skills.Count - 1; i >= 0; i--)
+            {
+                input.Insert(0, new JObject { ["type"] = "skill", ["name"] = skills[i].Name, ["path"] = skills[i].Path });
+            }
+
+            return input;
         }
 
         public static JArray UserInput(UserTurn turn)

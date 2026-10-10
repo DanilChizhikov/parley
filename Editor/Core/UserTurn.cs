@@ -6,5 +6,6 @@ namespace DTech.Parley.Editor
     {
         public string Text = string.Empty;
         public List<ChatAttachment> Attachments = new ();
+        public List<SkillInvocation> Skills = new ();
     }
 }

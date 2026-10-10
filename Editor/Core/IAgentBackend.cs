@@ -10,6 +10,7 @@ namespace DTech.Parley.Editor
 		bool IsBusy { get; }
 		string SessionId { get; }
 		PermissionMode Mode { get; }
+		bool HasPendingRestart { get; }
 
 		Task StartAsync(CancellationToken token);
 		Task SendAsync(UserTurn turn, CancellationToken token);
@@ -19,5 +20,9 @@ namespace DTech.Parley.Editor
 		void SetEffort(string effort);
 		void Respond(PendingRequest request, Decision decision);
 		void StopTask(string taskId);
+		void SetMcpConfiguration(McpConfiguration configuration);
+		void RefreshMcpStatus();
+		void SetSkillConfiguration(SkillConfiguration configuration);
+		void RefreshSkills();
 	}
 }

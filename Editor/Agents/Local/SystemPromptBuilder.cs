@@ -61,6 +61,8 @@ namespace DTech.Parley.Editor.Agents.Local
 				AppendTextToolProtocol(builder, request.Catalog);
 			}
 
+			AppendSkills(builder, request.Skills);
+
 			AppendProjectInstructions(builder, request.Settings);
 			if (!string.IsNullOrWhiteSpace(request.Settings.AppendSystemPrompt))
 			{
@@ -103,6 +105,28 @@ namespace DTech.Parley.Editor.Agents.Local
 			{
 				builder.Append("- ").Append(tool.Name).Append(": ").Append(tool.Description).Append(" Parameters: ")
 					.AppendLine(tool.InputSchema.ToString(Formatting.None));
+			}
+		}
+
+		private static void AppendSkills(StringBuilder builder, IReadOnlyList<SkillInfo> skills)
+		{
+			if (skills == null || skills.Count == 0)
+			{
+				return;
+			}
+
+			builder.AppendLine();
+			builder.AppendLine("# Skills");
+			builder.AppendLine("Skills are task-specific instructions. When a task matches one, call the Skill tool with its name before starting, then follow what it returns. A <skill> block in a user message is a skill the user already loaded.");
+			foreach (SkillInfo skill in skills)
+			{
+				builder.Append("- ").Append(skill.Name);
+				if (!string.IsNullOrWhiteSpace(skill.Description))
+				{
+					builder.Append(": ").Append(skill.Description.Trim());
+				}
+
+				builder.AppendLine();
 			}
 		}
 

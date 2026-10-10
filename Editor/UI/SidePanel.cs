@@ -7,11 +7,13 @@ namespace DTech.Parley.Editor.UI
 {
     internal sealed class SidePanel : VisualElement
     {
-        private static readonly SidePanelTab[] _order = { SidePanelTab.Todos, SidePanelTab.Plan, SidePanelTab.Tasks };
+        private static readonly SidePanelTab[] _order = { SidePanelTab.Todos, SidePanelTab.Plan, SidePanelTab.Tasks, SidePanelTab.Mcp, SidePanelTab.Skills };
 
         private readonly Dictionary<SidePanelTab, Button> _tabs = new ();
         private readonly ScrollView _content;
         private readonly MarkdownView _plan = new ();
+        private readonly McpPanel _mcp = new ();
+        private readonly SkillsPanel _skills = new ();
 
         private ChatSession _session;
         private SidePanelTab _tab = SidePanelTab.Todos;
@@ -25,7 +27,7 @@ namespace DTech.Parley.Editor.UI
             foreach (SidePanelTab tab in _order)
             {
                 SidePanelTab captured = tab;
-                Button button = ParleyStyles.Button(tab.ToString(), () => ShowTab(captured), "pl-side__tab");
+                Button button = ParleyStyles.Button(tab == SidePanelTab.Mcp ? "MCP" : tab.ToString(), () => ShowTab(captured), "pl-side__tab");
                 _tabs[tab] = button;
                 header.Add(button);
             }
@@ -40,6 +42,8 @@ namespace DTech.Parley.Editor.UI
         {
             _session = session;
             _renderedPlan = null;
+            _mcp.Bind(session);
+            _skills.Bind(session);
             if (session != null && !string.IsNullOrEmpty(session.Record.LatestPlan) && session.Todos.Count == 0)
             {
                 _tab = SidePanelTab.Plan;
@@ -70,6 +74,10 @@ namespace DTech.Parley.Editor.UI
 
             _tabs[SidePanelTab.Todos].text = _session.Todos.Count > 0 ? "Todos " + CompletedCount() + "/" + _session.Todos.Count : "Todos";
             _tabs[SidePanelTab.Tasks].text = _session.Tasks.Count > 0 ? "Tasks " + _session.Tasks.Count : "Tasks";
+            int mcpCount = McpPanel.EnabledCount(_session);
+            _tabs[SidePanelTab.Mcp].text = mcpCount > 0 ? "MCP " + mcpCount : "MCP";
+            int skillCount = SkillsPanel.EnabledCount(_session);
+            _tabs[SidePanelTab.Skills].text = skillCount > 0 ? "Skills " + skillCount : "Skills";
             switch (_tab)
             {
                 case SidePanelTab.Plan:
@@ -85,6 +93,16 @@ namespace DTech.Parley.Editor.UI
                 case SidePanelTab.Tasks:
                 {
                     RenderTasks();
+                } break;
+
+                case SidePanelTab.Mcp:
+                {
+                    RenderMcp();
+                } break;
+
+                case SidePanelTab.Skills:
+                {
+                    RenderSkills();
                 } break;
                 
                 default:
@@ -110,6 +128,28 @@ namespace DTech.Parley.Editor.UI
 
             _plan.SetMarkdown(plan);
             _content.Add(_plan);
+        }
+
+        private void RenderMcp()
+        {
+            if (!_content.Contains(_mcp))
+            {
+                _content.Clear();
+                _content.Add(_mcp);
+            }
+
+            _mcp.Refresh();
+        }
+
+        private void RenderSkills()
+        {
+            if (!_content.Contains(_skills))
+            {
+                _content.Clear();
+                _content.Add(_skills);
+            }
+
+            _skills.Refresh();
         }
 
         private void RenderTodos()
