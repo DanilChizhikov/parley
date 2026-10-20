@@ -15,7 +15,7 @@ import re
 import sys
 import tarfile
 
-EXCLUDED_ROOT_ENTRIES = {".git", ".github", ".gitignore", ".gitattributes"}
+EXCLUDED_ROOT_ENTRIES = {".git", ".github", ".gitignore", ".gitattributes", "Documentation~"}
 GUID_PATTERN = re.compile(r"^guid: ([0-9a-f]{32})\s*$", re.MULTILINE)
 
 
