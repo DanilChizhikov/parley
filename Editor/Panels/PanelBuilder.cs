@@ -12,22 +12,27 @@ namespace DTech.Parley.Editor.Panels
 	internal sealed class PanelBuilder : IDisposable
 	{
 		public const int TableRowLimit = 200;
+		public const int RepeatLimit = 50;
 
 		private readonly PanelSpec _spec;
+		private readonly PanelTargetResolver _targets;
+		private readonly PanelViewState _view;
 		private readonly Action _rebuild;
 		private readonly Dictionary<Object, SerializedObject> _objects = new ();
 
-		public PanelBuilder(PanelSpec spec, Action rebuild)
+		public PanelBuilder(in PanelBuildRequest request)
 		{
-			_spec = spec;
-			_rebuild = rebuild;
+			_spec = request.Spec;
+			_targets = request.Targets;
+			_view = request.View ?? new PanelViewState();
+			_rebuild = request.Rebuild;
 		}
 
 		public VisualElement Build()
 		{
 			VisualElement root = new VisualElement();
 			root.AddToClassList("pl-panel__content");
-			AddItems(root, _spec.Items);
+			AddItems(root, _spec.Items, null);
 			return root;
 		}
 
@@ -41,15 +46,15 @@ namespace DTech.Parley.Editor.Panels
 			_objects.Clear();
 		}
 
-		private void AddItems(VisualElement parent, List<PanelItem> items)
+		private void AddItems(VisualElement parent, List<PanelItem> items, Object scope)
 		{
 			foreach (PanelItem item in items)
 			{
-				parent.Add(BuildItem(item));
+				parent.Add(BuildItem(item, scope));
 			}
 		}
 
-		private VisualElement BuildItem(PanelItem item)
+		private VisualElement BuildItem(PanelItem item, Object scope)
 		{
 			switch (item.Type)
 			{
@@ -64,25 +69,27 @@ namespace DTech.Parley.Editor.Panels
 					separator.AddToClassList("pl-panel__separator");
 					return separator;
 				case PanelItemType.Field:
-					return BuildField(item);
+					return BuildField(item, scope);
 				case PanelItemType.Inspector:
-					return BuildInspector(item);
+					return BuildInspector(item, scope);
 				case PanelItemType.Group:
-					return BuildGroup(item);
+					return BuildGroup(item, scope);
 				case PanelItemType.Row:
-					return BuildRow(item);
+					return BuildRow(item, scope);
 				case PanelItemType.Table:
 					return BuildTable(item);
+				case PanelItemType.Repeat:
+					return BuildRepeat(item);
 				case PanelItemType.Button:
-					return ParleyStyles.Button(item.Label, () => RunAction(item), "pl-panel__button");
+					return ParleyStyles.Button(item.Label, () => RunAction(item, scope), "pl-panel__button");
 				default:
 					return Error(item.Location + ": unsupported item.");
 			}
 		}
 
-		private VisualElement BuildField(PanelItem item)
+		private VisualElement BuildField(PanelItem item, Object scope)
 		{
-			Object target = PanelTargets.Resolve(_spec, item.Target, item.Component);
+			Object target = TargetOf(item, scope);
 			if (target == null)
 			{
 				return Missing(item);
@@ -101,9 +108,9 @@ namespace DTech.Parley.Editor.Panels
 			return field;
 		}
 
-		private VisualElement BuildInspector(PanelItem item)
+		private VisualElement BuildInspector(PanelItem item, Object scope)
 		{
-			Object target = PanelTargets.Resolve(_spec, item.Target, item.Component);
+			Object target = TargetOf(item, scope);
 			if (target == null)
 			{
 				return Missing(item);
@@ -115,15 +122,19 @@ namespace DTech.Parley.Editor.Panels
 			}
 
 			VisualElement container = new VisualElement();
-			foreach (Component component in gameObject.GetComponents<Component>())
+			Component[] components = gameObject.GetComponents<Component>();
+			for (int i = 0; i < components.Length; i++)
 			{
+				Component component = components[i];
 				if (component == null)
 				{
 					container.Add(new HelpBox("Missing script", HelpBoxMessageType.Warning));
 					continue;
 				}
 
-				Foldout foldout = new Foldout { text = component.GetType().Name, value = true };
+				string typeName = component.GetType().Name;
+				Foldout foldout = new Foldout { text = typeName };
+				_view.Bind(foldout, PanelViewState.ComponentKey(item.Location, typeName, i));
 				foldout.Add(new InspectorElement(component));
 				container.Add(foldout);
 			}
@@ -131,30 +142,31 @@ namespace DTech.Parley.Editor.Panels
 			return container;
 		}
 
-		private VisualElement BuildGroup(PanelItem item)
+		private VisualElement BuildGroup(PanelItem item, Object scope)
 		{
 			if (item.Foldout)
 			{
-				Foldout foldout = new Foldout { text = item.Label, value = true };
+				Foldout foldout = new Foldout { text = item.Label };
 				foldout.AddToClassList("pl-panel__group");
-				AddItems(foldout, item.Items);
+				_view.Bind(foldout, item.Location);
+				AddItems(foldout, item.Items, scope);
 				return foldout;
 			}
 
 			VisualElement group = new VisualElement();
 			group.AddToClassList("pl-panel__group");
 			group.Add(ParleyStyles.Text(item.Label, "pl-panel__group-title"));
-			AddItems(group, item.Items);
+			AddItems(group, item.Items, scope);
 			return group;
 		}
 
-		private VisualElement BuildRow(PanelItem item)
+		private VisualElement BuildRow(PanelItem item, Object scope)
 		{
 			VisualElement row = new VisualElement();
 			row.AddToClassList("pl-panel__row");
 			foreach (PanelItem child in item.Items)
 			{
-				VisualElement element = BuildItem(child);
+				VisualElement element = BuildItem(child, scope);
 				element.AddToClassList("pl-panel__row-item");
 				row.Add(element);
 			}
@@ -162,14 +174,54 @@ namespace DTech.Parley.Editor.Panels
 			return row;
 		}
 
-		private VisualElement BuildTable(PanelItem item)
+		private VisualElement BuildRepeat(PanelItem item)
 		{
-			if (!string.IsNullOrEmpty(item.Folder) && !AssetDatabase.IsValidFolder(item.Folder))
+			if (!PanelQuery.HasValidFolder(item))
 			{
 				return Error("Folder '" + item.Folder + "' does not exist.");
 			}
 
-			List<Object> assets = PanelTargets.FindAssets(item.Query, item.Folder);
+			VisualElement container = new VisualElement();
+			container.AddToClassList("pl-panel__group");
+			if (!string.IsNullOrEmpty(item.Label))
+			{
+				container.Add(ParleyStyles.Text(item.Label, "pl-panel__group-title"));
+			}
+
+			List<Object> assets = PanelQuery.Assets(item);
+			if (assets.Count == 0)
+			{
+				container.Add(new HelpBox("No assets match '" + item.Query + "'.", HelpBoxMessageType.Info));
+				return container;
+			}
+
+			int count = Math.Min(assets.Count, RepeatLimit);
+			for (int i = 0; i < count; i++)
+			{
+				Object asset = assets[i];
+				Foldout foldout = new Foldout { text = asset.name, tooltip = AssetDatabase.GetAssetPath(asset) };
+				foldout.AddToClassList("pl-panel__group");
+				_view.Bind(foldout, PanelViewState.RepeatKey(item.Location, PanelQuery.KeyOf(asset)));
+				AddItems(foldout, item.Items, asset);
+				container.Add(foldout);
+			}
+
+			if (assets.Count > count)
+			{
+				container.Add(ParleyStyles.Text("Showing first " + count + " of " + assets.Count + " assets.", ParleyStyles.Muted));
+			}
+
+			return container;
+		}
+
+		private VisualElement BuildTable(PanelItem item)
+		{
+			if (!PanelQuery.HasValidFolder(item))
+			{
+				return Error("Folder '" + item.Folder + "' does not exist.");
+			}
+
+			List<Object> assets = PanelQuery.Assets(item);
 			if (assets.Count == 0)
 			{
 				return new HelpBox("No assets match '" + item.Query + "'.", HelpBoxMessageType.Info);
@@ -232,9 +284,16 @@ namespace DTech.Parley.Editor.Panels
 			return row;
 		}
 
-		private void RunAction(PanelItem item)
+		private Object TargetOf(PanelItem item, Object scope)
 		{
-			if (PanelActions.Run(_spec, item))
+			return string.IsNullOrEmpty(item.Target)
+				? PanelTargets.WithComponent(scope, item.Component)
+				: _targets.Resolve(item.Target, item.Component);
+		}
+
+		private void RunAction(PanelItem item, Object scope)
+		{
+			if (PanelActions.Run(_targets, item, scope))
 			{
 				_rebuild?.Invoke();
 			}
@@ -254,7 +313,11 @@ namespace DTech.Parley.Editor.Panels
 		private VisualElement Missing(PanelItem item)
 		{
 			string reference = item.Target != null && _spec.Targets.TryGetValue(item.Target, out string value) ? value : item.Target;
-			string message = "Target '" + item.Target + "' (" + reference + ")" + (string.IsNullOrEmpty(item.Component) ? string.Empty : " component " + item.Component) + " not found.";
+			string component = string.IsNullOrEmpty(item.Component) ? string.Empty : " component " + item.Component;
+			string message = _targets.Status(item.Target) == PanelTargetStatus.MissingWithId
+				? "Target '" + item.Target + "' (" + reference + ")" + component
+					+ " is not available right now. Parley remembered its identity and will reconnect it automatically when the asset or its scene comes back."
+				: "Target '" + item.Target + "' (" + reference + ")" + component + " not found. Open the scene or check the path.";
 			VisualElement container = new VisualElement();
 			container.AddToClassList("pl-panel__missing");
 			container.Add(new HelpBox(message, HelpBoxMessageType.Warning));

@@ -10,14 +10,14 @@ namespace DTech.Parley.Editor.Panels
 	{
 		private const string DialogTitle = "Parley Panel";
 
-		public static bool Run(PanelSpec spec, PanelItem item)
+		public static bool Run(PanelTargetResolver targets, PanelItem item, Object scope)
 		{
 			switch (item.Action)
 			{
 				case PanelAction.Ping:
 				case PanelAction.Select:
 				case PanelAction.Open:
-					return RunOnTarget(spec, item);
+					return RunOnTarget(targets, item, scope);
 				case PanelAction.SaveAssets:
 					AssetDatabase.SaveAssets();
 					return false;
@@ -31,9 +31,11 @@ namespace DTech.Parley.Editor.Panels
 			}
 		}
 
-		private static bool RunOnTarget(PanelSpec spec, PanelItem item)
+		private static bool RunOnTarget(PanelTargetResolver targets, PanelItem item, Object scope)
 		{
-			Object target = PanelTargets.Resolve(spec, item.Target, item.Component);
+			Object target = string.IsNullOrEmpty(item.Target)
+				? PanelTargets.WithComponent(scope, item.Component)
+				: targets.Resolve(item.Target, item.Component);
 			if (target == null)
 			{
 				EditorUtility.DisplayDialog(DialogTitle, "Target '" + item.Target + "' not found.", "OK");

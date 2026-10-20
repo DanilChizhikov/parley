@@ -18,9 +18,16 @@ namespace DTech.Parley.Editor.Panels
 			"- field {target, path, label?, component?}: one SerializedProperty by propertyPath (e.g. '_health', 'stats.speed', 'items.Array.data[0]'). Undo works.\n" +
 			"- inspector {target, component?}: the object's full inspector.\n" +
 			"- group {label, foldout?: bool, items} | row {items}: layout containers, max nesting depth 6.\n" +
+			"- repeat {query, folder?, label?, items}: repeats its items once per asset the query finds, each in a foldout. " +
+			"Inside it leave 'target' out (or use '$item') to mean the current asset. Use it for a whole family of assets: " +
+			"the panel then keeps up by itself when assets are added, renamed or removed.\n" +
 			"- table {query, folder?, columns: [propertyPath...]}: one row per asset from AssetDatabase.FindAssets(query, folder), e.g. query 't:EnemyConfig'.\n" +
 			"- button {label, action, ...}: action = ping|select|open {target} | save_assets | menu {menu: 'Menu/Path'} | create_asset {asset_type: ScriptableObject type name, asset_path: 'Assets/....asset'}. menu and create_asset ask the user to confirm.\n" +
-			"component = component type name on a GameObject target. No code runs: only these items and actions exist.";
+			"component = component type name on a GameObject target. No code runs: only these items and actions exist.\n" +
+			"\"ids\" is written and maintained by Parley (alias -> stable object id): never author or edit it, and keep it when you re-save a spec. " +
+			"Panels re-resolve their targets and queries by themselves, so a renamed, moved or newly added asset needs no new panel.";
+
+		public const string ScopeAlias = "$item";
 
 		private static readonly Dictionary<string, PanelItemType> _types = new (StringComparer.OrdinalIgnoreCase)
 		{
@@ -34,6 +41,7 @@ namespace DTech.Parley.Editor.Panels
 			["row"] = PanelItemType.Row,
 			["table"] = PanelItemType.Table,
 			["button"] = PanelItemType.Button,
+			["repeat"] = PanelItemType.Repeat,
 		};
 
 		private static readonly Dictionary<string, PanelAction> _actions = new (StringComparer.OrdinalIgnoreCase)
@@ -86,7 +94,7 @@ namespace DTech.Parley.Editor.Panels
 			return null;
 		}
 
-		public static PanelSpec Parse(string json, List<PanelIssue> issues)
+		public static JObject ReadDocument(string json, List<PanelIssue> issues)
 		{
 			JObject spec;
 			try
@@ -102,10 +110,15 @@ namespace DTech.Parley.Editor.Panels
 			if (spec == null)
 			{
 				issues.Add(PanelIssue.Error(string.Empty, "Spec must be a JSON object."));
-				return null;
 			}
 
-			return Parse(spec, issues);
+			return spec;
+		}
+
+		public static PanelSpec Parse(string json, List<PanelIssue> issues)
+		{
+			JObject spec = ReadDocument(json, issues);
+			return spec == null ? null : Parse(spec, issues);
 		}
 
 		public static PanelSpec Parse(JObject json, List<PanelIssue> issues)
@@ -136,10 +149,22 @@ namespace DTech.Parley.Editor.Panels
 				issues.Add(PanelIssue.Error("targets", "Must be an object of alias -> reference."));
 			}
 
+			if (json["ids"] is JObject idMap)
+			{
+				foreach (JProperty property in idMap.Properties())
+				{
+					string id = property.Value.Type == JTokenType.String ? (string)property.Value : null;
+					if (!string.IsNullOrWhiteSpace(id) && spec.Targets.ContainsKey(property.Name))
+					{
+						spec.Ids[property.Name] = id.Trim();
+					}
+				}
+			}
+
 			int count = 0;
 			if (json["items"] is JArray items)
 			{
-				ParseItems(items, "items", 1, spec, spec.Items, issues, ref count);
+				ParseItems(items, "items", 1, spec, spec.Items, issues, ref count, false);
 				if (spec.Items.Count == 0 && items.Count == 0)
 				{
 					issues.Add(PanelIssue.Warning("items", "Panel has no items."));
@@ -153,7 +178,7 @@ namespace DTech.Parley.Editor.Panels
 			return spec;
 		}
 
-		private static void ParseItems(JArray array, string location, int depth, PanelSpec spec, List<PanelItem> into, List<PanelIssue> issues, ref int count)
+		private static void ParseItems(JArray array, string location, int depth, PanelSpec spec, List<PanelItem> into, List<PanelIssue> issues, ref int count, bool scoped)
 		{
 			for (int i = 0; i < array.Count; i++)
 			{
@@ -170,7 +195,7 @@ namespace DTech.Parley.Editor.Panels
 					continue;
 				}
 
-				PanelItem item = ParseItem(json, itemLocation, depth, spec, issues, ref count);
+				PanelItem item = ParseItem(json, itemLocation, depth, spec, issues, ref count, scoped);
 				if (item != null)
 				{
 					into.Add(item);
@@ -178,7 +203,7 @@ namespace DTech.Parley.Editor.Panels
 			}
 		}
 
-		private static PanelItem ParseItem(JObject json, string location, int depth, PanelSpec spec, List<PanelIssue> issues, ref int count)
+		private static PanelItem ParseItem(JObject json, string location, int depth, PanelSpec spec, List<PanelIssue> issues, ref int count, bool scoped)
 		{
 			string typeName = String(json, "type");
 			if (string.IsNullOrEmpty(typeName) || !_types.TryGetValue(typeName, out PanelItemType type))
@@ -228,11 +253,11 @@ namespace DTech.Parley.Editor.Panels
 
 					break;
 				case PanelItemType.Field:
-					RequireTarget(item, spec, location, issues);
+					RequireTarget(item, spec, location, issues, scoped);
 					Require(item.Path, "path", location, issues);
 					break;
 				case PanelItemType.Inspector:
-					RequireTarget(item, spec, location, issues);
+					RequireTarget(item, spec, location, issues, scoped);
 					break;
 				case PanelItemType.Group:
 				case PanelItemType.Row:
@@ -249,7 +274,26 @@ namespace DTech.Parley.Editor.Panels
 
 					if (json["items"] is JArray children)
 					{
-						ParseItems(children, location + ".items", depth + 1, spec, item.Items, issues, ref count);
+						ParseItems(children, location + ".items", depth + 1, spec, item.Items, issues, ref count, scoped);
+					}
+					else
+					{
+						issues.Add(PanelIssue.Error(location, "'items' array is required."));
+					}
+
+					break;
+				case PanelItemType.Repeat:
+					Require(item.Query, "query", location, issues);
+					spec.Queries.Add(item);
+					if (depth >= MaxDepth)
+					{
+						issues.Add(PanelIssue.Error(location, "Nested too deep (max " + MaxDepth + ")."));
+						break;
+					}
+
+					if (json["items"] is JArray repeated)
+					{
+						ParseItems(repeated, location + ".items", depth + 1, spec, item.Items, issues, ref count, true);
 					}
 					else
 					{
@@ -259,6 +303,7 @@ namespace DTech.Parley.Editor.Panels
 					break;
 				case PanelItemType.Table:
 					Require(item.Query, "query", location, issues);
+					spec.Queries.Add(item);
 					if (json["columns"] is JArray columns)
 					{
 						foreach (JToken column in columns)
@@ -282,14 +327,14 @@ namespace DTech.Parley.Editor.Panels
 					break;
 				case PanelItemType.Button:
 					Require(item.Label, "label", location, issues);
-					ParseAction(json, item, spec, location, issues);
+					ParseAction(json, item, spec, location, issues, scoped);
 					break;
 			}
 
 			return item;
 		}
 
-		private static void ParseAction(JObject json, PanelItem item, PanelSpec spec, string location, List<PanelIssue> issues)
+		private static void ParseAction(JObject json, PanelItem item, PanelSpec spec, string location, List<PanelIssue> issues, bool scoped)
 		{
 			string actionName = String(json, "action");
 			if (string.IsNullOrEmpty(actionName) || !_actions.TryGetValue(actionName, out PanelAction action))
@@ -304,7 +349,7 @@ namespace DTech.Parley.Editor.Panels
 				case PanelAction.Ping:
 				case PanelAction.Select:
 				case PanelAction.Open:
-					RequireTarget(item, spec, location, issues);
+					RequireTarget(item, spec, location, issues, scoped);
 					break;
 				case PanelAction.Menu:
 					Require(item.Menu, "menu", location, issues);
@@ -322,8 +367,14 @@ namespace DTech.Parley.Editor.Panels
 			}
 		}
 
-		private static void RequireTarget(PanelItem item, PanelSpec spec, string location, List<PanelIssue> issues)
+		private static void RequireTarget(PanelItem item, PanelSpec spec, string location, List<PanelIssue> issues, bool scoped)
 		{
+			if (scoped && (string.IsNullOrEmpty(item.Target) || string.Equals(item.Target, ScopeAlias, StringComparison.Ordinal)))
+			{
+				item.Target = null;
+				return;
+			}
+
 			if (string.IsNullOrEmpty(item.Target))
 			{
 				issues.Add(PanelIssue.Error(location, "'target' is required."));

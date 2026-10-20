@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using DTech.Parley.Editor.Agents.Claude;
 using DTech.Parley.Editor.Agents.Codex;
 using DTech.Parley.Editor.Agents.Local;
+using DTech.Parley.Editor.Commands;
 using DTech.Parley.Editor.Mcp;
 using DTech.Parley.Editor.Secrets;
 using DTech.Parley.Editor.Settings;
@@ -38,6 +39,7 @@ namespace DTech.Parley.Editor.Sessions
 		private readonly Dictionary<string, BackgroundTaskInfo> _tasks = new ();
 		private readonly List<McpServerStatus> _mcpStatuses = new ();
 		private readonly List<SkillInfo> _skills = new ();
+		private readonly List<SlashCommandInfo> _commands = new ();
 		private readonly CancellationTokenSource _lifetime = new ();
 
 		public ParleyProfile Profile { get; }
@@ -77,6 +79,15 @@ namespace DTech.Parley.Editor.Sessions
 		public IReadOnlyList<McpServerStatus> McpStatuses => _mcpStatuses;
 
 		public IReadOnlyList<SkillInfo> Skills => _skills;
+
+		public IReadOnlyList<SlashCommandInfo> Commands
+		{
+			get
+			{
+				ParleyCommandRegistry.Merge(_commands, Capabilities.Commands);
+				return _commands;
+			}
+		}
 
 		private TranscriptEntry _currentAssistant;
 		private bool _sending;
@@ -179,6 +190,12 @@ namespace DTech.Parley.Editor.Sessions
 			if (Record.Entries.Count <= 2 || Record.Title == SessionRecord.DefaultTitle)
 			{
 				Record.Title = SessionStore.MakeTitle(turn.Text);
+			}
+
+			string expanded = ParleyCommandRegistry.Expand(turn.Text);
+			if (expanded != null)
+			{
+				turn.Text = expanded;
 			}
 
 			AuthMessage = null;

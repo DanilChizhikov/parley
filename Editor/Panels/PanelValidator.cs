@@ -11,6 +11,7 @@ namespace DTech.Parley.Editor.Panels
 			if (!PanelIssue.HasErrors(issues))
 			{
 				PanelTargets.Validate(spec, issues);
+				PanelSpecWriter.Apply(json, spec);
 			}
 
 			return spec;

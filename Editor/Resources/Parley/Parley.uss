@@ -1215,6 +1215,20 @@
     margin: 0 4px 0 0;
 }
 
+.pl-panel__banner {
+    flex-shrink: 0;
+}
+
+.pl-panel__banner-row {
+    flex-direction: row;
+    align-items: center;
+    padding: 4px 6px 0 6px;
+}
+
+.pl-panel__banner-row > HelpBox {
+    flex-grow: 1;
+}
+
 .pl-panel__scroll {
     flex-grow: 1;
 }

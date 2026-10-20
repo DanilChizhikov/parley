@@ -24,16 +24,6 @@ namespace DTech.Parley.Editor.Panels
 				|| !string.IsNullOrEmpty(AssetDatabase.GUIDToAssetPath(reference));
 		}
 
-		public static Object Resolve(PanelSpec spec, string alias, string component)
-		{
-			if (alias == null || !spec.Targets.TryGetValue(alias, out string reference) || string.IsNullOrWhiteSpace(reference))
-			{
-				return null;
-			}
-
-			return WithComponent(UnityObjectPaths.Resolve(reference), component);
-		}
-
 		public static Object WithComponent(Object target, string component)
 		{
 			if (target == null || string.IsNullOrEmpty(component))
@@ -117,17 +107,20 @@ namespace DTech.Parley.Editor.Panels
 
 		public static void Validate(PanelSpec spec, List<PanelIssue> issues)
 		{
-			Dictionary<string, Object> resolved = new (StringComparer.Ordinal);
+			PanelTargetResolver targets = new PanelTargetResolver(spec);
 			foreach (KeyValuePair<string, string> pair in spec.Targets)
 			{
-				Object target = UnityObjectPaths.Resolve(pair.Value);
-				resolved[pair.Key] = target;
-				if (target != null)
+				if (targets.Resolve(pair.Key) != null)
 				{
 					continue;
 				}
 
 				string message = "'" + pair.Value + "' not found.";
+				if (targets.Status(pair.Key) == PanelTargetStatus.MissingWithId)
+				{
+					message += " Parley kept its id and will reconnect it automatically if it comes back.";
+				}
+
 				if (IsAssetReference(pair.Value))
 				{
 					issues.Add(PanelIssue.Error("targets." + pair.Key, message));
@@ -138,7 +131,7 @@ namespace DTech.Parley.Editor.Panels
 				}
 			}
 
-			ValidateItems(spec.Items, resolved, issues);
+			ValidateItems(spec.Items, targets, issues, null);
 		}
 
 		public static string CheckProperty(Object target, string path)
@@ -190,7 +183,7 @@ namespace DTech.Parley.Editor.Panels
 			return previous[b.Length];
 		}
 
-		private static void ValidateItems(List<PanelItem> items, Dictionary<string, Object> resolved, List<PanelIssue> issues)
+		private static void ValidateItems(List<PanelItem> items, PanelTargetResolver targets, List<PanelIssue> issues, Object scope)
 		{
 			foreach (PanelItem item in items)
 			{
@@ -198,7 +191,7 @@ namespace DTech.Parley.Editor.Panels
 				{
 					case PanelItemType.Field:
 					case PanelItemType.Inspector:
-						Object target = TargetOf(item, resolved, issues);
+						Object target = TargetOf(item, targets, issues, scope);
 						if (target != null && item.Type == PanelItemType.Field && !string.IsNullOrEmpty(item.Path))
 						{
 							AddError(item, CheckProperty(target, item.Path), issues);
@@ -207,10 +200,13 @@ namespace DTech.Parley.Editor.Panels
 						break;
 					case PanelItemType.Group:
 					case PanelItemType.Row:
-						ValidateItems(item.Items, resolved, issues);
+						ValidateItems(item.Items, targets, issues, scope);
 						break;
 					case PanelItemType.Table:
 						ValidateTable(item, issues);
+						break;
+					case PanelItemType.Repeat:
+						ValidateRepeat(item, targets, issues);
 						break;
 					case PanelItemType.Button:
 						if (item.Action == PanelAction.CreateAsset && !string.IsNullOrEmpty(item.AssetType) && FindScriptableObjectType(item.AssetType) == null)
@@ -230,13 +226,13 @@ namespace DTech.Parley.Editor.Panels
 				return;
 			}
 
-			if (!string.IsNullOrEmpty(item.Folder) && !AssetDatabase.IsValidFolder(item.Folder))
+			if (!PanelQuery.HasValidFolder(item))
 			{
 				issues.Add(PanelIssue.Error(item.Location, "Folder '" + item.Folder + "' does not exist."));
 				return;
 			}
 
-			List<Object> assets = FindAssets(item.Query, item.Folder);
+			List<Object> assets = PanelQuery.Assets(item);
 			if (assets.Count == 0)
 			{
 				issues.Add(PanelIssue.Warning(item.Location, "Query '" + item.Query + "' matched no assets."));
@@ -249,9 +245,33 @@ namespace DTech.Parley.Editor.Panels
 			}
 		}
 
-		private static Object TargetOf(PanelItem item, Dictionary<string, Object> resolved, List<PanelIssue> issues)
+		private static void ValidateRepeat(PanelItem item, PanelTargetResolver targets, List<PanelIssue> issues)
 		{
-			if (item.Target == null || !resolved.TryGetValue(item.Target, out Object target) || target == null)
+			if (string.IsNullOrEmpty(item.Query))
+			{
+				return;
+			}
+
+			if (!PanelQuery.HasValidFolder(item))
+			{
+				issues.Add(PanelIssue.Error(item.Location, "Folder '" + item.Folder + "' does not exist."));
+				return;
+			}
+
+			List<Object> assets = PanelQuery.Assets(item);
+			if (assets.Count == 0)
+			{
+				issues.Add(PanelIssue.Warning(item.Location, "Query '" + item.Query + "' matched no assets."));
+				return;
+			}
+
+			ValidateItems(item.Items, targets, issues, assets[0]);
+		}
+
+		private static Object TargetOf(PanelItem item, PanelTargetResolver targets, List<PanelIssue> issues, Object scope)
+		{
+			Object target = string.IsNullOrEmpty(item.Target) ? scope : targets.Resolve(item.Target);
+			if (target == null)
 			{
 				return null;
 			}

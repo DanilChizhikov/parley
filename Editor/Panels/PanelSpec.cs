@@ -7,7 +7,9 @@ namespace DTech.Parley.Editor.Panels
 	{
 		public string Title { get; set; }
 		public Dictionary<string, string> Targets { get; } = new (StringComparer.Ordinal);
+		public Dictionary<string, string> Ids { get; } = new (StringComparer.Ordinal);
 		public List<PanelItem> Items { get; } = new ();
+		public List<PanelItem> Queries { get; } = new ();
 
 		public int CountItems()
 		{

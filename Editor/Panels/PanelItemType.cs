@@ -12,5 +12,6 @@ namespace DTech.Parley.Editor.Panels
 		Row = 7,
 		Table = 8,
 		Button = 9,
+		Repeat = 10,
 	}
 }

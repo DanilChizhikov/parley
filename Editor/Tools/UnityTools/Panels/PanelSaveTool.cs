@@ -48,6 +48,12 @@ namespace DTech.Parley.Editor.Tools.UnityTools
 				return ToolResult.Error(specError ?? "'spec' is required.");
 			}
 
+			if (PanelStore.Default.TryLoad(name, out string previousText))
+			{
+				JObject previous = PanelParser.ReadSpec(new JValue(previousText), out _);
+				PanelSpecWriter.MergeIds(json, previous);
+			}
+
 			List<PanelIssue> issues = new ();
 			PanelSpec spec = PanelValidator.Check(json, issues);
 			if (PanelIssue.HasErrors(issues))

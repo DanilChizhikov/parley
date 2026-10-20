@@ -107,6 +107,32 @@ namespace DTech.Parley.Tests.EditorMode
         }
 
         [Test]
+        public void ParsesIdsForKnownAliasesOnly()
+        {
+            List<PanelIssue> issues = new ();
+            PanelSpec spec = PanelParser.Parse(@"{ ""title"": ""T"", ""targets"": { ""cfg"": ""Assets/A.asset"" },
+                ""ids"": { ""cfg"": ""id-1"", ""gone"": ""id-2"", ""bad"": 5 },
+                ""items"": [ { ""type"": ""label"", ""text"": ""x"" } ] }", issues);
+
+            Assert.IsFalse(PanelIssue.HasErrors(issues), PanelIssue.Format(issues));
+            Assert.AreEqual(1, spec.Ids.Count);
+            Assert.AreEqual("id-1", spec.Ids["cfg"]);
+        }
+
+        [Test]
+        public void CollectsQueryItems()
+        {
+            List<PanelIssue> issues = new ();
+            PanelSpec spec = PanelParser.Parse(@"{ ""title"": ""T"", ""targets"": {}, ""items"": [
+                { ""type"": ""table"", ""query"": ""t:PanelTestConfig"", ""columns"": [ ""_health"" ] },
+                { ""type"": ""repeat"", ""query"": ""t:PanelTestConfig"", ""items"": [ { ""type"": ""field"", ""path"": ""_health"" } ] }
+            ] }", issues);
+
+            Assert.IsFalse(PanelIssue.HasErrors(issues), PanelIssue.Format(issues));
+            Assert.AreEqual(2, spec.Queries.Count);
+        }
+
+        [Test]
         public void ReportsInvalidJson()
         {
             List<PanelIssue> issues = new ();

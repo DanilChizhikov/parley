@@ -1,4 +1,5 @@
 using System.Threading;
+using DTech.Parley.Editor.Panels;
 using DTech.Parley.Editor.Tools;
 using DTech.Parley.Editor.Tools.UnityTools;
 using Newtonsoft.Json.Linq;
@@ -57,6 +58,31 @@ namespace DTech.Parley.Tests.EditorMode
             Assert.AreEqual(ToolKind.ReadOnly, open.Kind);
             Assert.IsTrue(catalog.TryGet("panel_save", out _));
             Assert.IsTrue(catalog.TryGet("panel_list", out _));
+        }
+
+        [Test]
+        public void SaveKeepsIdsWrittenByParley()
+        {
+            const string name = "parley-test-ids";
+            PanelTempAssets assets = new PanelTempAssets();
+            string path = assets.Create("Brain");
+            PanelStore.Default.Save(name, @"{ ""title"": ""T"", ""targets"": { ""cfg"": """ + path + @""" }, ""ids"": { ""cfg"": ""id-1"" }, ""items"": [] }");
+            try
+            {
+                ToolResult result = Run(new PanelSaveTool(),
+                    @"{ ""name"": """ + name + @""", ""open"": false, ""spec"": { ""title"": ""T"", ""targets"": { ""cfg"": """ + path + @""" },
+                        ""items"": [ { ""type"": ""field"", ""target"": ""cfg"", ""path"": ""_health"" } ] } }");
+
+                Assert.IsFalse(result.IsError, result.Text);
+                Assert.IsTrue(PanelStore.Default.TryLoad(name, out string saved));
+                StringAssert.Contains("\"ids\"", saved);
+                StringAssert.Contains("\"cfg\"", saved);
+            }
+            finally
+            {
+                PanelStore.Default.Delete(name);
+                assets.Delete();
+            }
         }
 
         private static ToolResult Run(IParleyTool tool, string input)

@@ -108,6 +108,51 @@ namespace DTech.Parley.Tests.EditorMode
             Assert.AreEqual(3, PanelTargets.Distance("", "abc"));
         }
 
+        [Test]
+        public void ValidateCapturesIdsIntoSpec()
+        {
+            PanelTempAssets assets = new PanelTempAssets();
+            try
+            {
+                List<PanelIssue> issues = new ();
+                PanelSpec spec = Parse(@"{ ""title"": ""T"", ""targets"": { ""cfg"": """ + assets.Create("Brain") + @""" },
+                    ""items"": [ { ""type"": ""field"", ""target"": ""cfg"", ""path"": ""_health"" } ] }");
+
+                PanelTargets.Validate(spec, issues);
+
+                CollectionAssert.IsEmpty(issues, PanelIssue.Format(issues));
+                Assert.AreEqual(1, spec.Ids.Count);
+            }
+            finally
+            {
+                assets.Delete();
+            }
+        }
+
+        [Test]
+        public void MissingKnownTargetMentionsReconnect()
+        {
+            PanelTempAssets assets = new PanelTempAssets();
+            try
+            {
+                string path = assets.Create("Brain");
+                PanelSpec spec = Parse(@"{ ""title"": ""T"", ""targets"": { ""cfg"": """ + path + @""" },
+                    ""items"": [ { ""type"": ""inspector"", ""target"": ""cfg"" } ] }");
+                PanelTargets.Validate(spec, new List<PanelIssue>());
+                Assert.IsTrue(UnityEditor.AssetDatabase.DeleteAsset(path));
+
+                List<PanelIssue> issues = new ();
+                PanelTargets.Validate(spec, issues);
+
+                Assert.IsTrue(PanelIssue.HasErrors(issues));
+                StringAssert.Contains("reconnect", issues[0].Message);
+            }
+            finally
+            {
+                assets.Delete();
+            }
+        }
+
         private string Field(string path)
         {
             return @"{ ""type"": ""field"", ""target"": ""cfg"", ""path"": """ + path + @""" }";
