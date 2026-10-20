@@ -34,7 +34,7 @@ jobs:
           haskell: true
           large-packages: true
           docker-images: true
-
+    
       - name: Checkout repo
         uses: actions/checkout@v4
 

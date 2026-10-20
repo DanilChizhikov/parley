@@ -227,7 +227,7 @@ namespace DTech.Parley.Editor.UI
             _transcript.Bind(session);
             _side.Bind(session);
             _authCard.Bind(session);
-            _composer.SetCommandSource(() => session.Capabilities.Commands);
+            _composer.SetCommandSource(() => session.Commands);
             MarkDirty();
         }
 

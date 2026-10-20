@@ -37,8 +37,10 @@ project info. You can attach the selection, console errors, a Scene or Game scre
     - [Permission Modes](#permission-modes)
     - [Questions and Plans](#questions-and-plans)
     - [Unity Tools](#unity-tools)
+    - [Panels](#panels)
     - [MCP Servers](#mcp-servers)
     - [Skills](#skills)
+    - [Commands](#commands)
     - [Attachments and Commands](#attachments-and-commands)
     - [Sessions](#sessions)
 - [Project Settings and Trust](#project-settings-and-trust)
@@ -67,7 +69,7 @@ project info. You can attach the selection, console errors, a Scene or Game scre
     ```
 3. Unity will automatically import the package.
 
-To pin a release, add its tag: `https://github.com/DanilChizhikov/parley.git#v0.1.0`.
+To pin a release, add its tag: `https://github.com/DanilChizhikov/parley.git#v0.2.0`.
 
 Parley depends on `com.unity.nuget.newtonsoft-json`; Unity installs it automatically.
 
@@ -87,6 +89,7 @@ Parley depends on `com.unity.nuget.newtonsoft-json`; Unity installs it automatic
   skills
 - Unity editor tools served to Claude Code as an in-process MCP server (`mcp__unity__*`), to Codex as dynamic tools,
   and to local models natively (`unity_*`)
+- Panels: editor windows the agent builds from a JSON spec, with no C# and no recompile
 - Per-chat MCP servers: your own library (stdio or HTTP) plus the servers from the Claude Code or Codex config
 - Per-chat skills: your own `SKILL.md` library plus the skills the CLI finds, and skills that run automatically
   before the first message of every new chat
@@ -190,8 +193,52 @@ permissions* mode and the matching plan button.
 | `hierarchy` | Scene or prefab hierarchy with components |
 | `inspect` | Serialized properties of an object, asset or the selection (read-only) |
 | `project_info` | Unity version, build target, scripting backend, render pipeline, build scenes, packages |
+| `panel_open` | Opens an editor window built from a JSON spec, or a saved panel (see [Panels](#panels)) |
+| `panel_save` | Saves a panel spec under a name (asks first, like a file edit) |
+| `panel_list` | Saved panels with their titles and targets |
 
 The agent may use the read-only Unity tools without asking. You can switch each tool off in the preferences.
+
+### Panels
+Ask the agent for a window, for example *"make me a window to tune HP and speed of all EnemyConfig assets"*. The agent
+describes it as a JSON spec and `panel_open` shows it as a regular editor window right away. No C# is written, no
+scripts recompile, and nothing is added to `Assets`.
+
+```json
+{
+  "title": "Enemy balance",
+  "targets": { "boss": "Assets/Configs/Boss.asset" },
+  "items": [
+    { "type": "header", "text": "Boss" },
+    { "type": "field", "target": "boss", "path": "_health", "label": "HP" },
+    { "type": "table", "query": "t:EnemyConfig", "columns": ["_health", "_speed"] },
+    { "type": "button", "label": "Save", "action": "save_assets" }
+  ]
+}
+```
+
+- Items: `header`, `label`, `help`, `separator`, `field` (one serialized property), `inspector` (a whole object),
+  `group` / `row` (layout), `table` (one row per asset of an AssetDatabase query) and `button`.
+- Fields are bound `SerializedProperty` fields: Undo, prefab overrides and your project's property drawers work.
+- Targets are asset paths, GUIDs, instance ids or hierarchy paths (`Scene:Root/Child`). A missing scene object shows a
+  placeholder with a Retry button.
+- Buttons run only built-in actions: `ping`, `select`, `open`, `save_assets`, `menu` and `create_asset`. `menu` and
+  `create_asset` ask you to confirm. Panels never run code from the spec.
+- `panel_open` checks targets and property paths before it opens anything and sends errors back to the agent, with
+  suggestions such as *"Did you mean: _health?"*.
+- `repeat` renders its child items once per asset of a query, each in a foldout: inside it leave `target` out to mean
+  the current asset. Use `table` for a compact overview and `repeat` when every asset needs real fields; both keep up
+  on their own when assets are added, renamed or removed.
+- Panels heal themselves. Parley stores a stable id per target next to the readable path and repairs the path after a
+  rename or a move, so a renamed asset never breaks a panel. A target that cannot be reached right now (deleted asset,
+  closed scene) says it will reconnect and comes back by itself.
+- Open panels re-resolve their targets and re-run their queries when the project or the hierarchy changes, and keep
+  your scroll position and foldout state. Unrelated imports cost nothing: a panel only rebuilds when something it
+  shows actually changed.
+- A panel built from explicit targets shows a banner when assets of the same type are not in it, with a Ping button.
+- Save a panel from its toolbar or with `panel_save`. Saved panels live in `UserSettings/Parley/Panels/<name>.json` and
+  reopen from `Window/DTech/Parley Panels`. Open panels survive script reloads, and a panel saved again refreshes its
+  window.
 
 ### MCP Servers
 The **MCP** tab of the side panel lists the MCP servers of the current chat. Each one has a checkbox that switches it
@@ -223,12 +270,43 @@ The **Skills** tab lists the skills of the current chat, each with a checkbox fo
 Claude Code runs each auto-run skill as a separate turn, so skill hooks see it. Codex receives skills as `skill`
 input items. Local models get the skill text inline and can load more with their Skill tool.
 
+### Commands
+Type `/` in the composer to see Parley's own commands next to the backend's commands and skills.
+
+- `/create-parley-panel <what the panel should let you tune>` runs the panel workflow: the agent resolves the targets,
+  reads their real property paths with `inspect`, opens the window with `panel_open` and stops there. You name the
+  panel and press **Save** in its toolbar if you want to keep it.
+- A command is a prompt: Parley swaps what you typed for the command's instructions before the message reaches the
+  agent, so the chat still shows the line you wrote.
+
+Add your own command from any editor assembly:
+
+```csharp
+using DTech.Parley.Editor.Commands;
+
+public sealed class ReviewConfigsCommand : IParleyCommand
+{
+    public string Name => "review-configs";
+    public string Description => "Review balance configs";
+    public string ArgumentHint => "<folder>";
+
+    public string BuildPrompt(ParleyCommandRequest request)
+    {
+        return "Review every ScriptableObject under " + request.Arguments + " and report risky values.";
+    }
+}
+```
+
+The type must be public with a public parameterless constructor, and the name uses lowercase letters, digits and `-`.
+Commands are always available, there is nothing to switch on. A command of yours that takes the name of a built-in one
+replaces it.
+
 ### Attachments and Commands
 <img src="Documentation~/images/attach-menu.png" alt="The Attach menu: Selection, Console errors, Scene view screenshot, Game camera screenshot, File…" width="180">
 
 **＋ Attach** adds the selection, console errors, a Scene view or game camera screenshot, or a file. You can also
-drag assets, files or scene objects onto the composer. Type `/` for the backend's commands and skills, or `@` to
-complete an asset path.
+drag assets, files or scene objects onto the composer. Type `/` for Parley's commands, the backend's commands and
+skills, or `@` to complete an asset path.
 
 ### Sessions
 Parley saves each chat under `Library/Parley/Sessions`, with its MCP servers and skills. **History** resumes a chat:
@@ -262,6 +340,7 @@ when the package was installed from one. When there is one, the toolbar shows a 
 - `Preferences/.../DTech/Parley/Skills/.claude/skills`: your skill library
 - `ProjectSettings/ParleySettings.asset`: shared project options (extra instructions, extra directories, Unity tools)
 - `Library/Parley/Sessions`: saved chats
+- `UserSettings/Parley/Panels`: saved panels
 - `Library/Parley/Codex`: per-profile Codex homes
 - `Library/Parley/run`: generated `--mcp-config` / `--settings` files for the CLI
 - OS keychain (or `~/.config/dtech-parley/credentials.json`): secrets

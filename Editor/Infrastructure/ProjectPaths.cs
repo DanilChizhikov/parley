@@ -11,6 +11,8 @@ namespace DTech.Parley.Editor
 		public static string LibraryFolder => Ensure(Path.Combine(Root, "Library", "Parley"));
 		public static string RunFolder => Ensure(Path.Combine(LibraryFolder, "run"));
 		public static string SessionsFolder => Ensure(Path.Combine(LibraryFolder, "Sessions"));
+		public static string UserSettingsFolder => Ensure(Path.Combine(Root, "UserSettings", "Parley"));
+		public static string PanelsFolder => Path.Combine(UserSettingsFolder, "Panels");
 		public static string HomeFolder => Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
 
 		private static string _root;

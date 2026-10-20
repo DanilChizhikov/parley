@@ -1,0 +1,89 @@
+name: Release
+
+# A pull request from release/X.Y.Z or hotfix/X.Y.Z into master is a release. While it is open, `validate` checks it is
+# ready; once it is merged, `release` packs the package from the merge commit into a .unitypackage and publishes vX.Y.Z
+# with the pull request's description as the release notes and the .unitypackage attached.
+on:
+  pull_request:
+    types: [ opened, edited, synchronize, reopened, closed ]
+    branches:
+      - master
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.event.pull_request.number }}
+
+jobs:
+  validate:
+    name: Validate Release
+    if: >
+      github.event.action != 'closed' &&
+      (startsWith(github.head_ref, 'release/') || startsWith(github.head_ref, 'hotfix/'))
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Check version, changelog and notes
+        id: version
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: sh .github/scripts/release-version.sh
+
+      - name: Check the package packs
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: >
+          python3 -I .github/scripts/build-unitypackage.py . Assets/Parley
+          "$RUNNER_TEMP/com.dtech.parley.$VERSION.unitypackage"
+
+  release:
+    name: Pack and Release
+    if: >
+      github.event.action == 'closed' && github.event.pull_request.merged == true &&
+      (startsWith(github.head_ref, 'release/') || startsWith(github.head_ref, 'hotfix/'))
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout merge commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+
+      - name: Check version, changelog and notes
+        id: version
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: sh .github/scripts/release-version.sh
+
+      - name: Pack unitypackage
+        id: pack
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          file="$RUNNER_TEMP/com.dtech.parley.$VERSION.unitypackage"
+          python3 -I .github/scripts/build-unitypackage.py . Assets/Parley "$file"
+          echo "file=$file" >> "$GITHUB_OUTPUT"
+
+      - name: Upload unitypackage
+        uses: actions/upload-artifact@v4
+        with:
+          name: com.dtech.parley.${{ steps.version.outputs.version }}
+          path: ${{ steps.pack.outputs.file }}
+          if-no-files-found: error
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: v${{ steps.version.outputs.version }}
+          target_commitish: ${{ github.event.pull_request.merge_commit_sha }}
+          body: ${{ github.event.pull_request.body }}
+          files: ${{ steps.pack.outputs.file }}
+          fail_on_unmatched_files: true
+          make_latest: true
