@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.2.0] - 2026-10-21
 
 ### Added
 - Panels: the agent builds editor windows from a JSON spec with `panel_open`, without writing C# or recompiling.
