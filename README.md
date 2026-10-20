@@ -37,6 +37,7 @@ project info. You can attach the selection, console errors, a Scene or Game scre
     - [Permission Modes](#permission-modes)
     - [Questions and Plans](#questions-and-plans)
     - [Unity Tools](#unity-tools)
+    - [Panels](#panels)
     - [MCP Servers](#mcp-servers)
     - [Skills](#skills)
     - [Attachments and Commands](#attachments-and-commands)
@@ -87,6 +88,7 @@ Parley depends on `com.unity.nuget.newtonsoft-json`; Unity installs it automatic
   skills
 - Unity editor tools served to Claude Code as an in-process MCP server (`mcp__unity__*`), to Codex as dynamic tools,
   and to local models natively (`unity_*`)
+- Panels: editor windows the agent builds from a JSON spec, with no C# and no recompile
 - Per-chat MCP servers: your own library (stdio or HTTP) plus the servers from the Claude Code or Codex config
 - Per-chat skills: your own `SKILL.md` library plus the skills the CLI finds, and skills that run automatically
   before the first message of every new chat
@@ -190,8 +192,42 @@ permissions* mode and the matching plan button.
 | `hierarchy` | Scene or prefab hierarchy with components |
 | `inspect` | Serialized properties of an object, asset or the selection (read-only) |
 | `project_info` | Unity version, build target, scripting backend, render pipeline, build scenes, packages |
+| `panel_open` | Opens an editor window built from a JSON spec, or a saved panel (see [Panels](#panels)) |
+| `panel_save` | Saves a panel spec under a name (asks first, like a file edit) |
+| `panel_list` | Saved panels with their titles and targets |
 
 The agent may use the read-only Unity tools without asking. You can switch each tool off in the preferences.
+
+### Panels
+Ask the agent for a window, for example *"make me a window to tune HP and speed of all EnemyConfig assets"*. The agent
+describes it as a JSON spec and `panel_open` shows it as a regular editor window right away. No C# is written, no
+scripts recompile, and nothing is added to `Assets`.
+
+```json
+{
+  "title": "Enemy balance",
+  "targets": { "boss": "Assets/Configs/Boss.asset" },
+  "items": [
+    { "type": "header", "text": "Boss" },
+    { "type": "field", "target": "boss", "path": "_health", "label": "HP" },
+    { "type": "table", "query": "t:EnemyConfig", "columns": ["_health", "_speed"] },
+    { "type": "button", "label": "Save", "action": "save_assets" }
+  ]
+}
+```
+
+- Items: `header`, `label`, `help`, `separator`, `field` (one serialized property), `inspector` (a whole object),
+  `group` / `row` (layout), `table` (one row per asset of an AssetDatabase query) and `button`.
+- Fields are bound `SerializedProperty` fields: Undo, prefab overrides and your project's property drawers work.
+- Targets are asset paths, GUIDs, instance ids or hierarchy paths (`Scene:Root/Child`). A missing scene object shows a
+  placeholder with a Retry button.
+- Buttons run only built-in actions: `ping`, `select`, `open`, `save_assets`, `menu` and `create_asset`. `menu` and
+  `create_asset` ask you to confirm. Panels never run code from the spec.
+- `panel_open` checks targets and property paths before it opens anything and sends errors back to the agent, with
+  suggestions such as *"Did you mean: _health?"*.
+- Save a panel from its toolbar or with `panel_save`. Saved panels live in `UserSettings/Parley/Panels/<name>.json` and
+  reopen from `Window/DTech/Parley Panels`. Open panels survive script reloads, and a panel saved again refreshes its
+  window.
 
 ### MCP Servers
 The **MCP** tab of the side panel lists the MCP servers of the current chat. Each one has a checkbox that switches it
@@ -262,6 +298,7 @@ when the package was installed from one. When there is one, the toolbar shows a 
 - `Preferences/.../DTech/Parley/Skills/.claude/skills`: your skill library
 - `ProjectSettings/ParleySettings.asset`: shared project options (extra instructions, extra directories, Unity tools)
 - `Library/Parley/Sessions`: saved chats
+- `UserSettings/Parley/Panels`: saved panels
 - `Library/Parley/Codex`: per-profile Codex homes
 - `Library/Parley/run`: generated `--mcp-config` / `--settings` files for the CLI
 - OS keychain (or `~/.config/dtech-parley/credentials.json`): secrets

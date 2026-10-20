@@ -1,5 +1,14 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- Panels: the agent builds editor windows from a JSON spec with `panel_open`, without writing C# or recompiling.
+  Panels show bound serialized fields, whole inspectors, asset tables, layout groups and buttons limited to a fixed
+  set of actions. Specs are checked before opening, and errors go back to the agent with property path suggestions.
+  Save with `panel_save` or from the panel toolbar to `UserSettings/Parley/Panels`, list with `panel_list`, and reopen
+  from `Window/DTech/Parley Panels`.
+
 ## [0.1.0] - 2026-10-10
 
 First release.
