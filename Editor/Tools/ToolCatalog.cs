@@ -36,6 +36,9 @@ namespace DTech.Parley.Editor.Tools
 			yield return new HierarchyTool();
 			yield return new InspectTool();
 			yield return new ProjectInfoTool();
+			yield return new PanelOpenTool();
+			yield return new PanelSaveTool();
+			yield return new PanelListTool();
 		}
 
 		public static ToolCatalog CreateForMcp(ParleyProjectSettings settings)

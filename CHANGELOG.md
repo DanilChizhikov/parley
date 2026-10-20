@@ -1,5 +1,23 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- Panels: the agent builds editor windows from a JSON spec with `panel_open`, without writing C# or recompiling.
+  Panels show bound serialized fields, whole inspectors, asset tables, layout groups and buttons limited to a fixed
+  set of actions. Specs are checked before opening, and errors go back to the agent with property path suggestions.
+  Save with `panel_save` or from the panel toolbar to `UserSettings/Parley/Panels`, list with `panel_list`, and reopen
+  from `Window/DTech/Parley Panels`.
+- Commands: `/create-parley-panel <description>` in the composer runs the panel workflow (inspect the targets, write
+  the spec, open the window) and leaves saving to you. Commands are an extension point: implement the public
+  `IParleyCommand` in any editor assembly and your `/name` joins the composer suggestions.
+- Panels keep up with the project by themselves: Parley records a stable id per target and repairs the path after a
+  rename or a move, and open panels re-resolve their targets and re-run their queries whenever the project or the
+  hierarchy changes, keeping scroll position and foldout state. A target that is gone for now says it will reconnect
+  instead of looking broken.
+- Panels: new `repeat` item renders its child items once per asset a query finds, so a new config shows up as a new
+  section. A panel built from explicit targets now shows a banner when assets of the same type are missing from it.
+
 ## [0.1.0] - 2026-10-10
 
 First release.

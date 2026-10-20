@@ -1191,3 +1191,146 @@
     flex-shrink: 0;
     margin-top: 14px;
 }
+
+.pl-panel {
+    flex-grow: 1;
+}
+
+.pl-panel__toolbar {
+    flex-direction: row;
+    align-items: center;
+    flex-shrink: 0;
+    padding: 4px 6px;
+    border-bottom-width: 1px;
+    border-bottom-color: var(--pl-border);
+    background-color: var(--pl-surface);
+}
+
+.pl-panel__toolbar > .pl-muted {
+    margin: 0 6px;
+}
+
+.pl-panel__name {
+    width: 140px;
+    margin: 0 4px 0 0;
+}
+
+.pl-panel__banner {
+    flex-shrink: 0;
+}
+
+.pl-panel__banner-row {
+    flex-direction: row;
+    align-items: center;
+    padding: 4px 6px 0 6px;
+}
+
+.pl-panel__banner-row > HelpBox {
+    flex-grow: 1;
+}
+
+.pl-panel__scroll {
+    flex-grow: 1;
+}
+
+.pl-panel__content {
+    padding: 8px;
+}
+
+.pl-root .pl-panel__header {
+    font-size: 14px;
+    -unity-font-style: bold;
+    margin: 10px 0 4px 0;
+}
+
+.pl-panel__label {
+    margin: 2px 0;
+}
+
+.pl-panel__separator {
+    height: 1px;
+    margin: 8px 0;
+    background-color: var(--pl-border);
+}
+
+.pl-panel__group {
+    margin: 6px 0;
+    padding: 4px 6px;
+    border-width: 1px;
+    border-radius: 4px;
+    border-color: var(--pl-border);
+    background-color: var(--pl-surface);
+}
+
+.pl-root .pl-panel__group-title {
+    -unity-font-style: bold;
+    margin: 0 0 4px 0;
+}
+
+.pl-panel__row {
+    flex-direction: row;
+    align-items: center;
+}
+
+.pl-panel__row-item {
+    flex-grow: 1;
+    flex-basis: 0;
+    margin-right: 4px;
+}
+
+.pl-panel__button {
+    align-self: flex-start;
+    margin: 4px 4px 4px 0;
+}
+
+.pl-panel__missing {
+    margin: 2px 0;
+}
+
+.pl-panel__table {
+    margin: 4px 0;
+    border-width: 1px;
+    border-radius: 4px;
+    border-color: var(--pl-border);
+}
+
+.pl-panel__table-row {
+    flex-direction: row;
+    align-items: center;
+    padding: 1px 4px;
+    border-bottom-width: 1px;
+    border-bottom-color: var(--pl-border);
+}
+
+.pl-panel__table-row--header {
+    background-color: var(--pl-surface-2);
+    -unity-font-style: bold;
+}
+
+.pl-panel__table-name {
+    width: 160px;
+    flex-shrink: 0;
+    -unity-text-align: middle-left;
+}
+
+.pl-panel__table-cell {
+    flex-grow: 1;
+    flex-basis: 0;
+    margin: 0 2px;
+}
+
+.pl-panel__table-cell > .unity-base-field > .unity-base-field__label {
+    display: none;
+}
+
+.pl-panel__list-row {
+    flex-direction: row;
+    align-items: center;
+    padding: 4px 8px;
+    border-bottom-width: 1px;
+    border-bottom-color: var(--pl-border);
+}
+
+.pl-panel__list-name {
+    flex-grow: 1;
+}

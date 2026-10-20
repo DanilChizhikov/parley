@@ -48,6 +48,39 @@ namespace DTech.Parley.Editor
 			return target.name + " (" + target.GetType().Name + ")";
 		}
 
+		public static bool TryReferenceOf(Object target, out string reference)
+		{
+			reference = null;
+			if (target == null)
+			{
+				return false;
+			}
+
+			if (EditorUtility.IsPersistent(target))
+			{
+				string assetPath = AssetDatabase.GetAssetPath(target);
+				if (string.IsNullOrEmpty(assetPath) || !AssetDatabase.IsMainAsset(target))
+				{
+					return false;
+				}
+
+				reference = assetPath;
+				return true;
+			}
+
+			Transform transform = (target as GameObject)?.transform ?? (target as Component)?.transform;
+			if (transform == null)
+			{
+				return false;
+			}
+
+			bool inPrefabStage = PrefabStageUtility.GetPrefabStage(transform.gameObject) != null;
+			reference = inPrefabStage
+				? HierarchyPath(transform)
+				: transform.gameObject.scene.name + ":" + HierarchyPath(transform);
+			return true;
+		}
+
 		public static IEnumerable<GameObject> Roots()
 		{
 			PrefabStage stage = PrefabStageUtility.GetCurrentPrefabStage();
