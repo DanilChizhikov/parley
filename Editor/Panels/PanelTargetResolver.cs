@@ -10,10 +10,25 @@ namespace DTech.Parley.Editor.Panels
 
 		public bool SpecChanged { get; private set; }
 
+		public IReadOnlyList<string> Aliases
+		{
+			get
+			{
+				if (_aliases.Count != _spec.Targets.Count)
+				{
+					_aliases.Clear();
+					_aliases.AddRange(_spec.Targets.Keys);
+				}
+
+				return _aliases;
+			}
+		}
+
 		private readonly PanelSpec _spec;
 		private readonly Dictionary<string, Object> _resolved = new (StringComparer.Ordinal);
 		private readonly Dictionary<string, PanelTargetStatus> _status = new (StringComparer.Ordinal);
 		private readonly Dictionary<string, int> _captured = new (StringComparer.Ordinal);
+		private readonly List<string> _aliases = new ();
 
 		public PanelTargetResolver(PanelSpec spec)
 		{

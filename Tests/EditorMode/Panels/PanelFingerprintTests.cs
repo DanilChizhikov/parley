@@ -75,7 +75,7 @@ namespace DTech.Parley.Tests.EditorMode
             List<PanelItem> queries = new () { Query() };
             ulong before = PanelFingerprint.HashQueries(queries);
 
-            string outside = _assets.CreateFolder(PanelTempAssets.Root + "/Other");
+            string outside = _assets.CreateFolder("Assets/ParleyTempTestsOther");
             _assets.Create(outside, "Ignored");
 
             Assert.AreEqual(before, PanelFingerprint.HashQueries(queries));

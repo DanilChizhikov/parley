@@ -11,6 +11,7 @@ namespace DTech.Parley.Editor.Panels
 
 		private readonly Dictionary<string, bool> _values = new (StringComparer.Ordinal);
 		private readonly Dictionary<string, bool> _previous = new (StringComparer.Ordinal);
+		private readonly Dictionary<string, Foldout> _bound = new (StringComparer.Ordinal);
 
 		public static string ComponentKey(string location, string typeName, int index)
 		{
@@ -24,6 +25,16 @@ namespace DTech.Parley.Editor.Panels
 
 		public void BeginBuild()
 		{
+			// Read the live foldouts instead of listening for change events: a Foldout raises its
+			// ChangeEvent from the inner toggle and the event bubbles through ancestor foldouts.
+			foreach (KeyValuePair<string, Foldout> pair in _bound)
+			{
+				if (pair.Value != null)
+				{
+					_values[pair.Key] = pair.Value.value;
+				}
+			}
+
 			_previous.Clear();
 			foreach (KeyValuePair<string, bool> pair in _values)
 			{
@@ -31,6 +42,7 @@ namespace DTech.Parley.Editor.Panels
 			}
 
 			_values.Clear();
+			_bound.Clear();
 		}
 
 		public void Bind(Foldout foldout, string key)
@@ -38,13 +50,7 @@ namespace DTech.Parley.Editor.Panels
 			bool open = !_previous.TryGetValue(key, out bool stored) || stored;
 			foldout.value = open;
 			_values[key] = open;
-			foldout.RegisterValueChangedCallback(evt =>
-			{
-				if (evt.target == foldout)
-				{
-					_values[key] = evt.newValue;
-				}
-			});
+			_bound[key] = foldout;
 		}
 	}
 }

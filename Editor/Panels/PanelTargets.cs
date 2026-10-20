@@ -108,26 +108,27 @@ namespace DTech.Parley.Editor.Panels
 		public static void Validate(PanelSpec spec, List<PanelIssue> issues)
 		{
 			PanelTargetResolver targets = new PanelTargetResolver(spec);
-			foreach (KeyValuePair<string, string> pair in spec.Targets)
+			foreach (string alias in targets.Aliases)
 			{
-				if (targets.Resolve(pair.Key) != null)
+				if (targets.Resolve(alias) != null)
 				{
 					continue;
 				}
 
-				string message = "'" + pair.Value + "' not found.";
-				if (targets.Status(pair.Key) == PanelTargetStatus.MissingWithId)
+				string reference = spec.Targets[alias];
+				string message = "'" + reference + "' not found.";
+				if (targets.Status(alias) == PanelTargetStatus.MissingWithId)
 				{
 					message += " Parley kept its id and will reconnect it automatically if it comes back.";
 				}
 
-				if (IsAssetReference(pair.Value))
+				if (IsAssetReference(reference))
 				{
-					issues.Add(PanelIssue.Error("targets." + pair.Key, message));
+					issues.Add(PanelIssue.Error("targets." + alias, message));
 				}
 				else
 				{
-					issues.Add(PanelIssue.Warning("targets." + pair.Key, message + " Is the scene open? The panel will show a placeholder until it resolves."));
+					issues.Add(PanelIssue.Warning("targets." + alias, message + " Is the scene open? The panel will show a placeholder until it resolves."));
 				}
 			}
 

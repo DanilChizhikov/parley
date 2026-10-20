@@ -29,9 +29,9 @@ namespace DTech.Parley.Editor.Panels
 
 			HashSet<string> shown = new (StringComparer.Ordinal);
 			List<string> types = new ();
-			foreach (KeyValuePair<string, string> pair in spec.Targets)
+			foreach (string alias in targets.Aliases)
 			{
-				Object target = targets.Resolve(pair.Key);
+				Object target = targets.Resolve(alias);
 				if (target == null || !EditorUtility.IsPersistent(target))
 				{
 					continue;

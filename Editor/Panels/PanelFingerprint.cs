@@ -33,11 +33,11 @@ namespace DTech.Parley.Editor.Panels
 				return hash;
 			}
 
-			foreach (KeyValuePair<string, string> pair in spec.Targets)
+			foreach (string alias in targets.Aliases)
 			{
-				Object target = targets.Resolve(pair.Key);
-				hash = Mix(hash, pair.Key);
-				hash = Mix(hash, pair.Value);
+				Object target = targets.Resolve(alias);
+				hash = Mix(hash, alias);
+				hash = Mix(hash, spec.Targets.TryGetValue(alias, out string reference) ? reference : null);
 				hash = Mix(hash, UnityObjectPaths.Describe(target));
 				hash = Mix(hash, target == null ? 0 : target.GetInstanceID());
 			}
