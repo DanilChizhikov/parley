@@ -109,6 +109,25 @@ namespace DTech.Parley.Tests.EditorMode
             Assert.AreEqual("nope", statuses[3].Error);
         }
 
+        [Test]
+        public void ClaudeSetServersRemovesDisabledExternalsFromPassthrough()
+        {
+            McpConfiguration configuration = CreateConfiguration();
+            configuration.DisabledExternal.Add("mine");
+
+            JObject passthrough = new JObject
+            {
+                ["mine"] = new JObject { ["type"] = "stdio", ["command"] = "node" },
+                ["other"] = new JObject { ["type"] = "stdio", ["command"] = "python" },
+            };
+
+            JObject servers = ClaudeWire.McpServers(configuration, passthrough, false);
+
+            Assert.IsNull(servers["mine"]);
+            Assert.AreEqual("python", (string)servers["other"]["command"]);
+            Assert.AreEqual("npx", (string)servers["echo"]["command"]);
+        }
+
         private static McpConfiguration CreateConfiguration()
         {
             McpConfiguration configuration = new McpConfiguration();

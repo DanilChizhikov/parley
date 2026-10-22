@@ -396,7 +396,7 @@ namespace DTech.Parley.Editor.UI
             int enabled = 0;
             foreach (SkillInfo skill in _session.Skills)
             {
-                if (!skill.IsLibrary)
+                if (!skill.IsLibrary && skill.CanDisable)
                 {
                     _external.Add(skill);
                     if (!_names.Contains(skill.Name))

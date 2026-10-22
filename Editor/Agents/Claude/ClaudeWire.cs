@@ -180,6 +180,11 @@ namespace DTech.Parley.Editor.Agents.Claude
 		public static JObject McpServers(McpConfiguration configuration, JObject passthrough, bool includeUnity)
 		{
 			JObject servers = passthrough == null ? new JObject() : (JObject)passthrough.DeepClone();
+			foreach (string name in configuration.DisabledExternal)
+			{
+				servers.Remove(name);
+			}
+
 			if (includeUnity)
 			{
 				servers[SdkMcpBridge.ServerName] = new JObject { ["type"] = "sdk", ["name"] = SdkMcpBridge.ServerName };
@@ -251,7 +256,10 @@ namespace DTech.Parley.Editor.Agents.Claude
 			List<string> rules = new ();
 			foreach (string name in skillNames)
 			{
-				rules.Add("Skill(" + name + ")");
+				if (name.IndexOf(':') >= 0)
+				{
+					rules.Add("Skill(" + name + ")");
+				}
 			}
 
 			rules.Sort(string.CompareOrdinal);
@@ -291,6 +299,7 @@ namespace DTech.Parley.Editor.Agents.Claude
 					Description = command.Description,
 					ArgumentHint = command.ArgumentHint,
 					IsLibrary = libraryNames.Contains(command.Name),
+					CanDisable = command.Name.IndexOf(':') < 0,
 				});
 			}
 

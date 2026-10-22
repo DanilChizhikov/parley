@@ -483,7 +483,7 @@ namespace DTech.Parley.Editor.Agents.Claude
 			JObject status = await ReadMcpStatusAsync();
 			_passthroughMcpServers = ClaudeWire.PassthroughMcpServers(status);
 			_mcpReady = true;
-			if (_mcp.Servers.Count > 0)
+			if (_mcp.Servers.Count > 0 || _mcp.DisabledExternal.Count > 0)
 			{
 				await ApplyMcpServersAsync();
 			}
@@ -549,7 +549,11 @@ namespace DTech.Parley.Editor.Agents.Claude
 
 			if (_skills.Disabled.Count > 0)
 			{
-				denyRules.Add(ClaudeWire.SkillDenyRules(_skills.Disabled));
+				string skillRules = ClaudeWire.SkillDenyRules(_skills.Disabled);
+				if (skillRules.Length > 0)
+				{
+					denyRules.Add(skillRules);
+				}
 			}
 
 			if (denyRules.Count > 0)

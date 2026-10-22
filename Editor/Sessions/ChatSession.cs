@@ -1212,7 +1212,7 @@ namespace DTech.Parley.Editor.Sessions
 			_skills.AddRange(skills);
 			foreach (string name in Record.DisabledExternalSkills)
 			{
-				if (!ContainsSkill(name))
+				if (!ContainsSkill(name) && name.IndexOf(':') < 0)
 				{
 					_skills.Add(new SkillInfo { Name = name });
 				}
