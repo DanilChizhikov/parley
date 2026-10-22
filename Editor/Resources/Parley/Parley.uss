@@ -136,6 +136,11 @@
     text-overflow: ellipsis;
 }
 
+.pl-root .pl-toolbar .pl-preview-button {
+    color: var(--pl-plan);
+    -unity-font-style: bold;
+}
+
 .pl-mode--plan {
     color: var(--pl-plan);
     -unity-font-style: bold;

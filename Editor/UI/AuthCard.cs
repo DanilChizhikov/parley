@@ -66,7 +66,7 @@ namespace DTech.Parley.Editor.UI
             bool terminal = UsesTerminalLogin(profile);
             _title.text = (terminal ? "Sign in to " : "Check the settings of ") + profile.Name;
             ParleyStyles.SetVisible(_signIn, terminal);
-            ParleyStyles.SetVisible(_check, profile.Kind != ProfileKind.Local);
+            ParleyStyles.SetVisible(_check, profile.Kind != ProfileKind.Local || _session.IsPreview);
             _preferences.EnableInClassList("pl-button--primary", !terminal);
         }
 
@@ -91,6 +91,12 @@ namespace DTech.Parley.Editor.UI
             ChatSession session = _session;
             if (session == null)
             {
+                return;
+            }
+
+            if (session.IsPreview)
+            {
+                _status.text = "Preview: no terminal is opened. Press Check status to clear the card.";
                 return;
             }
 
@@ -125,6 +131,13 @@ namespace DTech.Parley.Editor.UI
         private async void CheckStatus()
         {
             ChatSession session = _session;
+            if (session != null && session.IsPreview)
+            {
+                _status.text = string.Empty;
+                session.ClearAuthMessage();
+                return;
+            }
+
             if (session == null || session.Profile.Kind == ProfileKind.Local)
             {
                 return;

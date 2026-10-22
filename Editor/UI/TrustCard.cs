@@ -8,11 +8,16 @@ namespace DTech.Parley.Editor.UI
     internal sealed class TrustCard : VisualElement
     {
         private const int MaxPromptPreviewChars = 300;
+        private const string PreviewMessage = "This project's Parley settings changed outside Parley (ProjectSettings/ParleySettings.asset). They are ignored until you trust them:"
+            + "\n• Extra directories the agent may access: ../SharedAssets, ~/Downloads"
+            + "\n• Extra instructions: Always answer in English and run the tests after every edit.";
 
         private readonly Label _message;
 
         private string _dismissedFingerprint;
         private string _renderedFingerprint;
+
+        public bool ForcePreview { get; set; }
 
         public TrustCard()
         {
@@ -39,6 +44,14 @@ namespace DTech.Parley.Editor.UI
 
         public void Refresh()
         {
+            if (ForcePreview)
+            {
+                ParleyStyles.SetVisible(this, true);
+                _message.text = PreviewMessage;
+                _renderedFingerprint = null;
+                return;
+            }
+
             ParleyProjectSettings settings = ParleyProjectSettings.instance;
             bool visible = !settings.IsTrusted && settings.Fingerprint != _dismissedFingerprint;
             ParleyStyles.SetVisible(this, visible);
@@ -72,12 +85,26 @@ namespace DTech.Parley.Editor.UI
 
         private void TrustClickedHandler()
         {
+            if (ForcePreview)
+            {
+                ForcePreview = false;
+                Refresh();
+                return;
+            }
+
             ParleyProjectSettings.instance.Trust();
             Refresh();
         }
 
         private void IgnoreClickedHandler()
         {
+            if (ForcePreview)
+            {
+                ForcePreview = false;
+                Refresh();
+                return;
+            }
+
             _dismissedFingerprint = ParleyProjectSettings.instance.Fingerprint;
             Refresh();
         }

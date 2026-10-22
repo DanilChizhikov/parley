@@ -1,5 +1,8 @@
+using System;
 using System.Collections.Generic;
 using System.Globalization;
+using DTech.Parley.Editor.Agents.Preview;
+using DTech.Parley.Editor.Panels;
 using DTech.Parley.Editor.Sessions;
 using DTech.Parley.Editor.Updates;
 using UnityEditor;
@@ -14,7 +17,9 @@ namespace DTech.Parley.Editor.UI
         public const string PreferencesPath = "Preferences/DTech/Parley";
 
         private const string MenuPath = "Window/DTech/Parley";
+        private const string PreviewMenuPath = "Window/DTech/Parley Debug Preview";
         private const string WindowTitle = "Parley";
+        private const string PreviewTitle = "Parley Preview";
         private const long StateRefreshMs = 100;
         private const int MaxHistoryItems = 30;
         private const double NotificationSeconds = 2.0;
@@ -59,14 +64,48 @@ namespace DTech.Parley.Editor.UI
         private ToolbarButton _updateButton;
         private ToolbarButton _historyButton;
         private ToolbarToggle _sideToggle;
+        private ToolbarButton _previewButton;
         private bool _stateDirty = true;
+
+        private static bool _openingPreview;
+
+        [SerializeField] private bool _preview;
+        [SerializeField] private ProfileKind _previewKind = ProfileKind.ClaudeCode;
 
         [MenuItem(MenuPath)]
         public static void Open()
         {
-            ParleyWindow window = GetWindow<ParleyWindow>();
+            ParleyWindow window = Find(false);
+            if (window == null)
+            {
+                window = Find(true) == null ? GetWindow<ParleyWindow>() : CreateWindow<ParleyWindow>();
+            }
+
             window.titleContent = new GUIContent(WindowTitle);
             window.Show();
+            window.Focus();
+            window._composer?.FocusInput();
+        }
+
+        [MenuItem(PreviewMenuPath)]
+        public static void OpenPreview()
+        {
+            ParleyWindow window = Find(true);
+            if (window == null)
+            {
+                _openingPreview = true;
+                try
+                {
+                    window = CreateWindow<ParleyWindow>();
+                }
+                finally
+                {
+                    _openingPreview = false;
+                }
+            }
+
+            window.Show();
+            window.Focus();
             window._composer?.FocusInput();
         }
 
@@ -116,6 +155,29 @@ namespace DTech.Parley.Editor.UI
             };
         }
 
+        private static ParleyWindow Find(bool preview)
+        {
+            foreach (ParleyWindow window in Resources.FindObjectsOfTypeAll<ParleyWindow>())
+            {
+                if (window._preview == preview)
+                {
+                    return window;
+                }
+            }
+
+            return null;
+        }
+
+        private static ParleyProfile CreatePreviewProfile(ProfileKind kind)
+        {
+            return kind switch
+            {
+                ProfileKind.Codex => ParleyProfile.CreateCodex("Preview · Codex", CodexAuthMethod.CliDefault),
+                ProfileKind.Local => ParleyProfile.CreateLocal("Preview · Local model", LocalPreset.LmStudio),
+                _ => ParleyProfile.CreateClaude("Preview · Claude Code", ClaudeAuthMethod.CliDefault),
+            };
+        }
+
         private static string HistoryLabel(SessionSummary summary, ParleyProfile profile)
         {
             string label = summary.UpdatedUtc.ToLocalTime().ToString("MMM d HH:mm", CultureInfo.InvariantCulture) + "  " + (summary.Title ?? "Chat")
@@ -125,8 +187,19 @@ namespace DTech.Parley.Editor.UI
 
         private void OnEnable()
         {
-            titleContent = new GUIContent(WindowTitle);
+            if (_openingPreview)
+            {
+                _preview = true;
+            }
+
+            titleContent = new GUIContent(_preview ? PreviewTitle : WindowTitle);
             minSize = MinWindowSize;
+            if (_preview)
+            {
+                StartSession(CreatePreviewProfile(_previewKind), null);
+                return;
+            }
+
             ParleyUserSettings settings = ParleyUserSettings.instance;
             SessionRecord record = SessionStore.Load(settings.LastSessionId);
             ParleyProfile profile = record != null ? settings.Find(record.ProfileId) : null;
@@ -197,6 +270,13 @@ namespace DTech.Parley.Editor.UI
             toolbar.Add(_effortButton);
             toolbar.Add(_mcpButton);
             toolbar.Add(_skillsButton);
+            if (_preview)
+            {
+                _previewButton = new ToolbarButton(ShowPreviewMenu) { text = "Preview ▾", tooltip = "Play a scripted scenario or open another window in preview. Nothing is sent to a model." };
+                _previewButton.AddToClassList("pl-preview-button");
+                toolbar.Add(_previewButton);
+            }
+
             toolbar.Add(new ToolbarSpacer { flex = true });
             _updateButton = new ToolbarButton(ShowUpdateMenu) { text = UpdateAvailableText };
             _updateButton.AddToClassList("pl-update");
@@ -220,10 +300,14 @@ namespace DTech.Parley.Editor.UI
         private void StartSession(ParleyProfile profile, SessionRecord record)
         {
             EndSession();
-            _session = new ChatSession(profile, record);
+            _session = new ChatSession(profile, record, _preview);
             _session.OnStateChanged += MarkDirty;
             _session.OnRequestRaised += RequestRaisedHandler;
-            ParleyUserSettings.instance.SetActive(profile);
+            if (!_preview)
+            {
+                ParleyUserSettings.instance.SetActive(profile);
+            }
+
             BindViews();
             _ = _session.EnsureStartedAsync();
         }
@@ -344,6 +428,20 @@ namespace DTech.Parley.Editor.UI
         private void ShowProfileMenu()
         {
             GenericMenu menu = new GenericMenu();
+            if (_preview)
+            {
+                foreach (ProfileKind kind in new[] { ProfileKind.ClaudeCode, ProfileKind.Codex, ProfileKind.Local })
+                {
+                    ProfileKind captured = kind;
+                    menu.AddItem(new GUIContent(CreatePreviewProfile(kind).Name), _previewKind == kind, () => SwitchPreviewKind(captured));
+                }
+
+                menu.AddSeparator(string.Empty);
+                menu.AddDisabledItem(new GUIContent("Real profiles: Window > DTech > Parley"));
+                menu.DropDown(_profileButton.worldBound);
+                return;
+            }
+
             foreach (ParleyProfile profile in ParleyUserSettings.instance.Profiles)
             {
                 ParleyProfile captured = profile;
@@ -470,6 +568,13 @@ namespace DTech.Parley.Editor.UI
         private void ShowHistoryMenu()
         {
             GenericMenu menu = new GenericMenu();
+            if (_preview)
+            {
+                menu.AddDisabledItem(new GUIContent("Preview chats are not saved"));
+                menu.DropDown(_historyButton.worldBound);
+                return;
+            }
+
             List<SessionSummary> sessions = SessionStore.List();
             if (sessions.Count == 0)
             {
@@ -514,7 +619,8 @@ namespace DTech.Parley.Editor.UI
 
         private void NewChat()
         {
-            StartSession(_session?.Profile ?? ParleyUserSettings.instance.ActiveProfile, null);
+            ParleyProfile profile = _preview ? CreatePreviewProfile(_previewKind) : _session?.Profile ?? ParleyUserSettings.instance.ActiveProfile;
+            StartSession(profile, null);
             _composer?.FocusInput();
         }
 
@@ -548,6 +654,56 @@ namespace DTech.Parley.Editor.UI
             {
                 NewChat();
             }
+        }
+
+        private void ShowPreviewMenu()
+        {
+            GenericMenu menu = new GenericMenu();
+            foreach (PreviewScenario scenario in (PreviewScenario[])Enum.GetValues(typeof(PreviewScenario)))
+            {
+                PreviewScenario captured = scenario;
+                string label = ObjectNames.NicifyVariableName(scenario.ToString()) + "   " + PreviewBackend.CommandFor(scenario);
+                menu.AddItem(new GUIContent("Chat/" + label.Replace("/", "∕")), false, () => RunPreview(captured));
+            }
+
+            menu.AddSeparator(string.Empty);
+            menu.AddItem(new GUIContent("Trust card"), _trustCard != null && _trustCard.ForcePreview, ToggleTrustPreview);
+            menu.AddSeparator(string.Empty);
+            menu.AddItem(new GUIContent("Windows/Panel with every item type"), false, PanelPreview.OpenDemo);
+            menu.AddItem(new GUIContent("Windows/Panel with errors"), false, PanelPreview.OpenBroken);
+            menu.AddItem(new GUIContent("Windows/Empty panel"), false, PanelPreview.OpenEmpty);
+            menu.AddItem(new GUIContent("Windows/Saved panels"), false, PanelsWindow.Open);
+            menu.AddItem(new GUIContent("Windows/Release notes"), false, ReleaseNotesWindow.OpenPreview);
+            menu.AddItem(new GUIContent("Windows/Preferences"), false, OpenPreferences);
+            menu.DropDown(_previewButton.worldBound);
+        }
+
+        private void RunPreview(PreviewScenario scenario)
+        {
+            if (_session == null)
+            {
+                return;
+            }
+
+            _transcript?.ScrollToBottom();
+            _ = _session.SendAsync(PreviewBackend.CommandFor(scenario), new List<ChatAttachment>());
+        }
+
+        private void ToggleTrustPreview()
+        {
+            if (_trustCard == null)
+            {
+                return;
+            }
+
+            _trustCard.ForcePreview = !_trustCard.ForcePreview;
+            _trustCard.Refresh();
+        }
+
+        private void SwitchPreviewKind(ProfileKind kind)
+        {
+            _previewKind = kind;
+            StartSession(CreatePreviewProfile(kind), null);
         }
 
         private void SideToggledHandler(ChangeEvent<bool> evt)
