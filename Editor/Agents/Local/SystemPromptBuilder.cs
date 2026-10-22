@@ -43,7 +43,7 @@ namespace DTech.Parley.Editor.Agents.Local
 			builder.AppendLine("- Never edit files under Library/ or Temp/ and never change GUIDs in .meta files by hand.");
 			if (request.Catalog.TryGet(ToolCatalog.UnityLocalPrefix + "refresh", out _))
 			{
-				builder.AppendLine("- After changing C# scripts call unity_refresh and fix the compiler errors it reports. Use unity_console to inspect runtime errors and unity_hierarchy / unity_inspect for scenes.");
+				builder.AppendLine("- When all C# edits for the task are done, call unity_refresh once (not after each file) and fix the compiler errors it reports. Use unity_console to inspect runtime errors and unity_hierarchy / unity_inspect for scenes.");
 			}
 
 			builder.AppendLine("- Track multi-step work with TodoWrite. Use AskUserQuestion only when a decision is genuinely the user's.");

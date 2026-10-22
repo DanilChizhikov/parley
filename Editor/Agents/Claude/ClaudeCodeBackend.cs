@@ -630,8 +630,8 @@ namespace DTech.Parley.Editor.Agents.Claude
 			if (_unityTools.Tools.Count > 0)
 			{
 				builder.Append(" Unity editor tools are available from the MCP server 'unity' (")
-					.Append(string.Join(", ", ToolNames())).Append("). After changing C# scripts call ")
-					.Append(SdkMcpBridge.ToolPrefix).Append("refresh and fix the compiler errors it reports.");
+					.Append(string.Join(", ", ToolNames())).Append("). When all C# edits for the task are done, call ")
+					.Append(SdkMcpBridge.ToolPrefix).Append("refresh once (not after each file) and fix the compiler errors it reports.");
 			}
 
 			builder.Append(" Do not edit files under Library/ or Temp/, and never change GUIDs in .meta files by hand.");
