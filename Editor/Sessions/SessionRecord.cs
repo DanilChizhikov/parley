@@ -62,5 +62,8 @@ namespace DTech.Parley.Editor.Sessions
 
 		[JsonProperty("autoSkillsConfigured")]
 		public List<SkillInvocation> AutoSkills { get; set; }
+
+		[JsonProperty("usage")]
+		public UsageLog Usage { get; set; }
 	}
 }

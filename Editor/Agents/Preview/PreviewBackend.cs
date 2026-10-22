@@ -432,6 +432,7 @@ namespace DTech.Parley.Editor.Agents.Preview
             _contextUsed = Math.Min(ContextWindow, _contextUsed + ContextPerTurn);
             _sink.ContextUsage(_contextUsed, ContextWindow);
             _cost += CostPerTurn;
+            _sink.UsageReported(new UsageReport(null, null, null, 1200, 400, 9600, 380, 0));
             _sink.TurnCompleted(new TurnResult
             {
                 IsError = interrupted,

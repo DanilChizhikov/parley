@@ -42,6 +42,7 @@ namespace DTech.Parley.Editor.Sessions
 		private readonly List<SkillInfo> _skills = new ();
 		private readonly List<SlashCommandInfo> _commands = new ();
 		private readonly CancellationTokenSource _lifetime = new ();
+		private readonly UsageTracker _usage = new (ProjectPaths.Root);
 
 		public ParleyProfile Profile { get; }
 
@@ -115,6 +116,8 @@ namespace DTech.Parley.Editor.Sessions
 
 			Record.ProfileId = profile.Id;
 			Record.Kind = profile.Kind;
+			Record.Usage ??= new UsageLog();
+			_usage.Bind(Record.Usage);
 			Model = profile.Model;
 			Effort = profile.Effort;
 			ExpireUnresolvedRequests();
@@ -202,6 +205,7 @@ namespace DTech.Parley.Editor.Sessions
 			}
 
 			AddUserEntry(turn);
+			_usage.BeginTurn(turn.Text, DateTime.UtcNow);
 			if (Record.Entries.Count <= 2 || Record.Title == SessionRecord.DefaultTitle)
 			{
 				Record.Title = SessionStore.MakeTitle(turn.Text);
@@ -1090,11 +1094,13 @@ namespace DTech.Parley.Editor.Sessions
 			}
 
 			block.IsFinished = request.Kind != BlockKind.ToolUse;
+			_usage.BlockFinalized(request);
 			OnBlockChanged?.Invoke(block);
 		}
 
 		void IAgentSink.ToolResult(ToolResultRequest request)
 		{
+			_usage.ToolResult(request);
 			if (string.IsNullOrEmpty(request.ToolUseId) || !_blocksByToolId.TryGetValue(request.ToolUseId, out TranscriptBlock block))
 			{
 				return;
@@ -1188,6 +1194,14 @@ namespace DTech.Parley.Editor.Sessions
 			RaiseState();
 		}
 
+		void IAgentSink.UsageReported(UsageReport report)
+		{
+			if (_usage.Report(report, Model, DateTime.UtcNow))
+			{
+				RaiseState();
+			}
+		}
+
 		void IAgentSink.McpStatusChanged(IReadOnlyList<McpServerStatus> servers)
 		{
 			_mcpStatuses.Clear();
@@ -1229,6 +1243,7 @@ namespace DTech.Parley.Editor.Sessions
 		void IAgentSink.TurnCompleted(TurnResult result)
 		{
 			LastTurn = result;
+			_usage.CompleteTurn(result);
 			if (result.CostUsd.HasValue)
 			{
 				Record.CostUsd = result.CostUsd.Value;

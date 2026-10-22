@@ -8,13 +8,14 @@ namespace DTech.Parley.Editor.UI
 {
     internal sealed class SidePanel : VisualElement
     {
-        private static readonly SidePanelTab[] _order = { SidePanelTab.Todos, SidePanelTab.Plan, SidePanelTab.Tasks, SidePanelTab.Mcp, SidePanelTab.Skills };
+        private static readonly SidePanelTab[] _order = { SidePanelTab.Todos, SidePanelTab.Plan, SidePanelTab.Tasks, SidePanelTab.Mcp, SidePanelTab.Skills, SidePanelTab.Usage };
 
         private readonly Dictionary<SidePanelTab, Button> _tabs = new ();
         private readonly ScrollView _content;
         private readonly MarkdownView _plan = new ();
         private readonly McpPanel _mcp = new ();
         private readonly SkillsPanel _skills = new ();
+        private readonly UsagePanel _usage = new ();
 
         private ChatSession _session;
         private SidePanelTab _tab = SidePanelTab.Todos;
@@ -48,6 +49,7 @@ namespace DTech.Parley.Editor.UI
             _renderedList = null;
             _mcp.Bind(session);
             _skills.Bind(session);
+            _usage.Bind(session);
             if (session != null && !string.IsNullOrEmpty(session.Record.LatestPlan) && session.Todos.Count == 0)
             {
                 _tab = SidePanelTab.Plan;
@@ -83,6 +85,8 @@ namespace DTech.Parley.Editor.UI
             _tabs[SidePanelTab.Mcp].text = mcpCount > 0 ? "MCP " + mcpCount : "MCP";
             int skillCount = SkillsPanel.EnabledCount(_session);
             _tabs[SidePanelTab.Skills].text = skillCount > 0 ? "Skills " + skillCount : "Skills";
+            long usageTokens = UsagePanel.TotalTokens(_session);
+            _tabs[SidePanelTab.Usage].text = usageTokens > 0 ? "Usage " + StatusBar.FormatTokens(usageTokens) : "Usage";
             switch (_tab)
             {
                 case SidePanelTab.Plan:
@@ -108,6 +112,11 @@ namespace DTech.Parley.Editor.UI
                 case SidePanelTab.Skills:
                 {
                     RenderSkills();
+                } break;
+
+                case SidePanelTab.Usage:
+                {
+                    RenderUsage();
                 } break;
                 
                 default:
@@ -164,6 +173,17 @@ namespace DTech.Parley.Editor.UI
             _skills.Refresh();
         }
 
+        private void RenderUsage()
+        {
+            if (!_content.Contains(_usage))
+            {
+                _content.Clear();
+                _content.Add(_usage);
+            }
+
+            _usage.Refresh();
+        }
+
         private static string TabTooltip(SidePanelTab tab)
         {
             return tab switch
@@ -172,6 +192,7 @@ namespace DTech.Parley.Editor.UI
                 SidePanelTab.Plan => "The latest plan from Plan mode",
                 SidePanelTab.Tasks => "Background commands and subagents",
                 SidePanelTab.Mcp => "MCP servers available in this chat",
+                SidePanelTab.Usage => "Token usage of this chat, per API call",
                 _ => "Skills available in this chat",
             };
         }

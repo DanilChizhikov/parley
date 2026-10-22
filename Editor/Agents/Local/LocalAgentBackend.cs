@@ -483,6 +483,7 @@ namespace DTech.Parley.Editor.Agents.Local
 			RoundStream round = new RoundStream(_sink, ++_blockCounter);
 			_round = round;
 			await _client.StreamChatAsync(body, round.HandleChunk, cancellationToken);
+			_sink.UsageReported(new UsageReport(null, null, _model, round.PromptTokens, 0, 0, round.CompletionTokens, 0));
 			round.Complete(_profile.TextToolCalls);
 			_budget.Calibrate(_lastPromptChars, round.PromptTokens);
 			return round;

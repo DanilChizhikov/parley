@@ -208,5 +208,21 @@ namespace DTech.Parley.Tests.EditorMode
         {
             return new JObject { ["item"] = JObject.Parse(json) };
         }
+
+        [Test]
+        public void TokenUsageReportsLastCallWithoutCachedInput()
+        {
+            RecordingSink sink = new RecordingSink();
+            CodexEventMapper mapper = new CodexEventMapper(sink);
+            string usage = "{\"tokenUsage\":{\"total\":{\"totalTokens\":1200},\"last\":{\"inputTokens\":1000,\"cachedInputTokens\":600,\"outputTokens\":200,\"reasoningOutputTokens\":50,\"totalTokens\":1200},\"modelContextWindow\":100000}}";
+            mapper.Handle("thread/tokenUsage/updated", JObject.Parse(usage));
+            mapper.Handle("thread/tokenUsage/updated", JObject.Parse(usage));
+
+            Assert.AreEqual(1, sink.UsageReports.Count);
+            Assert.AreEqual(400, sink.UsageReports[0].InputTokens);
+            Assert.AreEqual(600, sink.UsageReports[0].CacheReadTokens);
+            Assert.AreEqual(200, sink.UsageReports[0].OutputTokens);
+            Assert.AreEqual(50, sink.UsageReports[0].ReasoningTokens);
+        }
     }
 }

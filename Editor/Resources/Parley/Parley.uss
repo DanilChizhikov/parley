@@ -990,6 +990,54 @@
     padding: 8px 10px;
 }
 
+/* Usage */
+
+.pl-usage__header {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 6px;
+}
+
+.pl-usage__title {
+    -unity-font-style: bold;
+}
+
+.pl-root .pl-usage__section {
+    margin: 12px 0 4px 0;
+    padding-bottom: 2px;
+    border-bottom-width: 1px;
+    border-bottom-color: var(--pl-border);
+    font-size: 11px;
+    -unity-font-style: bold;
+    color: var(--pl-text);
+}
+
+.pl-usage__row {
+    margin-bottom: 4px;
+    padding: 4px 6px;
+    border-radius: 4px;
+    background-color: var(--pl-surface-2);
+}
+
+.pl-usage__row > .pl-muted {
+    white-space: normal;
+}
+
+.pl-usage__name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pl-root .pl-usage__warning {
+    margin: 4px 0;
+    padding: 4px 6px;
+    border-radius: 4px;
+    white-space: normal;
+    background-color: var(--pl-warning-bg);
+    color: var(--pl-warning);
+}
+
 /* MCP */
 
 .pl-mcp__header {

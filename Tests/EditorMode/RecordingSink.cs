@@ -15,6 +15,7 @@ namespace DTech.Parley.Tests.EditorMode
 		public List<TurnResult> Turns { get; } = new ();
 		public List<string> Notices { get; } = new ();
 		public List<(long used, long max)> ContextUsages { get; } = new ();
+		public List<UsageReport> UsageReports { get; } = new ();
 		public List<List<McpServerStatus>> McpStatuses { get; } = new ();
 		public List<List<SkillInfo>> Skills { get; } = new ();
 		public SessionInfo Session { get; private set; }
@@ -91,6 +92,11 @@ namespace DTech.Parley.Tests.EditorMode
 		public void ContextUsage(long usedTokens, long maxTokens)
 		{
 			ContextUsages.Add((usedTokens, maxTokens));
+		}
+
+		public void UsageReported(UsageReport report)
+		{
+			UsageReports.Add(report);
 		}
 
 		public void McpStatusChanged(IReadOnlyList<McpServerStatus> servers)
