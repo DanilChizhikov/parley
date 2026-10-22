@@ -40,6 +40,7 @@ project info. You can attach the selection, console errors, a Scene or Game scre
     - [Panels](#panels)
     - [MCP Servers](#mcp-servers)
     - [Skills](#skills)
+    - [Presets](#presets)
     - [Commands](#commands)
     - [Attachments and Commands](#attachments-and-commands)
     - [Sessions](#sessions)
@@ -103,8 +104,8 @@ Parley depends on `com.unity.nuget.newtonsoft-json`; Unity installs it automatic
 ## Usage
 
 ### Open the Window
-Use `Window/DTech/Parley`. The toolbar holds the profile, model, permission mode and effort selectors, the **MCP** and
-**Skills** buttons, plus **New**, **History**, **Panel** and preferences. Press Enter to send and Shift+Enter for a
+Use `Window/DTech/Parley`. The toolbar holds the profile, model, permission mode and effort selectors, the **MCP**,
+**Skills** and **Preset** buttons, plus **New**, **History**, **Panel** and preferences. Press Enter to send and Shift+Enter for a
 new line. While the agent works, Send queues your message and **Stop** interrupts the turn.
 
 **Panel** toggles the side panel. Its tabs are **Todos**, **Plan**, **Tasks**, **MCP** and **Skills**.
@@ -243,7 +244,8 @@ scripts recompile, and nothing is added to `Assets`.
 
 ### MCP Servers
 The **MCP** tab of the side panel lists the MCP servers of the current chat. Each one has a checkbox that switches it
-on or off for this chat only, and shows whether it is connected, failed or needs a sign-in.
+on or off for this chat only, and shows whether it is connected, failed or needs a sign-in. The **All** checkbox in
+each section header switches every server of that section at once.
 
 - **Parley servers** are your own library. **+ Add** creates one: a name, a transport (stdio command with arguments
   and environment variables, or an HTTP URL with headers), and whether new chats use it by default. Secret values are
@@ -255,7 +257,8 @@ Local models talk to MCP servers through Parley's own MCP client. Every MCP tool
 the server claims about it. Some changes apply with your next message: the agent restarts and resumes the chat.
 
 ### Skills
-The **Skills** tab lists the skills of the current chat, each with a checkbox for this chat.
+The **Skills** tab lists the skills of the current chat, each with a checkbox for this chat. The **All** checkbox in
+the header of **Parley skills** and **From Claude Code** / **From Codex** switches the whole section at once.
 
 ![The Skills tab: an auto-run skill with arguments, the empty Parley skill library, and skills from Claude Code](Documentation~/images/skills-panel.png)
 
@@ -264,12 +267,26 @@ The **Skills** tab lists the skills of the current chat, each with a checkbox fo
   a `SKILL.md`, and **Folder** reveals the library.
 - **From Claude Code** / **From Codex** lists the skills the CLI finds. Local models read `.claude/skills` and
   `.agents/skills` from the project and your home folder (**From skill folders**).
-- **Auto-run in new chats** is a list of skills, each with optional arguments, that every new chat runs before its
-  first message (for example `/caveman ultra`). A chat keeps the list it started with; **Skip** drops an entry for
-  this chat only.
+- **Auto-run in this chat** lists the skills, each with optional arguments, that this chat runs before your next
+  message (for example `/caveman ultra`). **Add** queues one more, **Skip** leaves it out this time, **Remove** drops it
+  from the chat.
+- **Auto-run in new chats** is the list every new chat starts with when no default preset is set.
 
 Claude Code runs each auto-run skill as a separate turn, so skill hooks see it. Codex receives skills as `skill`
 input items. Local models get the skill text inline and can load more with their Skill tool.
+
+### Presets
+A preset stores the setup of a chat: which Parley and CLI skills and MCP servers are on, and the auto-run skills.
+Set up a chat in the **MCP** and **Skills** tabs, then use **Preset ▾** in the toolbar:
+
+- **Save chat as preset…** stores the current chat under a name. **Update from chat** overwrites an existing preset.
+- Pick a preset at the top of the menu to apply it to the current chat. Its auto-run skills run with your next
+  message. The toolbar shows the preset name while the chat still matches it.
+- **Default for new chats** applies a preset to every new chat instead of the per-item defaults.
+- **Rename** and **Delete** manage the list. Presets live in your user settings and are shared by all projects.
+
+A preset turns off only the CLI skills and servers it lists as off, so skills installed after you saved it stay on
+until you update the preset.
 
 ### Commands
 Type `/` in the composer to see Parley's own commands next to the backend's commands and skills.

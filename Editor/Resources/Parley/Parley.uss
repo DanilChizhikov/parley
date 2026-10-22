@@ -998,6 +998,10 @@
     margin-bottom: 6px;
 }
 
+.pl-search {
+    margin: 0 0 6px 0;
+}
+
 .pl-mcp__title {
     -unity-font-style: bold;
 }
@@ -1032,6 +1036,10 @@
 
 .pl-mcp__toggle {
     margin: 1px 6px 0 0;
+}
+
+.pl-mcp__all {
+    margin: 12px 6px 4px 6px;
 }
 
 .pl-mcp__main {

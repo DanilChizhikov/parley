@@ -124,6 +124,15 @@ namespace DTech.Parley.Editor.UI
             return spacer;
         }
 
+        public static Toggle AllToggle(int enabled, int total, Action<bool> onChange)
+        {
+            Toggle toggle = new Toggle { text = "All", value = total > 0 && enabled == total, showMixedValue = enabled > 0 && enabled < total };
+            toggle.tooltip = "Turn every item in this section on or off for this chat";
+            toggle.AddToClassList("pl-mcp__all");
+            toggle.RegisterValueChangedCallback(evt => onChange(evt.newValue));
+            return toggle;
+        }
+
         public static VisualElement RowActions(Action edit, Action delete, string noun)
         {
             VisualElement actions = new VisualElement();
@@ -136,6 +145,35 @@ namespace DTech.Parley.Editor.UI
             deleteButton.tooltip = "Delete this " + noun;
             actions.Add(deleteButton);
             return actions;
+        }
+
+        public static TextField SearchField(Action<string> onChange)
+        {
+            TextField field = new TextField { tooltip = "Filter by name or description" };
+            field.textEdition.placeholder = "Search…";
+            field.AddToClassList("pl-search");
+            field.RegisterValueChangedCallback(evt => onChange(evt.newValue ?? string.Empty));
+            field.RegisterCallback<KeyDownEvent>(evt =>
+            {
+                if (evt.keyCode == KeyCode.Escape && field.value.Length > 0)
+                {
+                    field.value = string.Empty;
+                    evt.StopPropagation();
+                }
+            });
+            return field;
+        }
+
+        public static bool Matches(string query, string first, string second = null)
+        {
+            string trimmed = query?.Trim();
+            if (string.IsNullOrEmpty(trimmed))
+            {
+                return true;
+            }
+
+            return (first != null && first.IndexOf(trimmed, StringComparison.OrdinalIgnoreCase) >= 0)
+                || (second != null && second.IndexOf(trimmed, StringComparison.OrdinalIgnoreCase) >= 0);
         }
 
         public static void ScrollIntoView(VisualElement element)
