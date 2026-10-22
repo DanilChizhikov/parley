@@ -20,6 +20,7 @@ namespace DTech.Parley.Editor.Agents.Claude
 	{
 		private const int InitializeTimeoutMs = 60000;
 		private const int ControlTimeoutMs = 30000;
+		private const double RateLimitRefreshSeconds = 30.0;
 		private const int GracefulExitMs = 3000;
 		private const string AllowBypassFlag = "--allow-dangerously-skip-permissions";
 		private const string RestrictedFlag = "--restricted";
@@ -70,6 +71,9 @@ namespace DTech.Parley.Editor.Agents.Claude
 		private bool _mcpReady;
 		private bool _disposed;
 		private bool _contextUsageUnavailable;
+		private bool _rateLimitsUnavailable;
+		private bool _rateLimitsLoading;
+		private DateTime _rateLimitsFetchedAt = DateTime.MinValue;
 		private int _requestCounter;
 
 		public ClaudeCodeBackend(
@@ -324,6 +328,11 @@ namespace DTech.Parley.Editor.Agents.Claude
 			_sink.SkillsChanged(_reportedSkills);
 		}
 
+		public void RefreshRateLimits()
+		{
+			_ = RefreshRateLimitsAsync(false);
+		}
+
 		private static string WriteRunFile(string name, JObject content)
 		{
 			string path = Path.Combine(ProjectPaths.RunFolder, name);
@@ -511,6 +520,8 @@ namespace DTech.Parley.Editor.Agents.Claude
 			{
 				_sink.McpStatusChanged(ClaudeWire.ParseMcpStatus(status, _mcp));
 			}
+
+			_ = RefreshRateLimitsAsync(true);
 		}
 
 		private List<string> BuildArguments(AuthEnvironment auth, bool restricted)
@@ -841,6 +852,42 @@ namespace DTech.Parley.Editor.Agents.Claude
 			catch (Exception)
 			{
 				_contextUsageUnavailable = IsRunning;
+			}
+		}
+
+		private async Task RefreshRateLimitsAsync(bool force)
+		{
+			if (!IsRunning || _rateLimitsUnavailable || _rateLimitsLoading)
+			{
+				return;
+			}
+
+			if (!force && (DateTime.UtcNow - _rateLimitsFetchedAt).TotalSeconds < RateLimitRefreshSeconds)
+			{
+				return;
+			}
+
+			_rateLimitsLoading = true;
+			try
+			{
+				JObject usage = await SendControlAsync(new JObject { ["subtype"] = "get_usage", ["skip_behaviors"] = true }, ControlTimeoutMs);
+				_rateLimitsFetchedAt = DateTime.UtcNow;
+				RateLimits limits = ClaudeRateLimits.FromUsage(usage);
+				if (limits != null)
+				{
+					_sink.RateLimitsChanged(limits);
+				}
+			}
+			catch (TimeoutException)
+			{
+			}
+			catch (Exception)
+			{
+				_rateLimitsUnavailable = IsRunning;
+			}
+			finally
+			{
+				_rateLimitsLoading = false;
 			}
 		}
 

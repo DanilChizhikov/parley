@@ -72,6 +72,8 @@ namespace DTech.Parley.Editor.Sessions
 
 		public long ContextMax { get; private set; }
 
+		public RateLimits RateLimits { get; private set; }
+
 		public string AuthMessage { get; private set; }
 
 		public IReadOnlyList<TodoItem> Todos => _todos;
@@ -453,6 +455,11 @@ namespace DTech.Parley.Editor.Sessions
 		public void RefreshSkills()
 		{
 			Backend.RefreshSkills();
+		}
+
+		public void RefreshRateLimits()
+		{
+			Backend.RefreshRateLimits();
 		}
 
 		public void SkipPendingAutoSkill(string name)
@@ -1191,6 +1198,17 @@ namespace DTech.Parley.Editor.Sessions
 		{
 			ContextUsed = usedTokens;
 			ContextMax = maxTokens;
+			RaiseState();
+		}
+
+		void IAgentSink.RateLimitsChanged(RateLimits limits)
+		{
+			if (limits == null)
+			{
+				return;
+			}
+
+			RateLimits = RateLimits == null ? limits : RateLimits.MergedWith(limits);
 			RaiseState();
 		}
 

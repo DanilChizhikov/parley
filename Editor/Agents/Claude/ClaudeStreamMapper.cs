@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 using Newtonsoft.Json.Linq;
@@ -373,14 +375,21 @@ namespace DTech.Parley.Editor.Agents.Claude
 		private void HandleRateLimit(JObject message)
 		{
 			JObject info = message["rate_limit_info"] as JObject;
+			RateLimits limits = ClaudeRateLimits.FromRateLimitInfo(info);
+			if (limits != null)
+			{
+				_sink.RateLimitsChanged(limits);
+			}
+
 			string status = (string)info?["status"];
 			if (string.IsNullOrEmpty(status) || status == "allowed")
 			{
 				return;
 			}
 
-			string resets = (string)info["resetsAt"];
-			_sink.Notice(NoticeLevel.Warning, "Rate limit: " + status + (string.IsNullOrEmpty(resets) ? string.Empty : " (resets at " + resets + ")"));
+			DateTimeOffset? resets = RateLimitTimes.Parse(info["resetsAt"]);
+			string resetsText = resets.HasValue ? " (resets at " + resets.Value.ToLocalTime().ToString("g", CultureInfo.InvariantCulture) + ")" : string.Empty;
+			_sink.Notice(NoticeLevel.Warning, "Rate limit: " + status + resetsText);
 		}
 
 		private void HandleAuthStatus(JObject message)

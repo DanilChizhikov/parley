@@ -80,6 +80,14 @@ namespace DTech.Parley.Editor.Agents.Codex
                 case "deprecationNotice":
                     _sink.Notice(NoticeLevel.Info, (string)parameters["summary"] ?? (string)parameters["message"] ?? parameters.ToString());
                     break;
+                case CodexRateLimits.UpdatedNotification:
+                    RateLimits limits = CodexRateLimits.FromSnapshot(parameters["rateLimits"] as JObject);
+                    if (limits != null)
+                    {
+                        _sink.RateLimitsChanged(limits);
+                    }
+
+                    break;
                 case "model/rerouted":
                     _sink.Notice(NoticeLevel.Info, "Codex switched the model to " + ((string)parameters["toModel"] ?? "another model") + ".");
                     break;

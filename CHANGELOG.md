@@ -9,6 +9,9 @@
   them to any chat in one click, and can be the default for new chats.
 - **All** checkbox in the MCP and Skills section headers switches every server or skill of that section at once.
 - Auto-run skills per chat: add, skip or remove them for the current chat from the Skills tab.
+- Plan limits next to **Send** (Claude Code and Codex subscriptions): a circle split into the 5-hour session (left)
+  and the weekly limit (right), each filled by what is left. Click it for a popup with percentages, a countdown and
+  the reset time.
 
 ### Fixed
 - Scrolling the chat with the mouse wheel no longer stops or jumps back to the bottom when the pointer passes over

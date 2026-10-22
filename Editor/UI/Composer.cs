@@ -26,6 +26,7 @@ namespace DTech.Parley.Editor.UI
         private readonly Button _attach;
         private readonly Button _send;
         private readonly Button _stop;
+        private readonly LimitsButton _limits;
         private readonly List<ChatAttachment> _attachments = new ();
         private readonly List<(string insert, string name, string detail)> _suggestionItems = new ();
         private readonly HashSet<string> _suggestedNames = new (StringComparer.OrdinalIgnoreCase);
@@ -59,6 +60,9 @@ namespace DTech.Parley.Editor.UI
             _stop = ParleyStyles.Button("■ Stop", () => OnStop?.Invoke(), "pl-button--danger");
             _stop.tooltip = "Stop the current reply";
             _send = ParleyStyles.Button("Send ↵", Submit, "pl-button--primary");
+            _limits = new LimitsButton();
+            ParleyStyles.SetVisible(_limits, false);
+            bar.Add(_limits);
             bar.Add(_stop);
             bar.Add(_send);
             Add(bar);
@@ -74,6 +78,17 @@ namespace DTech.Parley.Editor.UI
         public void SetCommandSource(Func<IReadOnlyList<SlashCommandInfo>> commands)
         {
             _commands = commands ?? (() => Array.Empty<SlashCommandInfo>());
+        }
+
+        public void SetLimitsSource(Func<RateLimits> limits, Action refresh)
+        {
+            _limits.SetSource(limits, refresh);
+        }
+
+        public void RefreshLimits(bool visible)
+        {
+            ParleyStyles.SetVisible(_limits, visible);
+            _limits.UpdateView();
         }
 
         public void SetBusy(bool busy)

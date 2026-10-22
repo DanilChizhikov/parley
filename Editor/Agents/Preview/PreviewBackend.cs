@@ -26,6 +26,12 @@ namespace DTech.Parley.Editor.Agents.Preview
         private const long ContextPerTurn = 2400;
         private const long ContextAlmostFull = 176000;
         private const double CostPerTurn = 0.0123;
+        private const double SessionLimitUsed = 38.0;
+        private const double WeeklyLimitUsed = 61.0;
+        private const double SessionLimitPerTurn = 1.5;
+        private const double WeeklyLimitPerTurn = 0.2;
+        private const double SessionResetMinutes = 133.0;
+        private const double WeeklyResetDays = 3.0;
 
         private static readonly Dictionary<string, PreviewScenario> _commands = new (StringComparer.OrdinalIgnoreCase)
         {
@@ -81,6 +87,9 @@ namespace DTech.Parley.Editor.Agents.Preview
         private int _sequence;
         private long _contextUsed = 18000;
         private double _cost;
+        private double _sessionLimitUsed = SessionLimitUsed;
+        private double _weeklyLimitUsed = WeeklyLimitUsed;
+        private DateTimeOffset _limitsStartedAt;
         private bool _restartPending;
         private bool _disposed;
 
@@ -153,6 +162,8 @@ namespace DTech.Parley.Editor.Agents.Preview
             ReportMcp();
             ReportSkills();
             _sink.ContextUsage(_contextUsed, ContextWindow);
+            _limitsStartedAt = DateTimeOffset.Now;
+            ReportRateLimits();
         }
 
         public async Task SendAsync(UserTurn turn, CancellationToken token)
@@ -257,6 +268,14 @@ namespace DTech.Parley.Editor.Agents.Preview
             }
         }
 
+        public void RefreshRateLimits()
+        {
+            if (IsRunning)
+            {
+                ReportRateLimits();
+            }
+        }
+
         public void Dispose()
         {
             _disposed = true;
@@ -324,6 +343,18 @@ namespace DTech.Parley.Editor.Agents.Preview
             }
 
             return capabilities;
+        }
+
+        private void ReportRateLimits()
+        {
+            if (_profile.Kind == ProfileKind.Local)
+            {
+                return;
+            }
+
+            RateLimitWindow session = new RateLimitWindow(_sessionLimitUsed, _limitsStartedAt.AddMinutes(SessionResetMinutes));
+            RateLimitWindow weekly = new RateLimitWindow(_weeklyLimitUsed, _limitsStartedAt.AddDays(WeeklyResetDays));
+            _sink.RateLimitsChanged(new RateLimits(session, weekly, false, DateTimeOffset.Now));
         }
 
         private void ReportMcp()
@@ -432,6 +463,9 @@ namespace DTech.Parley.Editor.Agents.Preview
             _contextUsed = Math.Min(ContextWindow, _contextUsed + ContextPerTurn);
             _sink.ContextUsage(_contextUsed, ContextWindow);
             _cost += CostPerTurn;
+            _sessionLimitUsed = Math.Min(100.0, _sessionLimitUsed + SessionLimitPerTurn);
+            _weeklyLimitUsed = Math.Min(100.0, _weeklyLimitUsed + WeeklyLimitPerTurn);
+            ReportRateLimits();
             _sink.UsageReported(new UsageReport(null, null, null, 1200, 400, 9600, 380, 0));
             _sink.TurnCompleted(new TurnResult
             {

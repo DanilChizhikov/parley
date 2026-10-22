@@ -239,6 +239,10 @@ namespace DTech.Parley.Editor.Agents.Local
 			}
 		}
 
+		public void RefreshRateLimits()
+		{
+		}
+
 		private async Task RunAsync(bool compact)
 		{
 			_running = true;
