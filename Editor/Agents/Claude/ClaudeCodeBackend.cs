@@ -28,6 +28,8 @@ namespace DTech.Parley.Editor.Agents.Claude
 		private static readonly string[] Efforts = { "low", "medium", "high", "xhigh", "max" };
 		private static readonly string[] RestrictedTruthyValues = { "1", "true", "yes", "on" };
 
+		private static string _warnedOutdatedExecutable;
+
 		private readonly ParleyProfile _profile;
 		private readonly IAgentSink _sink;
 		private readonly ClaudeStreamMapper _mapper;
@@ -415,6 +417,22 @@ namespace DTech.Parley.Editor.Agents.Claude
 			}
 		}
 
+		private static async Task WarnIfOutdatedAsync(string executable, string path)
+		{
+			if (executable == _warnedOutdatedExecutable)
+			{
+				return;
+			}
+
+			Version version = await CliVersions.GetParsedVersionAsync(executable, path);
+			if (ClaudeCliLocator.IsOutdated(version))
+			{
+				_warnedOutdatedExecutable = executable;
+				Debug.LogWarning("[Parley] Claude Code CLI " + version + " at " + executable + " is older than " + ClaudeCliLocator.MinimumVersion +
+					". Run 'claude update' or remove this install.");
+			}
+		}
+
 		private static string LastLines(string text, int count)
 		{
 			string[] lines = text.Split('\n');
@@ -446,6 +464,8 @@ namespace DTech.Parley.Editor.Agents.Claude
 			};
 
 			string environmentPath = ShellEnvironment.Merge(Path.GetDirectoryName(executable), path);
+			await WarnIfOutdatedAsync(executable, environmentPath);
+			cancellationToken.ThrowIfCancellationRequested();
 			ApplyEnvironment(startInfo, auth, environmentPath);
 			_process = new ChildProcess(startInfo);
 			_process.OnStdoutLine += StdoutLineHandler;

@@ -345,7 +345,7 @@ namespace DTech.Parley.Editor.Agents.Codex
             string path = await ShellEnvironment.GetLoginPathAsync();
             cancellationToken.ThrowIfCancellationRequested();
             string environmentPath = ShellEnvironment.Merge(Path.GetDirectoryName(executable), path);
-            Version version = CodexEnvironment.UsesManagedHome(_profile) ? await CodexCliLocator.GetParsedVersionAsync(executable, environmentPath) : null;
+            Version version = CodexEnvironment.UsesManagedHome(_profile) ? await CliVersions.GetParsedVersionAsync(executable, environmentPath) : null;
             cancellationToken.ThrowIfCancellationRequested();
             List<string> arguments = new () { "app-server" };
             CodexEnvironment.AddCredentialOptions(arguments, _profile, version);
