@@ -96,6 +96,7 @@ namespace DTech.Parley.Editor.UI
 
             private string _selectedPreview;
             private string _firstPreview;
+            private float _previewHeight;
 
             public VisualElement Root { get; } = new ();
             public string Text { get; }
@@ -157,6 +158,7 @@ namespace DTech.Parley.Editor.UI
                 {
                     _preview = new MarkdownView();
                     _preview.AddToClassList("pl-question__preview");
+                    _preview.RegisterCallback<GeometryChangedEvent>(PreviewGeometryChangedHandler);
                     content.AddToClassList("pl-question__content--preview");
                     content.Add(_preview);
                     ShowPreview(firstPreview);
@@ -272,6 +274,15 @@ namespace DTech.Parley.Editor.UI
                 }
 
                 _changed();
+            }
+
+            private void PreviewGeometryChangedHandler(GeometryChangedEvent evt)
+            {
+                if (evt.newRect.height > _previewHeight)
+                {
+                    _previewHeight = evt.newRect.height;
+                    _preview.style.minHeight = _previewHeight;
+                }
             }
 
             private void ShowPreview(string preview)

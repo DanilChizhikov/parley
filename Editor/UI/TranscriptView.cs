@@ -32,6 +32,7 @@ namespace DTech.Parley.Editor.UI
             _scroll.AddToClassList("pl-transcript__scroll");
             _scroll.verticalScroller.valueChanged += ScrolledHandler;
             _scroll.contentContainer.RegisterCallback<GeometryChangedEvent>(ContentGeometryChangedHandler);
+            _scroll.RegisterCallback<WheelEvent>(WheelHandler, TrickleDown.TrickleDown);
             Add(_scroll);
             _empty = new VisualElement();
             _empty.AddToClassList("pl-empty");
@@ -225,6 +226,11 @@ namespace DTech.Parley.Editor.UI
         private void ScrollToEnd()
         {
             _scrollQueued = false;
+            if (!_stickToBottom)
+            {
+                return;
+            }
+
             _scroll.scrollOffset = new Vector2(_scroll.scrollOffset.x, float.MaxValue);
         }
 
@@ -239,6 +245,47 @@ namespace DTech.Parley.Editor.UI
         private void ScrolledHandler(float value)
         {
             _stickToBottom = value >= _scroll.verticalScroller.highValue - StickThreshold;
+        }
+
+        private void WheelHandler(WheelEvent evt)
+        {
+            float delta = evt.delta.y;
+            if (Mathf.Abs(delta) <= Mathf.Abs(evt.delta.x))
+            {
+                return;
+            }
+
+            if (InnerScrolls(evt.target as VisualElement, delta))
+            {
+                if (delta < 0.0f)
+                {
+                    _stickToBottom = false;
+                }
+
+                return;
+            }
+
+            Scroller scroller = _scroll.verticalScroller;
+            scroller.value += delta * (scroller.lowValue < scroller.highValue ? 1.0f : -1.0f) * _scroll.mouseWheelScrollSize;
+            _stickToBottom = scroller.highValue <= scroller.lowValue || (delta > 0.0f && scroller.value >= scroller.highValue - StickThreshold);
+            evt.StopPropagation();
+        }
+
+        private bool InnerScrolls(VisualElement element, float delta)
+        {
+            for (VisualElement current = element; current != null && current != _scroll; current = current.parent)
+            {
+                if (current is ScrollView inner)
+                {
+                    Scroller scroller = inner.verticalScroller;
+                    if (delta < 0.0f ? scroller.value > scroller.lowValue : scroller.value < scroller.highValue)
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
         }
 
         private void EntryAddedHandler(TranscriptEntry entry)
