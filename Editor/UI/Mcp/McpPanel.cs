@@ -135,7 +135,7 @@ namespace DTech.Parley.Editor.UI
             foreach (McpServerStatus status in _session.McpStatuses)
             {
                 _key.Append(status.Name).Append(':').Append(status.IsExternal).Append(':').Append(status.State).Append(':')
-                    .Append(status.ToolCount).Append(':').Append(status.Error).Append(';');
+                    .Append(status.ToolCount).Append(':').Append(status.Error).Append(':').Append(_session.IsExternalMcpServerEnabled(status.Name)).Append(';');
             }
 
             return _key.ToString();
@@ -144,8 +144,16 @@ namespace DTech.Parley.Editor.UI
         private void Render()
         {
             _list.Clear();
-            _list.Add(ParleyStyles.Text("Parley servers", "pl-mcp__section"));
             IReadOnlyList<McpServerDefinition> definitions = ParleyUserSettings.instance.McpServers;
+            List<string> ids = new ();
+            int enabled = 0;
+            foreach (McpServerDefinition definition in definitions)
+            {
+                ids.Add(definition.Id);
+                enabled += _session.IsMcpServerEnabled(definition.Id) ? 1 : 0;
+            }
+
+            _list.Add(SectionHeader("Parley servers", enabled, ids, value => _session?.SetMcpServersEnabled(ids, value)));
             if (definitions.Count == 0)
             {
                 _list.Add(ParleyStyles.Text("No servers yet. Add one, then switch it on for this chat.", ParleyStyles.Muted));
@@ -165,15 +173,23 @@ namespace DTech.Parley.Editor.UI
         private void RenderExternal()
         {
             string source = _session.Profile.Kind == ProfileKind.Codex ? "Codex" : "Claude Code";
-            _list.Add(ParleyStyles.Text("From " + source + " config", "pl-mcp__section"));
             _external.Clear();
+            List<string> names = new ();
+            int enabled = 0;
             foreach (McpServerStatus status in _session.McpStatuses)
             {
                 if (status.IsExternal)
                 {
                     _external.Add(status);
+                    if (!names.Contains(status.Name))
+                    {
+                        names.Add(status.Name);
+                        enabled += _session.IsExternalMcpServerEnabled(status.Name) ? 1 : 0;
+                    }
                 }
             }
+
+            _list.Add(SectionHeader("From " + source + " config", enabled, names, value => _session?.SetExternalMcpServersEnabled(names, value)));
 
             if (_external.Count == 0)
             {
@@ -233,6 +249,20 @@ namespace DTech.Parley.Editor.UI
             AddState(main, status);
             row.Add(main);
             return row;
+        }
+
+        private static VisualElement SectionHeader(string title, int enabled, List<string> items, Action<bool> setAll)
+        {
+            VisualElement header = new VisualElement();
+            header.AddToClassList("pl-mcp__header");
+            header.Add(ParleyStyles.Text(title, "pl-mcp__section"));
+            header.Add(ParleyStyles.Spacer());
+            if (items.Count > 0)
+            {
+                header.Add(ParleyStyles.AllToggle(enabled, items.Count, setAll));
+            }
+
+            return header;
         }
 
         private static Label ToggleName(string name, Toggle toggle)

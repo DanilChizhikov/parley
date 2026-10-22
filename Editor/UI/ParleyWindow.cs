@@ -61,6 +61,7 @@ namespace DTech.Parley.Editor.UI
         private ToolbarButton _effortButton;
         private ToolbarButton _mcpButton;
         private ToolbarButton _skillsButton;
+        private ToolbarButton _presetButton;
         private ToolbarButton _updateButton;
         private ToolbarButton _historyButton;
         private ToolbarToggle _sideToggle;
@@ -264,12 +265,15 @@ namespace DTech.Parley.Editor.UI
             _effortButton.AddToClassList(ShrinkClass);
             _mcpButton = new ToolbarButton(ShowMcpPanel) { tooltip = "MCP servers in this chat" };
             _skillsButton = new ToolbarButton(ShowSkillsPanel) { tooltip = "Skills in this chat" };
+            _presetButton = new ToolbarButton(ShowPresetMenu) { tooltip = "Presets: save this chat's skills, MCP servers and auto-run skills, apply them to any chat" };
+            _presetButton.AddToClassList(ShrinkClass);
             toolbar.Add(_profileButton);
             toolbar.Add(_modelButton);
             toolbar.Add(_modeButton);
             toolbar.Add(_effortButton);
             toolbar.Add(_mcpButton);
             toolbar.Add(_skillsButton);
+            toolbar.Add(_presetButton);
             if (_preview)
             {
                 _previewButton = new ToolbarButton(ShowPreviewMenu) { text = "Preview ▾", tooltip = "Play a scripted scenario or open another window in preview. Nothing is sent to a model." };
@@ -388,6 +392,8 @@ namespace DTech.Parley.Editor.UI
             _mcpButton.text = mcpCount > 0 ? "MCP " + mcpCount : "MCP";
             int skillCount = SkillsPanel.EnabledCount(session);
             _skillsButton.text = skillCount > 0 ? "Skills " + skillCount : "Skills";
+            ChatPreset preset = ChatPresets.FindMatch(session.Record, ParleyUserSettings.instance.Presets);
+            _presetButton.text = preset != null ? "Preset: " + preset.Name + " ▾" : "Preset ▾";
             RefreshUpdateButton();
             _composer.SetBusy(session.IsBusy);
             _statusBar.Refresh(session);
@@ -563,6 +569,133 @@ namespace DTech.Parley.Editor.UI
 
             _sideToggle.value = true;
             _side.ShowTab(SidePanelTab.Skills);
+        }
+
+        private void ShowPresetMenu()
+        {
+            if (_session == null)
+            {
+                return;
+            }
+
+            GenericMenu menu = new GenericMenu();
+            ParleyUserSettings settings = ParleyUserSettings.instance;
+            IReadOnlyList<ChatPreset> presets = settings.Presets;
+            ChatPreset match = ChatPresets.FindMatch(_session.Record, presets);
+            ChatPreset defaultPreset = settings.DefaultPreset;
+            if (presets.Count == 0)
+            {
+                menu.AddDisabledItem(new GUIContent("No presets yet"));
+            }
+
+            foreach (ChatPreset preset in presets)
+            {
+                ChatPreset captured = preset;
+                menu.AddItem(new GUIContent(MenuName(preset)), preset == match, () => ApplyPreset(captured));
+            }
+
+            menu.AddSeparator(string.Empty);
+            menu.AddItem(new GUIContent("Save chat as preset…"), false, SaveChatAsPreset);
+            if (presets.Count > 0)
+            {
+                foreach (ChatPreset preset in presets)
+                {
+                    ChatPreset captured = preset;
+                    menu.AddItem(new GUIContent("Update from chat/" + MenuName(preset)), false, () => UpdatePreset(captured));
+                }
+
+                menu.AddSeparator(string.Empty);
+                menu.AddItem(new GUIContent("Default for new chats/None"), defaultPreset == null, () => SetDefaultPreset(null));
+                foreach (ChatPreset preset in presets)
+                {
+                    ChatPreset captured = preset;
+                    menu.AddItem(new GUIContent("Default for new chats/" + MenuName(preset)), preset == defaultPreset, () => SetDefaultPreset(captured));
+                }
+
+                foreach (ChatPreset preset in presets)
+                {
+                    ChatPreset captured = preset;
+                    menu.AddItem(new GUIContent("Rename/" + MenuName(preset) + "…"), false, () => RenamePreset(captured));
+                }
+
+                foreach (ChatPreset preset in presets)
+                {
+                    ChatPreset captured = preset;
+                    menu.AddItem(new GUIContent("Delete/" + MenuName(preset)), false, () => DeletePreset(captured));
+                }
+            }
+
+            menu.DropDown(_presetButton.worldBound);
+        }
+
+        private static string MenuName(ChatPreset preset)
+        {
+            return preset.Name.Replace("/", "∕");
+        }
+
+        private Rect PresetButtonScreenRect()
+        {
+            Rect bound = _presetButton.worldBound;
+            return new Rect(position.x + bound.x, position.y + bound.y, bound.width, bound.height);
+        }
+
+        private void ApplyPreset(ChatPreset preset)
+        {
+            _session?.ApplyPreset(preset);
+            ShowNotification(new GUIContent("Preset '" + preset.Name + "' applied"), NotificationSeconds);
+        }
+
+        private void SaveChatAsPreset()
+        {
+            PresetNameWindow.Show(PresetButtonScreenRect(), "Save chat as preset", string.Empty, null, name =>
+            {
+                if (_session == null)
+                {
+                    return;
+                }
+
+                ParleyUserSettings.instance.SavePreset(ChatPresets.Capture(_session.Record, name));
+                MarkDirty();
+            });
+        }
+
+        private void UpdatePreset(ChatPreset preset)
+        {
+            if (_session == null || !EditorUtility.DisplayDialog("Update preset", "Replace the preset '" + preset.Name + "' with this chat's skills, MCP servers and auto-run skills?", "Update", "Cancel"))
+            {
+                return;
+            }
+
+            ChatPresets.CopyInto(_session.Record, preset);
+            ParleyUserSettings.instance.SavePreset(preset);
+            MarkDirty();
+        }
+
+        private void RenamePreset(ChatPreset preset)
+        {
+            PresetNameWindow.Show(PresetButtonScreenRect(), "Rename preset", preset.Name, preset.Id, name =>
+            {
+                preset.Name = name;
+                ParleyUserSettings.instance.SavePreset(preset);
+                MarkDirty();
+            });
+        }
+
+        private void SetDefaultPreset(ChatPreset preset)
+        {
+            ParleyUserSettings.instance.SetDefaultPreset(preset);
+            MarkDirty();
+        }
+
+        private void DeletePreset(ChatPreset preset)
+        {
+            if (!EditorUtility.DisplayDialog("Delete preset", "Delete the preset '" + preset.Name + "'? Chats that used it keep their settings.", "Delete", "Cancel"))
+            {
+                return;
+            }
+
+            ParleyUserSettings.instance.RemovePreset(preset);
+            MarkDirty();
         }
 
         private void ShowHistoryMenu()

@@ -5,6 +5,10 @@
 ### Added
 - `Window/DTech/Parley Debug Preview`: a Parley window driven by a scripted agent that shows every chat block, card,
   side panel state and window without starting a CLI or calling a model.
+- Presets: **Preset ▾** in the toolbar saves a chat's skills, MCP servers and auto-run skills under a name, applies
+  them to any chat in one click, and can be the default for new chats.
+- **All** checkbox in the MCP and Skills section headers switches every server or skill of that section at once.
+- Auto-run skills per chat: add, skip or remove them for the current chat from the Skills tab.
 
 ### Fixed
 - Scrolling the chat with the mouse wheel no longer stops or jumps back to the bottom when the pointer passes over

@@ -124,6 +124,15 @@ namespace DTech.Parley.Editor.UI
             return spacer;
         }
 
+        public static Toggle AllToggle(int enabled, int total, Action<bool> onChange)
+        {
+            Toggle toggle = new Toggle { text = "All", value = total > 0 && enabled == total, showMixedValue = enabled > 0 && enabled < total };
+            toggle.tooltip = "Turn every item in this section on or off for this chat";
+            toggle.AddToClassList("pl-mcp__all");
+            toggle.RegisterValueChangedCallback(evt => onChange(evt.newValue));
+            return toggle;
+        }
+
         public static VisualElement RowActions(Action edit, Action delete, string noun)
         {
             VisualElement actions = new VisualElement();

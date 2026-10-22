@@ -1034,6 +1034,10 @@
     margin: 1px 6px 0 0;
 }
 
+.pl-mcp__all {
+    margin: 12px 6px 4px 6px;
+}
+
 .pl-mcp__main {
     flex-grow: 1;
     flex-shrink: 1;
