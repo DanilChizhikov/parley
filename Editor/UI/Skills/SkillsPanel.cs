@@ -25,6 +25,7 @@ namespace DTech.Parley.Editor.UI
         private SkillForm _form;
         private string _renderedKey;
         private bool _libraryLoaded;
+        private string _filter = string.Empty;
 
         public SkillsPanel()
         {
@@ -37,6 +38,11 @@ namespace DTech.Parley.Editor.UI
             refresh.tooltip = "Reload the skill list";
             header.Add(refresh);
             Add(header);
+            Add(ParleyStyles.SearchField(value =>
+            {
+                _filter = value;
+                Refresh();
+            }));
             _restartHint = ParleyStyles.Text("Some changes apply with your next message: the agent restarts and resumes this chat.", "pl-mcp__hint");
             ParleyStyles.SetVisible(_restartHint, false);
             Add(_restartHint);
@@ -150,7 +156,7 @@ namespace DTech.Parley.Editor.UI
         {
             _key.Clear();
             ParleyUserSettings settings = ParleyUserSettings.instance;
-            _key.Append(_session.Record.Id).Append('|').Append(_session.Profile.Kind).Append('|').Append(_session.Backend.IsRunning).Append('|');
+            _key.Append(_session.Record.Id).Append('|').Append(_session.Profile.Kind).Append('|').Append(_session.Backend.IsRunning).Append('|').Append(_filter).Append('|');
             _key.Append(settings.DefaultPreset?.Id).Append(':').Append(settings.DefaultPreset?.Name).Append('|');
             foreach (AutoSkill skill in settings.AutoSkills)
             {
@@ -192,7 +198,11 @@ namespace DTech.Parley.Editor.UI
         private void Render()
         {
             _list.Clear();
-            RenderAuto();
+            if (string.IsNullOrWhiteSpace(_filter))
+            {
+                RenderAuto();
+            }
+
             RenderLibrary();
             RenderExternal();
         }
@@ -338,9 +348,24 @@ namespace DTech.Parley.Editor.UI
                 return;
             }
 
+            int shown = 0;
             foreach (SkillDocument document in _library)
             {
-                _list.Add(BuildLibraryRow(document));
+                if (ParleyStyles.Matches(_filter, document.Name, document.Description))
+                {
+                    _list.Add(BuildLibraryRow(document));
+                    shown++;
+                }
+            }
+
+            AddNoMatches(shown);
+        }
+
+        private void AddNoMatches(int shown)
+        {
+            if (shown == 0)
+            {
+                _list.Add(ParleyStyles.Text("No matches.", ParleyStyles.Muted));
             }
         }
 
@@ -401,11 +426,20 @@ namespace DTech.Parley.Editor.UI
             }
 
             _external.Sort((left, right) => string.Compare(left.Name, right.Name, StringComparison.OrdinalIgnoreCase));
+            int shown = 0;
             for (int i = 0; i < _external.Count; i++)
             {
+                if (!ParleyStyles.Matches(_filter, _external[i].Name, _external[i].Description))
+                {
+                    continue;
+                }
+
                 bool duplicate = (i > 0 && _external[i - 1].Name == _external[i].Name) || (i + 1 < _external.Count && _external[i + 1].Name == _external[i].Name);
                 _list.Add(BuildExternalRow(_external[i], duplicate));
+                shown++;
             }
+
+            AddNoMatches(shown);
         }
 
         private VisualElement BuildExternalRow(SkillInfo skill, bool duplicate)

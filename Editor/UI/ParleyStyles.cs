@@ -147,6 +147,35 @@ namespace DTech.Parley.Editor.UI
             return actions;
         }
 
+        public static TextField SearchField(Action<string> onChange)
+        {
+            TextField field = new TextField { tooltip = "Filter by name or description" };
+            field.textEdition.placeholder = "Search…";
+            field.AddToClassList("pl-search");
+            field.RegisterValueChangedCallback(evt => onChange(evt.newValue ?? string.Empty));
+            field.RegisterCallback<KeyDownEvent>(evt =>
+            {
+                if (evt.keyCode == KeyCode.Escape && field.value.Length > 0)
+                {
+                    field.value = string.Empty;
+                    evt.StopPropagation();
+                }
+            });
+            return field;
+        }
+
+        public static bool Matches(string query, string first, string second = null)
+        {
+            string trimmed = query?.Trim();
+            if (string.IsNullOrEmpty(trimmed))
+            {
+                return true;
+            }
+
+            return (first != null && first.IndexOf(trimmed, StringComparison.OrdinalIgnoreCase) >= 0)
+                || (second != null && second.IndexOf(trimmed, StringComparison.OrdinalIgnoreCase) >= 0);
+        }
+
         public static void ScrollIntoView(VisualElement element)
         {
             element.schedule.Execute(() => element.GetFirstAncestorOfType<ScrollView>()?.ScrollTo(element));

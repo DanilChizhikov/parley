@@ -19,6 +19,7 @@ namespace DTech.Parley.Editor.UI
         private ChatSession _session;
         private McpServerForm _form;
         private string _renderedKey;
+        private string _filter = string.Empty;
 
         public McpPanel()
         {
@@ -34,6 +35,11 @@ namespace DTech.Parley.Editor.UI
             add.tooltip = "Add an MCP server";
             header.Add(add);
             Add(header);
+            Add(ParleyStyles.SearchField(value =>
+            {
+                _filter = value;
+                Refresh();
+            }));
             _restartHint = ParleyStyles.Text("Some changes apply with your next message: the agent restarts and resumes this chat.", "pl-mcp__hint");
             ParleyStyles.SetVisible(_restartHint, false);
             Add(_restartHint);
@@ -124,7 +130,7 @@ namespace DTech.Parley.Editor.UI
         {
             _key.Clear();
             _key.Append(_session.Record.Id).Append('|').Append(_session.Profile.Kind).Append('|').Append(_session.Backend.HasPendingRestart)
-                .Append('|').Append(_session.Backend.IsRunning).Append('|');
+                .Append('|').Append(_session.Backend.IsRunning).Append('|').Append(_filter).Append('|');
             foreach (McpServerDefinition definition in ParleyUserSettings.instance.McpServers)
             {
                 _key.Append(definition.Id).Append(':').Append(definition.Name).Append(':').Append(Describe(definition)).Append(':')
@@ -159,11 +165,17 @@ namespace DTech.Parley.Editor.UI
                 _list.Add(ParleyStyles.Text("No servers yet. Add one, then switch it on for this chat.", ParleyStyles.Muted));
             }
 
+            int shown = 0;
             foreach (McpServerDefinition definition in definitions)
             {
-                _list.Add(BuildServerRow(definition));
+                if (ParleyStyles.Matches(_filter, definition.Name, Describe(definition)))
+                {
+                    _list.Add(BuildServerRow(definition));
+                    shown++;
+                }
             }
 
+            AddNoMatches(definitions.Count, shown);
             if (_session.Profile.Kind != ProfileKind.Local)
             {
                 RenderExternal();
@@ -199,9 +211,24 @@ namespace DTech.Parley.Editor.UI
             }
 
             _external.Sort((left, right) => string.Compare(left.Name, right.Name, StringComparison.OrdinalIgnoreCase));
+            int shown = 0;
             foreach (McpServerStatus status in _external)
             {
-                _list.Add(BuildExternalRow(status));
+                if (ParleyStyles.Matches(_filter, status.Name))
+                {
+                    _list.Add(BuildExternalRow(status));
+                    shown++;
+                }
+            }
+
+            AddNoMatches(_external.Count, shown);
+        }
+
+        private void AddNoMatches(int total, int shown)
+        {
+            if (total > 0 && shown == 0)
+            {
+                _list.Add(ParleyStyles.Text("No matches.", ParleyStyles.Muted));
             }
         }
 

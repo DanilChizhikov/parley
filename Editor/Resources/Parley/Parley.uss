@@ -998,6 +998,10 @@
     margin-bottom: 6px;
 }
 
+.pl-search {
+    margin: 0 0 6px 0;
+}
+
 .pl-mcp__title {
     -unity-font-style: bold;
 }
