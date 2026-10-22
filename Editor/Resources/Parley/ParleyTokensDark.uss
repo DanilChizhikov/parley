@@ -23,6 +23,12 @@
     --pl-plan-bg: #2E2843;
     --pl-request-bg: #2B3140;
     --pl-selected: #34465F;
-    --pl-update: #2F9E5B;
-    --pl-update-hover: #38B26A;
+    --pl-update: #24834A;
+    --pl-update-hover: #2B9455;
+    --pl-accent-fill: #2F6FD6;
+    --pl-accent-fill-hover: #3A7BE0;
+    --pl-update-text: #FFFFFF;
+    --pl-link: #6CB6FF;
+    --pl-code-inline: #E6C07B;
+    --pl-mark: rgba(255, 255, 255, 0.08);
 }

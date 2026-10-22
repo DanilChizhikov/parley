@@ -9,6 +9,8 @@ namespace DTech.Parley.Editor.UI
 {
     internal sealed class ClaudeProfileEditor : ProfileEditor
     {
+        private static readonly string[] Efforts = { "low", "medium", "high", "xhigh", "max" };
+
         private readonly VisualElement _methodFields = new ();
         private readonly CliCommandPanel _cli = new ();
 
@@ -20,13 +22,13 @@ namespace DTech.Parley.Editor.UI
             _methodFields.AddToClassList("pl-profile__method");
             Add(_methodFields);
             RebuildMethodFields();
-            TextField claudeHome = Text(new TextFieldRequest("Config dir (CLAUDE_CONFIG_DIR)", profile.ConfigDir, value => Profile.ConfigDir = value, "Separate folder per account, e.g. ~/.claude-work"));
-            TextField model = Text(new TextFieldRequest("Model", profile.Model, value => Profile.Model = value, "opus, sonnet, fable or a full model id"));
-            TextField effort = Text(new TextFieldRequest("Effort", profile.Effort, value => Profile.Effort = value, "low, medium, high, xhigh, max"));
+            Add(Text(new TextFieldRequest("Model", profile.Model, value => Profile.Model = value, "Empty = Claude Code default",
+                "An alias (opus, sonnet, fable) or a full model id")));
+            Add(Choice("Effort", profile.Effort, Efforts, value => Profile.Effort = value, "Reasoning effort. Default lets Claude Code decide."));
+            TextField claudeHome = Text(new TextFieldRequest("Config dir", profile.ConfigDir, value => Profile.ConfigDir = value, "Separate folder per account, e.g. ~/.claude-work",
+                "CLAUDE_CONFIG_DIR. Use a separate folder to keep this profile's login apart from your terminal's."));
             TextField arguments = Text(new TextFieldRequest("Extra CLI arguments", profile.ExtraArguments, value => Profile.ExtraArguments = value, "--fallback-model sonnet"));
-            VisualElement foldout = Advanced(claudeHome, model, effort, arguments);
-
-            Add(foldout);
+            Add(Advanced(claudeHome, arguments));
             AddFooter(_cli);
         }
 
@@ -60,12 +62,12 @@ namespace DTech.Parley.Editor.UI
                         "Generating it in a terminal prints the token; paste it into the field above.");
 
                     _methodFields.Add(ButtonRow(
-                        ("Generate token…", GenerateToken),
-                        ("Generate in Terminal", () => RunInTerminal(new List<string>
+                        SmallButton("Generate (browser)", GenerateToken, "Approve in the browser; the token is stored automatically", true),
+                        SmallButton("Generate in Terminal", () => RunInTerminal(new List<string>
                         {
                             "setup-token"
-                        })),
-                        ("Check status", CheckStatus)));
+                        }), "Run claude setup-token in a terminal and paste the printed token above"),
+                        CheckStatusButton()));
                 } break;
                 
                 case ClaudeAuthMethod.ApiKey:
@@ -73,7 +75,7 @@ namespace DTech.Parley.Editor.UI
                     _methodFields.Add(new SecretField("API key", id, SecretFields.ApiKey, "sk-ant-api03-…"));
 
                     AddNote("Claude Console API key, passed as ANTHROPIC_API_KEY (usage billing).");
-                    _methodFields.Add(ButtonRow(("Check status", CheckStatus)));
+                    _methodFields.Add(ButtonRow(CheckStatusButton()));
                 } break;
                 
                 case ClaudeAuthMethod.Gateway:
@@ -85,12 +87,13 @@ namespace DTech.Parley.Editor.UI
                         "Bearer token (ANTHROPIC_AUTH_TOKEN)"));
 
                     AddField(new TextFieldRequest("Custom headers", Profile.CustomHeaders, value => Profile.CustomHeaders = value,
-                        "Name: value (one per line)"));
+                        "Name: value (one per line)", "Sent with every request (ANTHROPIC_CUSTOM_HEADERS)", true));
 
                     AddNote("Also runs Claude Code against local servers that speak the Anthropic Messages API (Ollama 0.14+, LM Studio 0.4.1+).");
-                    VisualElement buttonRow = ButtonRow(("Preset: Ollama", () => ApplyGatewayPreset("http://localhost:11434", "ollama")),
-                        ("Preset: LM Studio", () => ApplyGatewayPreset("http://localhost:1234", "lmstudio")),
-                        ("Check status", CheckStatus));
+                    VisualElement buttonRow = ButtonRow(
+                        SmallButton("Preset: Ollama", () => ApplyGatewayPreset("http://localhost:11434", "ollama"), "Fill Base URL and token for a local Ollama server"),
+                        SmallButton("Preset: LM Studio", () => ApplyGatewayPreset("http://localhost:1234", "lmstudio"), "Fill Base URL and token for a local LM Studio server"),
+                        CheckStatusButton());
 
                     _methodFields.Add(buttonRow);
                 } break;
@@ -100,7 +103,7 @@ namespace DTech.Parley.Editor.UI
                     AddField(new TextFieldRequest("Helper command", Profile.ApiKeyHelper, value => Profile.ApiKeyHelper = value, "~/bin/get-claude-key.sh"));
 
                     AddNote("A script that prints an API key; Claude Code reruns it when the key expires.");
-                    _methodFields.Add(ButtonRow(("Check status", CheckStatus)));
+                    _methodFields.Add(ButtonRow(CheckStatusButton()));
                 } break;
                 
                 case ClaudeAuthMethod.Bedrock:
@@ -118,20 +121,22 @@ namespace DTech.Parley.Editor.UI
                         value => Profile.GoogleCredentialsPath = value,
                         "Empty = gcloud application-default credentials"));
 
-                    _methodFields.Add(ButtonRow(("Check status", CheckStatus)));
+                    _methodFields.Add(ButtonRow(CheckStatusButton()));
                 } break;
                 
                 case ClaudeAuthMethod.Foundry:
                 {
-                    AddField(new TextFieldRequest("Resource name", Profile.FoundryResource, value => Profile.FoundryResource = value));
-                    AddField(new TextFieldRequest("Base URL (instead of resource)", Profile.FoundryBaseUrl, value => Profile.FoundryBaseUrl = value));
+                    AddField(new TextFieldRequest("Resource name", Profile.FoundryResource, value => Profile.FoundryResource = value, null,
+                        "Leave empty when Base URL is set"));
+                    AddField(new TextFieldRequest("Base URL", Profile.FoundryBaseUrl, value => Profile.FoundryBaseUrl = value, "Instead of a resource name",
+                        "Overrides Resource name when set"));
                     _methodFields.Add(BoolField("Use Microsoft Entra ID", Profile.FoundryUseEntraId, EntraToggledHandler));
                     if (!Profile.FoundryUseEntraId)
                     {
                         _methodFields.Add(new SecretField("API key", id, SecretFields.FoundryApiKey));
                     }
 
-                    _methodFields.Add(ButtonRow(("Check status", CheckStatus)));
+                    _methodFields.Add(ButtonRow(CheckStatusButton()));
                 } break;
                 
                 case ClaudeAuthMethod.AnthropicProfile:
@@ -140,9 +145,11 @@ namespace DTech.Parley.Editor.UI
                         value => Profile.AnthropicProfile = value));
 
                     AddNote("A profile written by `ant auth login` or set up for Workload Identity Federation.");
-                    _methodFields.Add(ButtonRow(("Check status", CheckStatus)));
+                    _methodFields.Add(ButtonRow(CheckStatusButton()));
                 } break;
             }
+
+            _methodFields.Add(Status);
         }
 
         private void BuildBedrock()
@@ -171,7 +178,7 @@ namespace DTech.Parley.Editor.UI
             }
 
             AddField(new TextFieldRequest("Base URL (optional)", Profile.BedrockBaseUrl, value => Profile.BedrockBaseUrl = value, "ANTHROPIC_BEDROCK_BASE_URL"));
-            _methodFields.Add(ButtonRow(("Check status", CheckStatus)));
+            _methodFields.Add(ButtonRow(CheckStatusButton()));
         }
 
         private void AddField(TextFieldRequest request)
@@ -186,19 +193,21 @@ namespace DTech.Parley.Editor.UI
 
         private void AddLoginButtons(bool profileLogin)
         {
-            List<(string label, Action action)> buttons = new List<(string label, Action action)>();
+            List<Button> buttons = new List<Button>();
             if (profileLogin)
             {
-                buttons.Add(("Sign in", SignIn));
-                buttons.Add(("Sign in (Terminal)", () => RunInTerminal(ClaudeAuthCommands.LoginArguments(Profile))));
+                buttons.Add(SmallButton("Sign in", SignIn, "Sign in through the browser", true));
+                buttons.Add(SmallButton("Sign in (Terminal)", () => RunInTerminal(ClaudeAuthCommands.LoginArguments(Profile)), "Run the sign-in in a terminal window"));
             }
             else
             {
-                buttons.Add(("Sign in (Terminal)", () => RunInTerminal(new List<string> { "auth", "login" })));
+                buttons.Add(SmallButton("Sign in (Terminal)", () => RunInTerminal(new List<string> { "auth", "login" }), "Run claude auth login in a terminal window", true));
             }
 
-            buttons.Add(("Sign out", SignOut));
-            buttons.Add(("Check status", CheckStatus));
+            Button signOut = SmallButton("Sign out", SignOut);
+            signOut.AddToClassList("pl-button--danger");
+            buttons.Add(signOut);
+            buttons.Add(CheckStatusButton());
             _methodFields.Add(ButtonRow(buttons.ToArray()));
         }
 
@@ -225,15 +234,23 @@ namespace DTech.Parley.Editor.UI
 
         private void GenerateToken()
         {
-            Status.text = "Approve access in the browser; the token is saved to " + SecretStores.Default.Description + " automatically.";
+            SetStatus("Approve access in the browser; the token is saved to " + SecretStores.Default.Description + " automatically.");
             _cli.Run(new CliCommandRequest(Profile, new List<string> { "setup-token" }, TokenLineHandler));
         }
 
-        private async void CheckStatus()
+        private Button CheckStatusButton()
         {
-            Status.text = "Checking…";
-            AuthStatus status = await ClaudeAuthCommands.GetStatusAsync(Profile);
-            Status.text = status.Summary;
+            return SmallButton("Check status", CheckStatus, "Ask Claude Code which account this profile uses");
+        }
+
+        private void CheckStatus()
+        {
+            RunBusy(async () =>
+            {
+                SetStatus("Checking…");
+                AuthStatus status = await ClaudeAuthCommands.GetStatusAsync(Profile);
+                SetStatus(status.Summary, string.IsNullOrEmpty(status.Error) && status.LoggedIn);
+            });
         }
 
         private void ApplyGatewayPreset(string baseUrl, string token)
@@ -242,12 +259,12 @@ namespace DTech.Parley.Editor.UI
             Persist();
             if (!SecretStores.Default.Set(SecretStores.Key(Profile.Id, SecretFields.AuthToken), token, out string error))
             {
-                Status.text = "Could not save the auth token: " + error;
+                SetStatus("Could not save the auth token: " + error, false);
                 return;
             }
 
             RebuildMethodFields();
-            Status.text = "Base URL set to " + baseUrl + ". Pick the model in Advanced (e.g. qwen3-coder).";
+            SetStatus("Base URL set to " + baseUrl + ". Now set Model (e.g. qwen3-coder).", true);
         }
 
         private void MethodChangedHandler(ChangeEvent<Enum> evt)
@@ -278,9 +295,8 @@ namespace DTech.Parley.Editor.UI
                 return;
             }
 
-            Status.text = SecretStores.Default.Set(SecretStores.Key(Profile.Id, SecretFields.OAuthToken), token, out string error)
-                ? "Token saved to " + SecretStores.Default.Description + "."
-                : "Could not save the token: " + error;
+            bool saved = SecretStores.Default.Set(SecretStores.Key(Profile.Id, SecretFields.OAuthToken), token, out string error);
+            SetStatus(saved ? "Token saved to " + SecretStores.Default.Description + "." : "Could not save the token: " + error, saved);
             RebuildMethodFields();
         }
 

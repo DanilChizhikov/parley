@@ -81,7 +81,11 @@ namespace DTech.Parley.Editor.Panels
 				case PanelItemType.Repeat:
 					return BuildRepeat(item);
 				case PanelItemType.Button:
-					return ParleyStyles.Button(item.Label, () => RunAction(item, scope), "pl-panel__button");
+				{
+					Button button = ParleyStyles.Button(item.Label, () => RunAction(item, scope), "pl-panel__button");
+					button.tooltip = DescribeAction(item);
+					return button;
+				}
 				default:
 					return Error(item.Location + ": unsupported item.");
 			}
@@ -201,6 +205,7 @@ namespace DTech.Parley.Editor.Panels
 				Object asset = assets[i];
 				Foldout foldout = new Foldout { text = asset.name, tooltip = AssetDatabase.GetAssetPath(asset) };
 				foldout.AddToClassList("pl-panel__group");
+				foldout.AddToClassList("pl-panel__group--nested");
 				_view.Bind(foldout, PanelViewState.RepeatKey(item.Location, PanelQuery.KeyOf(asset)));
 				AddItems(foldout, item.Items, asset);
 				container.Add(foldout);
@@ -233,7 +238,9 @@ namespace DTech.Parley.Editor.Panels
 			header.Add(ParleyStyles.Text("Asset", "pl-panel__table-name"));
 			foreach (string column in item.Columns)
 			{
-				header.Add(ParleyStyles.Text(column, "pl-panel__table-cell"));
+				Label title = ParleyStyles.Text(ObjectNames.NicifyVariableName(column), "pl-panel__table-cell");
+				title.tooltip = column;
+				header.Add(title);
 			}
 
 			table.Add(header);
@@ -242,8 +249,10 @@ namespace DTech.Parley.Editor.Panels
 			{
 				Object asset = assets[i];
 				VisualElement row = TableRow(false);
-				Button name = new Button(() => EditorGUIUtility.PingObject(asset)) { text = asset.name, tooltip = AssetDatabase.GetAssetPath(asset) };
-				name.AddToClassList("pl-panel__table-name");
+				Label name = ParleyStyles.Text(asset.name, "pl-panel__table-name");
+				name.AddToClassList("pl-panel__table-link");
+				name.tooltip = AssetDatabase.GetAssetPath(asset) + "\nClick to highlight it in the Project window";
+				name.RegisterCallback<ClickEvent>(_ => EditorGUIUtility.PingObject(asset));
 				row.Add(name);
 				SerializedObject serializedObject = Serialized(asset);
 				foreach (string column in item.Columns)
@@ -252,6 +261,14 @@ namespace DTech.Parley.Editor.Panels
 					if (property == null)
 					{
 						row.Add(ParleyStyles.Text("—", "pl-panel__table-cell"));
+						continue;
+					}
+
+					if (property.hasVisibleChildren && property.propertyType == SerializedPropertyType.Generic)
+					{
+						Label nested = ParleyStyles.Text("…", "pl-panel__table-cell");
+						nested.tooltip = ObjectNames.NicifyVariableName(column) + " has nested values. Open the asset to edit them.";
+						row.Add(nested);
 						continue;
 					}
 
@@ -312,17 +329,45 @@ namespace DTech.Parley.Editor.Panels
 
 		private VisualElement Missing(PanelItem item)
 		{
-			string reference = item.Target != null && _spec.Targets.TryGetValue(item.Target, out string value) ? value : item.Target;
-			string component = string.IsNullOrEmpty(item.Component) ? string.Empty : " component " + item.Component;
-			string message = _targets.Status(item.Target) == PanelTargetStatus.MissingWithId
-				? "Target '" + item.Target + "' (" + reference + ")" + component
-					+ " is not available right now. Parley remembered its identity and will reconnect it automatically when the asset or its scene comes back."
-				: "Target '" + item.Target + "' (" + reference + ")" + component + " not found. Open the scene or check the path.";
 			VisualElement container = new VisualElement();
 			container.AddToClassList("pl-panel__missing");
-			container.Add(new HelpBox(message, HelpBoxMessageType.Warning));
-			container.Add(ParleyStyles.Button("Retry", _rebuild, "pl-button--small"));
+			if (string.IsNullOrEmpty(item.Target))
+			{
+				container.Add(new HelpBox("This item has no " + (string.IsNullOrEmpty(item.Component) ? "object" : item.Component + " component") + " to show.",
+					HelpBoxMessageType.Warning));
+				return container;
+			}
+
+			string reference = _spec.Targets.TryGetValue(item.Target, out string value) ? value : item.Target;
+			string component = string.IsNullOrEmpty(item.Component) ? string.Empty : " (" + item.Component + ")";
+			bool remembered = _targets.Status(item.Target) == PanelTargetStatus.MissingWithId;
+			string message = remembered
+				? "'" + reference + "'" + component + " is not loaded. It reconnects on its own when its scene or asset comes back."
+				: "'" + reference + "'" + component + " was not found. Open the scene that contains it or ask Parley to fix the path.";
+			HelpBox box = new HelpBox(message, HelpBoxMessageType.Warning) { tooltip = "Target '" + item.Target + "': " + reference };
+			container.Add(box);
+			if (!remembered)
+			{
+				Button retry = ParleyStyles.Button("Retry", _rebuild, "pl-button--small");
+				retry.tooltip = "Look for it again";
+				container.Add(retry);
+			}
+
 			return container;
+		}
+
+		private static string DescribeAction(PanelItem item)
+		{
+			return item.Action switch
+			{
+				PanelAction.Ping => "Highlight it in the Project or Hierarchy window",
+				PanelAction.Select => "Select it",
+				PanelAction.Open => "Open it",
+				PanelAction.SaveAssets => "Save all modified assets",
+				PanelAction.Menu => "Runs " + item.Menu,
+				PanelAction.CreateAsset => "Creates " + item.AssetType + " at " + item.AssetPath,
+				_ => null,
+			};
 		}
 
 		private static VisualElement Error(string message)

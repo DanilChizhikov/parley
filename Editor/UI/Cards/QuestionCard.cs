@@ -44,13 +44,23 @@ namespace DTech.Parley.Editor.UI
 
         private void UpdateSubmit()
         {
-            bool ready = _questions.Count > 0;
-            foreach (QuestionState question in _questions)
+            if (_submit == null)
             {
-                ready &= question.HasAnswer;
+                return;
             }
 
-            _submit?.SetEnabled(ready);
+            List<string> unanswered = new List<string>();
+            foreach (QuestionState question in _questions)
+            {
+                if (!question.HasAnswer)
+                {
+                    unanswered.Add(question.Header);
+                }
+            }
+
+            bool ready = _questions.Count > 0 && unanswered.Count == 0;
+            _submit.SetEnabled(ready);
+            _submit.tooltip = ready ? "Send your answers to the agent" : "Answer first: " + string.Join(", ", unanswered);
         }
 
         private void Submit()
@@ -75,12 +85,17 @@ namespace DTech.Parley.Editor.UI
 
         private sealed class QuestionState
         {
+            private const float NarrowWidth = 480.0f;
+
             private readonly bool _multi;
             private readonly List<(Toggle toggle, string label)> _options = new ();
             private readonly Toggle _otherToggle;
             private readonly TextField _otherField;
             private readonly MarkdownView _preview;
             private readonly Action _changed;
+
+            private string _selectedPreview;
+            private string _firstPreview;
 
             public VisualElement Root { get; } = new ();
             public string Text { get; }
@@ -109,6 +124,7 @@ namespace DTech.Parley.Editor.UI
                 Header = (string)question["header"] ?? "Question";
                 _multi = (bool?)question["multiSelect"] == true;
                 Root.AddToClassList("pl-question__item");
+                Root.EnableInClassList("pl-question__item--single", !_multi);
                 VisualElement title = new VisualElement();
                 title.AddToClassList("pl-question__title");
                 title.Add(ParleyStyles.Text(Header, "pl-chip"));
@@ -125,6 +141,7 @@ namespace DTech.Parley.Editor.UI
                 options.AddToClassList("pl-question__options");
                 content.Add(options);
                 string firstPreview = AddOptions(options, question["options"] as JArray);
+                _firstPreview = firstPreview;
                 VisualElement other = new VisualElement();
                 other.AddToClassList("pl-question__other");
                 _otherToggle = new Toggle { text = "Other" };
@@ -143,6 +160,8 @@ namespace DTech.Parley.Editor.UI
                     content.AddToClassList("pl-question__content--preview");
                     content.Add(_preview);
                     ShowPreview(firstPreview);
+                    options.RegisterCallback<PointerLeaveEvent>(_ => ShowPreview(_selectedPreview ?? _firstPreview));
+                    content.RegisterCallback<GeometryChangedEvent>(evt => content.EnableInClassList("pl-question__content--narrow", evt.newRect.width < NarrowWidth));
                 }
 
                 Root.Add(content);
@@ -238,6 +257,7 @@ namespace DTech.Parley.Editor.UI
 
                 if (value)
                 {
+                    _selectedPreview = preview;
                     ShowPreview(preview);
                 }
 

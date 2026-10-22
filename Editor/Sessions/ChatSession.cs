@@ -677,7 +677,7 @@ namespace DTech.Parley.Editor.Sessions
 				{
 					if (block.Kind == BlockKind.Request && string.IsNullOrEmpty(block.Resolution))
 					{
-						block.Resolution = "Expired";
+						block.Resolution = "No longer pending (the agent restarted)";
 					}
 
 					if (block.Kind == BlockKind.ToolUse && !block.IsFinished)

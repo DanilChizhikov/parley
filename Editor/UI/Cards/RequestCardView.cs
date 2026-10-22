@@ -12,8 +12,6 @@ namespace DTech.Parley.Editor.UI
 {
     internal sealed class RequestCardView : BlockView
     {
-        private const int MaxRuleLabelChars = 48;
-
         private readonly ChatSession _session;
 
         private bool _resolvedRendered;
@@ -97,7 +95,7 @@ namespace DTech.Parley.Editor.UI
             PendingRequest request = _session.FindRequest(Block.RequestId);
             if (request == null)
             {
-                Block.Resolution = "Expired";
+                Block.Resolution = "No longer pending (the agent restarted)";
                 Refresh();
                 return;
             }
@@ -140,7 +138,13 @@ namespace DTech.Parley.Editor.UI
                 case CodexApprovals.ApplyPatchTool:
                     return ToolPresenter.PatchChanges(input["changes"] as JArray);
                 case "WebFetch":
-                    return ParleyStyles.Text(ToolPresenter.Str(input, "url"), "pl-request__detail");
+                {
+                    string url = ToolPresenter.Str(input, "url") ?? string.Empty;
+                    Label link = ParleyStyles.RichLabel("<link=\"" + url + "\"><color=" + ParleyStyles.LinkColor + ">" + InlineMarkdown.Escape(url) + "</color></link>",
+                        "pl-request__detail");
+                    link.tooltip = "Open " + url;
+                    return link;
+                }
                 default:
                     return MarkdownView.CodeBlock(ToolPresenter.Truncate(input.ToString(Formatting.Indented), ToolPresenter.MaxOutputChars), "json");
             }
@@ -177,9 +181,11 @@ namespace DTech.Parley.Editor.UI
             return row;
         }
 
-        private static string Shorten(string text)
+        private static Label SelectableText(string text, string className)
         {
-            return text.Length <= MaxRuleLabelChars ? text : text.Substring(0, MaxRuleLabelChars - 1) + "…";
+            Label label = ParleyStyles.Text(text, className);
+            label.selection.isSelectable = true;
+            return label;
         }
 
         private void Respond(Decision decision, string resolution)
@@ -209,27 +215,31 @@ namespace DTech.Parley.Editor.UI
         private void BuildPermission(PendingRequest request)
         {
             string name = string.IsNullOrEmpty(request.DisplayName) ? ToolPresenter.DisplayName(request.ToolName) : request.DisplayName;
-            Add(ParleyStyles.Text(string.IsNullOrEmpty(request.Title) ? "Allow " + name + "?" : request.Title, "pl-request__title"));
+            Add(SelectableText(string.IsNullOrEmpty(request.Title) ? "Allow " + name + "?" : request.Title, "pl-request__title"));
             if (!string.IsNullOrEmpty(request.Description))
             {
-                Add(ParleyStyles.Text(request.Description, ParleyStyles.Muted));
+                Add(SelectableText(request.Description, ParleyStyles.Muted));
             }
 
             Add(BuildPreview(request));
             if (!string.IsNullOrEmpty(request.DecisionReason))
             {
-                Add(ParleyStyles.Text("Why: " + request.DecisionReason, ParleyStyles.Muted));
+                Add(SelectableText("Why: " + request.DecisionReason, ParleyStyles.Muted));
             }
 
             if (!string.IsNullOrEmpty(request.BlockedPath))
             {
-                Add(ParleyStyles.Text("Path: " + request.BlockedPath, ParleyStyles.Muted));
+                Add(SelectableText("Path: " + request.BlockedPath, ParleyStyles.Muted));
             }
 
             VisualElement buttons = ButtonRow();
-            buttons.Add(ParleyStyles.Button("Allow once", () => Respond(Decision.AllowWith(request.Input), "Allowed once"), "pl-button--primary"));
+            Button allow = ParleyStyles.Button("Allow once", () => Respond(Decision.AllowWith(request.Input), "Allowed once"), "pl-button--primary");
+            allow.tooltip = "Allow this call only; the agent asks again next time";
+            buttons.Add(allow);
             AddAlwaysButton(buttons, request);
-            buttons.Add(ParleyStyles.Button("Deny", () => Respond(Decision.Deny("The user denied this action."), "Denied"), "pl-button--danger"));
+            Button deny = ParleyStyles.Button("Deny", () => Respond(Decision.Deny("The user denied this action."), "Denied"), "pl-button--danger");
+            deny.tooltip = "Refuse this call; the agent continues without it";
+            buttons.Add(deny);
             Add(buttons);
             Add(new FeedbackRow("Or tell the agent what to do instead…", "Deny with feedback", text => Respond(Decision.Deny(text), "Denied: " + text)));
         }
@@ -243,10 +253,10 @@ namespace DTech.Parley.Editor.UI
                 return;
             }
 
-            string label = codex ? "Allow for this session" : "Always allow · " + Shorten(suggestions);
+            string label = codex ? "Allow for this session" : "Always allow";
             string resolution = codex ? "Allowed for this session" : "Always allowed (" + suggestions + ")";
             Button always = ParleyStyles.Button(label, () => RespondAlways(request, resolution));
-            always.tooltip = codex ? "Codex stops asking for matching calls in this chat (or saves the command rule it proposed)." : suggestions;
+            always.tooltip = codex ? "Codex stops asking for matching calls in this chat (or saves the command rule it proposed)." : "Stop asking for: " + suggestions;
             buttons.Add(always);
         }
 
@@ -274,11 +284,18 @@ namespace DTech.Parley.Editor.UI
             scroll.Add(view);
             Add(scroll);
             VisualElement buttons = ButtonRow();
-            buttons.Add(ParleyStyles.Button("Approve · auto-accept edits", () => ApprovePlan(request, PermissionMode.AcceptEdits, "Approved · auto-accept edits"), "pl-button--primary"));
-            buttons.Add(ParleyStyles.Button("Approve · review each edit", () => ApprovePlan(request, PermissionMode.Default, "Approved · review each edit")));
+            Button acceptEdits = ParleyStyles.Button("Approve and accept edits", () => ApprovePlan(request, PermissionMode.AcceptEdits, "Approved · auto-accept edits"),
+                "pl-button--primary");
+            acceptEdits.tooltip = "Start working; file edits apply without asking, commands still ask";
+            buttons.Add(acceptEdits);
+            Button review = ParleyStyles.Button("Approve and review edits", () => ApprovePlan(request, PermissionMode.Default, "Approved · review each edit"));
+            review.tooltip = "Start working; the agent asks before each edit";
+            buttons.Add(review);
             if (_session.Capabilities.Modes.Contains(PermissionMode.BypassPermissions))
             {
-                buttons.Add(ParleyStyles.Button("Approve · bypass permissions", () => ApprovePlanWithBypass(request), "pl-button--danger"));
+                Button bypass = ParleyStyles.Button("Approve and bypass permissions", () => ApprovePlanWithBypass(request), "pl-button--danger");
+                bypass.tooltip = "Start working without asking for anything";
+                buttons.Add(bypass);
             }
 
             Add(buttons);

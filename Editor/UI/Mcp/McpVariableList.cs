@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using DTech.Parley.Editor.Secrets;
-using UnityEngine;
 using UnityEngine.UIElements;
 
 namespace DTech.Parley.Editor.UI
@@ -12,6 +11,7 @@ namespace DTech.Parley.Editor.UI
         private readonly string _secretOwner;
         private readonly string _keyPlaceholder;
         private readonly Action<McpVariable> _onSecretDiscarded;
+        private readonly Action<string> _onError;
         private readonly VisualElement _rows;
         private readonly List<SecretField> _secretFields = new ();
 
@@ -20,8 +20,10 @@ namespace DTech.Parley.Editor.UI
             string keyPlaceholder,
             List<McpVariable> variables,
             string secretOwner,
-            Action<McpVariable> onSecretDiscarded)
+            Action<McpVariable> onSecretDiscarded,
+            Action<string> onError)
         {
+            _onError = onError;
             _variables = variables;
             _secretOwner = secretOwner;
             _keyPlaceholder = keyPlaceholder;
@@ -29,9 +31,11 @@ namespace DTech.Parley.Editor.UI
             AddToClassList("pl-mcp__vars");
             VisualElement header = new VisualElement();
             header.AddToClassList("pl-mcp__vars-header");
-            header.Add(ParleyStyles.Text(title, "pl-mcp__subtitle"));
+            header.Add(ParleyStyles.Text(title, "pl-mcp__vars-title"));
             header.Add(ParleyStyles.Spacer());
-            header.Add(ParleyStyles.Button("+ Add", Add, "pl-button--small"));
+            Button add = ParleyStyles.Button("+ Add", Add, "pl-button--small");
+            add.tooltip = "Add a row";
+            header.Add(add);
             Add(header);
             _rows = new VisualElement();
             Add(_rows);
@@ -61,6 +65,11 @@ namespace DTech.Parley.Editor.UI
         {
             _rows.Clear();
             _secretFields.Clear();
+            if (_variables.Count == 0)
+            {
+                _rows.Add(ParleyStyles.Text("None", ParleyStyles.Muted));
+            }
+
             foreach (McpVariable variable in _variables)
             {
                 _rows.Add(BuildRow(variable));
@@ -80,7 +89,7 @@ namespace DTech.Parley.Editor.UI
             fields.Add(key);
             if (variable.IsSecret)
             {
-                SecretField secret = new SecretField(string.Empty, _secretOwner, variable.SecretField, "value");
+                SecretField secret = new SecretField(string.Empty, _secretOwner, variable.SecretField, "value", true);
                 secret.AddToClassList("pl-mcp__var-value");
                 _secretFields.Add(secret);
                 fields.Add(secret);
@@ -94,14 +103,15 @@ namespace DTech.Parley.Editor.UI
                 fields.Add(value);
             }
 
-            row.Add(fields);
-            VisualElement actions = new VisualElement();
-            actions.AddToClassList("pl-mcp__var-actions");
             Toggle secretToggle = new Toggle { text = "Secret", value = variable.IsSecret, tooltip = "Keep the value in the OS keychain instead of the preferences file" };
+            secretToggle.AddToClassList("pl-mcp__var-secret");
             secretToggle.RegisterValueChangedCallback(evt => SetSecret(variable, evt.newValue));
-            actions.Add(secretToggle);
-            actions.Add(ParleyStyles.Button("Remove", () => Remove(variable), "pl-button--small"));
-            row.Add(actions);
+            fields.Add(secretToggle);
+            Button remove = ParleyStyles.Button("✕", () => Remove(variable), "pl-button--small");
+            remove.AddToClassList("pl-button--ghost");
+            remove.tooltip = "Remove this row";
+            fields.Add(remove);
+            row.Add(fields);
             return row;
         }
 
@@ -116,7 +126,7 @@ namespace DTech.Parley.Editor.UI
             {
                 if (!SecretStores.Default.Set(SecretStores.Key(_secretOwner, variable.SecretField), variable.Value, out string error))
                 {
-                    Debug.LogWarning("[Parley] Could not store the secret: " + error);
+                    _onError("Could not store the secret: " + error);
                     Rebuild();
                     return;
                 }

@@ -19,7 +19,9 @@ namespace DTech.Parley.Editor.UI
         private const int MaxHistoryItems = 30;
         private const double NotificationSeconds = 2.0;
         private const string UpdateDialogTitle = "Update Parley";
-        private const string UpdateAvailableText = "Update Available ▾";
+        private const string UpdateAvailableText = "Update available ▾";
+        private const string ShrinkClass = "pl-toolbar__shrink";
+        private static readonly Vector2 MinWindowSize = new Vector2(360.0f, 320.0f);
 
         private static readonly PermissionMode[] _claudeModes =
         {
@@ -55,6 +57,7 @@ namespace DTech.Parley.Editor.UI
         private ToolbarButton _mcpButton;
         private ToolbarButton _skillsButton;
         private ToolbarButton _updateButton;
+        private ToolbarButton _historyButton;
         private ToolbarToggle _sideToggle;
         private bool _stateDirty = true;
 
@@ -63,7 +66,6 @@ namespace DTech.Parley.Editor.UI
         {
             ParleyWindow window = GetWindow<ParleyWindow>();
             window.titleContent = new GUIContent(WindowTitle);
-            window.minSize = new Vector2(780.0f, 620.0f);
             window.Show();
             window._composer?.FocusInput();
         }
@@ -101,6 +103,19 @@ namespace DTech.Parley.Editor.UI
             _ = ParleyUpdates.InstallAsync();
         }
 
+        private static string DescribeMode(PermissionMode mode)
+        {
+            return mode switch
+            {
+                PermissionMode.AcceptEdits => "Accept edits: file edits apply without asking; commands still ask.",
+                PermissionMode.Plan => "Plan: the agent explores and proposes a plan without changing anything.",
+                PermissionMode.Auto => "Auto: the agent decides when it needs to ask.",
+                PermissionMode.BypassPermissions => "Bypass permissions: commands and edits run without asking.",
+                PermissionMode.DontAsk => "Don't ask: anything not already allowed is denied without asking.",
+                _ => "Ask before edits: the agent asks before editing files or running commands.",
+            };
+        }
+
         private static string HistoryLabel(SessionSummary summary, ParleyProfile profile)
         {
             string label = summary.UpdatedUtc.ToLocalTime().ToString("MMM d HH:mm", CultureInfo.InvariantCulture) + "  " + (summary.Title ?? "Chat")
@@ -111,6 +126,7 @@ namespace DTech.Parley.Editor.UI
         private void OnEnable()
         {
             titleContent = new GUIContent(WindowTitle);
+            minSize = MinWindowSize;
             ParleyUserSettings settings = ParleyUserSettings.instance;
             SessionRecord record = SessionStore.Load(settings.LastSessionId);
             ParleyProfile profile = record != null ? settings.Find(record.ProfileId) : null;
@@ -169,6 +185,10 @@ namespace DTech.Parley.Editor.UI
             _modelButton = new ToolbarButton(ShowModelMenu) { tooltip = "Model" };
             _modeButton = new ToolbarButton(ShowModeMenu) { tooltip = "Permission mode" };
             _effortButton = new ToolbarButton(ShowEffortMenu) { tooltip = "Reasoning effort" };
+            _profileButton.AddToClassList(ShrinkClass);
+            _modelButton.AddToClassList(ShrinkClass);
+            _modeButton.AddToClassList(ShrinkClass);
+            _effortButton.AddToClassList(ShrinkClass);
             _mcpButton = new ToolbarButton(ShowMcpPanel) { tooltip = "MCP servers in this chat" };
             _skillsButton = new ToolbarButton(ShowSkillsPanel) { tooltip = "Skills in this chat" };
             toolbar.Add(_profileButton);
@@ -183,8 +203,14 @@ namespace DTech.Parley.Editor.UI
             ParleyStyles.SetVisible(_updateButton, false);
             toolbar.Add(_updateButton);
             toolbar.Add(new ToolbarButton(NewChat) { text = "New", tooltip = "Start a new chat" });
-            toolbar.Add(new ToolbarButton(ShowHistoryMenu) { text = "History ▾", tooltip = "Resume or delete earlier chats" });
-            _sideToggle = new ToolbarToggle { text = "Panel", tooltip = "Show plan, todos and background tasks", value = ParleyUserSettings.instance.SidePanelVisible };
+            _historyButton = new ToolbarButton(ShowHistoryMenu) { text = "History ▾", tooltip = "Resume or delete earlier chats" };
+            toolbar.Add(_historyButton);
+            _sideToggle = new ToolbarToggle
+            {
+                text = "Panel",
+                tooltip = "Side panel: plan, todos, background tasks, MCP servers and skills",
+                value = ParleyUserSettings.instance.SidePanelVisible,
+            };
             _sideToggle.RegisterValueChangedCallback(SideToggledHandler);
             toolbar.Add(_sideToggle);
             toolbar.Add(new ToolbarButton(OpenPreferences) { text = "⚙", tooltip = "Parley preferences" });
@@ -263,8 +289,12 @@ namespace DTech.Parley.Editor.UI
             ChatSession session = _session;
             ParleyProfile profile = session.Profile;
             _profileButton.text = profile.Name + " ▾";
-            _modelButton.text = (string.IsNullOrEmpty(session.Model) ? "Default model" : session.Model) + " ▾";
+            _profileButton.tooltip = "Profile: " + profile.Name + " (" + ProfileLabels.Describe(profile) + ")";
+            string model = string.IsNullOrEmpty(session.Model) ? "Default model" : session.Model;
+            _modelButton.text = model + " ▾";
+            _modelButton.tooltip = "Model: " + model;
             _modeButton.text = PermissionModes.DisplayName(session.Mode) + " ▾";
+            _modeButton.tooltip = "Permission mode. " + DescribeMode(session.Mode);
             _modeButton.EnableInClassList("pl-mode--plan", session.Mode == PermissionMode.Plan);
             _modeButton.EnableInClassList("pl-mode--auto", session.Mode == PermissionMode.AcceptEdits || session.Mode == PermissionMode.Auto);
             _modeButton.EnableInClassList("pl-mode--danger", session.Mode == PermissionMode.BypassPermissions);
@@ -294,7 +324,7 @@ namespace DTech.Parley.Editor.UI
         private void ShowUpdateMenu()
         {
             GenericMenu menu = new GenericMenu();
-            menu.AddItem(new GUIContent("What`s new"), false, ReleaseNotesWindow.Open);
+            menu.AddItem(new GUIContent("What's new"), false, ReleaseNotesWindow.Open);
             if (ParleyUpdates.Status != UpdateStatus.Available)
             {
                 menu.AddDisabledItem(new GUIContent("Updating…"));
@@ -339,7 +369,7 @@ namespace DTech.Parley.Editor.UI
             IReadOnlyList<ModelOption> models = _session.Capabilities.Models;
             if (models.Count == 0)
             {
-                menu.AddDisabledItem(new GUIContent(_session.IsStarting ? "Loading models…" : "No model list (open the menu again once started)"));
+                menu.AddDisabledItem(new GUIContent(_session.IsStarting ? "Loading models…" : "Models load after the agent starts"));
             }
 
             foreach (ModelOption model in models)
@@ -403,7 +433,7 @@ namespace DTech.Parley.Editor.UI
             IReadOnlyList<string> efforts = _session.Capabilities.Efforts;
             if (efforts.Count == 0)
             {
-                menu.AddDisabledItem(new GUIContent(_session.IsStarting ? "Loading effort levels…" : "No effort levels (open the menu again once started)"));
+                menu.AddDisabledItem(new GUIContent(_session.IsStarting ? "Loading effort levels…" : "Effort levels load after the agent starts"));
             }
 
             foreach (string effort in efforts)
@@ -469,7 +499,7 @@ namespace DTech.Parley.Editor.UI
 
             menu.AddSeparator(string.Empty);
             menu.AddItem(new GUIContent("Reveal sessions folder"), false, () => EditorUtility.RevealInFinder(ProjectPaths.SessionsFolder));
-            menu.ShowAsContext();
+            menu.DropDown(_historyButton.worldBound);
         }
 
         private void SwitchProfile(ParleyProfile profile)

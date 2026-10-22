@@ -8,25 +8,39 @@ namespace DTech.Parley.Editor.UI
 {
     internal sealed class AuthCard : VisualElement
     {
+        private readonly Label _title;
         private readonly Label _message;
         private readonly Label _status;
+        private readonly Button _signIn;
+        private readonly Button _check;
+        private readonly Button _preferences;
 
         private ChatSession _session;
 
         public AuthCard()
         {
             AddToClassList("pl-auth");
+            _title = ParleyStyles.Text(string.Empty, "pl-auth__title");
+            Add(_title);
             _message = ParleyStyles.Text(string.Empty, "pl-auth__text");
             _message.selection.isSelectable = true;
             Add(_message);
             _status = ParleyStyles.Text(string.Empty, ParleyStyles.Muted);
             Add(_status);
             VisualElement buttons = new VisualElement();
-            buttons.AddToClassList("pl-request__buttons");
-            buttons.Add(ParleyStyles.Button("Sign in (Terminal)", SignInInTerminal, "pl-button--primary"));
-            buttons.Add(ParleyStyles.Button("Check status", CheckStatus));
-            buttons.Add(ParleyStyles.Button("Preferences", ParleyWindow.OpenPreferences));
-            buttons.Add(ParleyStyles.Button("Dismiss", () => _session?.ClearAuthMessage(), "pl-button--ghost"));
+            buttons.AddToClassList("pl-auth__buttons");
+            _signIn = ParleyStyles.Button("Sign in (Terminal)", SignInInTerminal, "pl-button--primary");
+            _signIn.tooltip = "Open a terminal with the sign-in command for this profile";
+            buttons.Add(_signIn);
+            _check = ParleyStyles.Button("Check status", CheckStatus);
+            _check.tooltip = "Check whether this profile is signed in now";
+            buttons.Add(_check);
+            _preferences = ParleyStyles.Button("Open preferences", ParleyWindow.OpenPreferences);
+            _preferences.tooltip = "Edit this profile's sign-in settings";
+            buttons.Add(_preferences);
+            Button dismiss = ParleyStyles.Button("Dismiss", () => _session?.ClearAuthMessage(), "pl-button--ghost");
+            dismiss.tooltip = "Hide this message";
+            buttons.Add(dismiss);
             Add(buttons);
             ParleyStyles.SetVisible(this, false);
         }
@@ -43,6 +57,17 @@ namespace DTech.Parley.Editor.UI
             string message = _session?.AuthMessage;
             ParleyStyles.SetVisible(this, !string.IsNullOrEmpty(message));
             _message.text = message ?? string.Empty;
+            if (_session == null)
+            {
+                return;
+            }
+
+            ParleyProfile profile = _session.Profile;
+            bool terminal = UsesTerminalLogin(profile);
+            _title.text = (terminal ? "Sign in to " : "Check the settings of ") + profile.Name;
+            ParleyStyles.SetVisible(_signIn, terminal);
+            ParleyStyles.SetVisible(_check, profile.Kind != ProfileKind.Local);
+            _preferences.EnableInClassList("pl-button--primary", !terminal);
         }
 
         private static bool UsesTerminalLogin(ParleyProfile profile)

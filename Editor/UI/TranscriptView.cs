@@ -14,6 +14,7 @@ namespace DTech.Parley.Editor.UI
 
         private readonly ScrollView _scroll;
         private readonly VisualElement _empty;
+        private readonly Label _emptyProfile;
         private readonly Dictionary<TranscriptBlock, BlockView> _views = new ();
         private readonly Dictionary<string, ToolCardView> _toolCards = new ();
         private readonly Dictionary<TranscriptEntry, VisualElement> _entries = new ();
@@ -35,8 +36,16 @@ namespace DTech.Parley.Editor.UI
             _empty = new VisualElement();
             _empty.AddToClassList("pl-empty");
             _empty.Add(ParleyStyles.Text("Parley", "pl-empty__title"));
-            _empty.Add(ParleyStyles.Text("Ask about your project, request changes, or attach the selection, console errors or a screenshot. "
-                + "Shift+Enter adds a new line, / opens commands.", "pl-empty__text"));
+            _emptyProfile = ParleyStyles.Text(string.Empty, "pl-empty__profile");
+            _empty.Add(_emptyProfile);
+            _empty.Add(ParleyStyles.Text("Ask about your project or request changes.", "pl-empty__text"));
+            VisualElement tips = new VisualElement();
+            tips.AddToClassList("pl-empty__tips");
+            tips.Add(Tip("@", "mention an asset or scene object"));
+            tips.Add(Tip("/", "run a command or skill"));
+            tips.Add(Tip("Attach", "add the selection, console errors or a screenshot"));
+            tips.Add(Tip("Shift+Enter", "new line"));
+            _empty.Add(tips);
             _scroll.Add(_empty);
             schedule.Execute(FlushDirty).Every(RefreshIntervalMs);
         }
@@ -91,6 +100,27 @@ namespace DTech.Parley.Editor.UI
             schedule.Execute(ScrollToEnd).ExecuteLater(ScrollDelayMs);
         }
 
+        private static VisualElement Tip(string key, string text)
+        {
+            VisualElement row = new VisualElement();
+            row.AddToClassList("pl-empty__tip");
+            row.Add(ParleyStyles.Text(key, "pl-empty__key"));
+            row.Add(ParleyStyles.Text(text, "pl-empty__tip-text"));
+            return row;
+        }
+
+        private static VisualElement RenderFailure(Exception exception)
+        {
+            VisualElement notice = new VisualElement();
+            notice.AddToClassList("pl-block");
+            notice.AddToClassList("pl-notice");
+            notice.AddToClassList("pl-notice--error");
+            Label label = ParleyStyles.Text("Could not show this part of the chat: " + exception.Message, "pl-notice__text");
+            label.selection.isSelectable = true;
+            notice.Add(label);
+            return notice;
+        }
+
         private void AddEntry(TranscriptEntry entry)
         {
             VisualElement element = new VisualElement();
@@ -119,6 +149,7 @@ namespace DTech.Parley.Editor.UI
             catch (Exception exception)
             {
                 Debug.LogException(exception);
+                container.Add(RenderFailure(exception));
                 return;
             }
 
@@ -135,7 +166,7 @@ namespace DTech.Parley.Editor.UI
 
             if (!string.IsNullOrEmpty(block.ParentToolUseId) && _toolCards.TryGetValue(block.ParentToolUseId, out ToolCardView parent))
             {
-                parent.Nested.Add(view);
+                parent.AddNested(view);
                 return;
             }
 
@@ -164,6 +195,7 @@ namespace DTech.Parley.Editor.UI
         private void UpdateEmpty()
         {
             ParleyStyles.SetVisible(_empty, _entries.Count == 0);
+            _emptyProfile.text = _session == null ? string.Empty : _session.Profile.Name + " · " + ProfileLabels.Describe(_session.Profile);
         }
 
         private void FlushDirty()

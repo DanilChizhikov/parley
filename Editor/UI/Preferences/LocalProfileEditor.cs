@@ -17,10 +17,12 @@ namespace DTech.Parley.Editor.UI
         private const int MinOutputTokens = 256;
         private const int MinContextWindow = 2048;
         private const int MaxModelCalls = 500;
+        private const int ListedModels = 3;
 
         private readonly TextField _baseUrl;
         private readonly TextField _model;
-        private readonly FloatField _temperature;
+        private readonly Slider _temperature;
+        private readonly Button _pick;
 
         public LocalProfileEditor(ParleyProfile profile) : base(profile, "Local model (OpenAI-compatible server, Parley's own agent)")
         {
@@ -33,31 +35,39 @@ namespace DTech.Parley.Editor.UI
             VisualElement modelRow = new VisualElement();
             modelRow.AddToClassList("pl-profile__row");
             _model = Text(new TextFieldRequest("Model", profile.Model, value => Profile.Model = value, "Empty = first model the server lists"));
-            _model.style.flexGrow = 1.0f;
             modelRow.Add(_model);
-            modelRow.Add(ParleyStyles.Button("Pick…", PickModel, "pl-button--small"));
+            _pick = SmallButton("Pick…", PickModel, "Choose from the models the server lists");
+            modelRow.Add(_pick);
             Add(modelRow);
-            _temperature = new FloatField("Temperature") { value = profile.Temperature };
+            _temperature = new Slider("Temperature", MinTemperature, MaxTemperature) { value = profile.Temperature, showInputField = true,
+                tooltip = "0 = focused and repeatable, 2 = most random" };
             _temperature.RegisterValueChangedCallback(TemperatureChangedHandler);
             Add(_temperature);
-            Add(Int("Max output tokens", profile.MaxTokens, value => Profile.MaxTokens = Mathf.Max(MinOutputTokens, value)));
-            Add(Int("Context window (tokens)", profile.ContextWindow, value => Profile.ContextWindow = Mathf.Max(MinContextWindow, value)));
-            Add(Int("Max model calls per turn", profile.MaxTurns, value => Profile.MaxTurns = Mathf.Clamp(value, 1, MaxModelCalls)));
+            Add(Int("Max output tokens", profile.MaxTokens, MinOutputTokens, int.MaxValue, value => Profile.MaxTokens = value));
+            Add(Int("Context window (tokens)", profile.ContextWindow, MinContextWindow, int.MaxValue, value => Profile.ContextWindow = value));
+            Add(Int("Max model calls per turn", profile.MaxTurns, 1, MaxModelCalls, value => Profile.MaxTurns = value));
             Add(BoolField("Vision (send images)", profile.Vision, value => Profile.Vision = value));
             Toggle textTools = BoolField("Text tool calls (<tool_call> tags)", profile.TextToolCalls, value => Profile.TextToolCalls = value);
             textTools.tooltip = "For models or servers without native function calling.";
             Add(textTools);
-            Add(ButtonRow(("Test connection", TestConnection)));
+            Add(ButtonRow(SmallButton("Test connection", TestConnection, "List the server's models to check the URL and key", true)));
             AddFooter(null);
         }
 
-        private static IntegerField Int(string label, int value, Func<int, int> apply)
+        private IntegerField Int(string label, int value, int min, int max, Action<int> apply)
         {
-            IntegerField field = new IntegerField(label) { value = value, isDelayed = true };
+            string range = max == int.MaxValue ? "At least " + min : "From " + min + " to " + max;
+            IntegerField field = new IntegerField(label) { value = value, isDelayed = true, tooltip = range };
             field.RegisterValueChangedCallback(evt =>
             {
-                field.SetValueWithoutNotify(apply(evt.newValue));
+                int clamped = Mathf.Clamp(evt.newValue, min, max);
+                field.SetValueWithoutNotify(clamped);
+                apply(clamped);
                 Persist();
+                if (clamped != evt.newValue)
+                {
+                    SetStatus(label + ": " + range.ToLowerInvariant() + ", set to " + clamped + ".");
+                }
             });
 
             return field;
@@ -69,31 +79,53 @@ namespace DTech.Parley.Editor.UI
             return new OpenAiCompatClient(Profile.LocalBaseUrl, apiKey).ListModelsAsync(CancellationToken.None);
         }
 
-        private async void TestConnection()
+        private static string DescribeModels(List<string> models)
         {
-            Status.text = "Connecting…";
-            try
+            if (models.Count == 0)
             {
-                List<string> models = await ListModelsAsync();
-                Status.text = "Connected. " + models.Count + " model(s): " + string.Join(", ", models);
+                return "Connected · the server lists no models";
             }
-            catch (Exception exception)
+
+            string listed = string.Join(", ", models.GetRange(0, Math.Min(ListedModels, models.Count)));
+            return "Connected · " + models.Count + (models.Count == 1 ? " model (" : " models (") + listed + (models.Count > ListedModels ? ", …)" : ")");
+        }
+
+        private void TestConnection()
+        {
+            RunBusy(async () =>
             {
-                Status.text = "Failed: " + exception.Message;
-            }
+                SetStatus("Connecting…");
+                try
+                {
+                    List<string> models = await ListModelsAsync();
+                    SetStatus(DescribeModels(models), true);
+                    Status.tooltip = string.Join("\n", models);
+                }
+                catch (Exception exception)
+                {
+                    SetStatus("Failed: " + exception.Message, false);
+                }
+            });
         }
 
         private async void PickModel()
         {
             List<string> models;
+            _pick.text = "Loading…";
+            _pick.SetEnabled(false);
             try
             {
                 models = await ListModelsAsync();
             }
             catch (Exception exception)
             {
-                Status.text = "Could not list models: " + exception.Message;
+                SetStatus("Could not list models: " + exception.Message, false);
                 return;
+            }
+            finally
+            {
+                _pick.text = "Pick…";
+                _pick.SetEnabled(true);
             }
 
             GenericMenu menu = new GenericMenu();
@@ -133,12 +165,7 @@ namespace DTech.Parley.Editor.UI
 
         private void TemperatureChangedHandler(ChangeEvent<float> evt)
         {
-            Profile.Temperature = Mathf.Clamp(evt.newValue, MinTemperature, MaxTemperature);
-            if (Profile.Temperature != evt.newValue)
-            {
-                _temperature.SetValueWithoutNotify(Profile.Temperature);
-            }
-
+            Profile.Temperature = (float)Math.Round(Mathf.Clamp(evt.newValue, MinTemperature, MaxTemperature), 2);
             Persist();
         }
     }

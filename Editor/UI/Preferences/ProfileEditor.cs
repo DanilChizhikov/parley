@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using UnityEngine.UIElements;
 
@@ -6,6 +7,10 @@ namespace DTech.Parley.Editor.UI
 {
     internal abstract class ProfileEditor : VisualElement
     {
+        private const string SuccessClass = "pl-profile__status--success";
+        private const string ErrorClass = "pl-profile__status--error";
+        private const string DefaultChoice = "Default";
+
         public event Action OnRenamed;
 
         protected ParleyProfile Profile { get; }
@@ -38,28 +43,81 @@ namespace DTech.Parley.Editor.UI
 
         protected static VisualElement ButtonRow(params (string label, Action action)[] buttons)
         {
-            VisualElement row = new VisualElement();
-            row.AddToClassList("pl-request__buttons");
+            List<Button> created = new List<Button>();
             foreach ((string label, Action action) in buttons)
             {
-                row.Add(ParleyStyles.Button(label, action));
+                created.Add(SmallButton(label, action));
+            }
+
+            return ButtonRow(created.ToArray());
+        }
+
+        protected static VisualElement ButtonRow(params Button[] buttons)
+        {
+            VisualElement row = new VisualElement();
+            row.AddToClassList("pl-profile__buttons");
+            foreach (Button button in buttons)
+            {
+                row.Add(button);
             }
 
             return row;
         }
 
+        protected static Button SmallButton(string label, Action action, string tooltip = null, bool primary = false)
+        {
+            Button button = ParleyStyles.Button(label, action, "pl-button--small");
+            button.EnableInClassList("pl-button--primary", primary);
+            if (tooltip != null)
+            {
+                button.tooltip = tooltip;
+            }
+
+            return button;
+        }
+
         protected static TextField Text(TextFieldRequest request)
         {
-            TextField field = new TextField(request.Label) { value = request.Value ?? string.Empty, isDelayed = true };
+            TextField field = new TextField(request.Label) { value = request.Value ?? string.Empty, isDelayed = true, multiline = request.Multiline };
+            if (request.Multiline)
+            {
+                field.AddToClassList("pl-prefs__multiline");
+            }
+
             if (!string.IsNullOrEmpty(request.Placeholder))
             {
                 field.textEdition.placeholder = request.Placeholder;
+            }
+
+            if (!string.IsNullOrEmpty(request.Tooltip))
+            {
+                field.tooltip = request.Tooltip;
             }
 
             Action<string> apply = request.Apply;
             field.RegisterValueChangedCallback(evt =>
             {
                 apply(evt.newValue?.Trim());
+                Persist();
+            });
+
+            return field;
+        }
+
+        protected static DropdownField Choice(string label, string value, string[] options, Action<string> apply, string tooltip)
+        {
+            List<string> choices = new List<string> { string.Empty };
+            choices.AddRange(options);
+            string current = value ?? string.Empty;
+            if (!choices.Contains(current))
+            {
+                choices.Add(current);
+            }
+
+            DropdownField field = new DropdownField(label, choices, choices.IndexOf(current), FormatChoice, FormatChoice) { tooltip = tooltip };
+            field.RegisterValueChangedCallback(evt =>
+            {
+                apply(evt.newValue);
                 Persist();
             });
 
@@ -89,9 +147,41 @@ namespace DTech.Parley.Editor.UI
             return foldout;
         }
 
+        protected void SetStatus(string text, bool? success = null)
+        {
+            Status.text = text;
+            Status.EnableInClassList(SuccessClass, success == true);
+            Status.EnableInClassList(ErrorClass, success == false);
+        }
+
+        protected async void RunBusy(Func<Task> work)
+        {
+            List<Button> buttons = this.Query<Button>().ToList();
+            foreach (Button button in buttons)
+            {
+                button.SetEnabled(false);
+            }
+
+            try
+            {
+                await work();
+            }
+            finally
+            {
+                foreach (Button button in buttons)
+                {
+                    button.SetEnabled(true);
+                }
+            }
+        }
+
         protected void AddFooter(VisualElement extra)
         {
-            Add(Status);
+            if (Status.parent == null)
+            {
+                Add(Status);
+            }
+
             if (extra != null)
             {
                 Add(extra);
@@ -105,13 +195,22 @@ namespace DTech.Parley.Editor.UI
             string command = await buildCommand;
             if (command == null)
             {
-                Status.text = ProfileLabels.Describe(Profile) + " CLI not found. Set its path above.";
+                SetStatus(ProfileLabels.Describe(Profile) + " CLI not found. Set its path above.", false);
                 return;
             }
 
-            Status.text = TerminalLauncher.Open(command, out string error)
-                ? "Opened a terminal. Finish there, then press Check status."
-                : "Could not open a terminal (" + error + "). Run it yourself: " + command;
+            if (TerminalLauncher.Open(command, out string error))
+            {
+                SetStatus("Opened a terminal. Finish there, then press Check status.");
+                return;
+            }
+
+            SetStatus("Could not open a terminal (" + error + "). Run it yourself: " + command, false);
+        }
+
+        private static string FormatChoice(string value)
+        {
+            return string.IsNullOrEmpty(value) ? DefaultChoice : value;
         }
 
         private void Rename(string value)
