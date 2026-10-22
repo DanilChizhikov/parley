@@ -47,6 +47,7 @@ project info. You can attach the selection, console errors, a Scene or Game scre
     - [Debug Preview](#debug-preview)
 - [Project Settings and Trust](#project-settings-and-trust)
 - [Script Reloads](#script-reloads)
+- [Token Usage Compared to VS Code](#token-usage-compared-to-vs-code)
 - [Updates](#updates)
 - [Where Parley Stores Data](#where-parley-stores-data)
 - [Troubleshooting](#troubleshooting)
@@ -356,6 +357,34 @@ stop the local agent. By default Parley holds `EditorApplication.LockReloadAssem
 and the `refresh` tool's error report still work, and the reload happens as soon as the turn ends. After a turn that
 edited files, Parley refreshes the AssetDatabase. You can turn the lock off in the preferences (**Defer script reload
 while the agent works**).
+
+## Token Usage Compared to VS Code
+Parley and the Claude Code extension for VS Code run the same `claude` CLI, so the agent does the same work in both.
+The difference is the context each one sends with every request. We ran one read-only prompt (glob, three file reads,
+two greps, a fixed 20-line answer) twice in each client, in fresh chats, with the same model (Claude Opus 5.5), the
+same effort and the same user-level settings, skills and hooks.
+
+| Run      | Starting context | Requests | Peak context | Cache read | Cache write | Output | Tool result chars |
+|----------|-----------------:|---------:|-------------:|-----------:|------------:|-------:|------------------:|
+| VS Code  |            45.1k |        4 |        56.5k |       166k |       30.8k |   1860 |             23.1k |
+| Parley   |            23.5k |        3 |        35.6k |        59k |       25.4k |   1557 |             22.9k |
+| VS Code  |            43.4k |        5 |        56.6k |       212k |       30.9k |   2172 |             26.6k |
+| Parley   |            23.7k |        3 |        35.7k |        68k |       19.0k |   1431 |             22.8k |
+
+- **Starting context.** Parley starts about 20k tokens smaller (23.6k vs 44.3k on average). The VS Code extension adds
+  its own system prompt sections, IDE MCP tools and editor context. The same gap shows in the first request of 40
+  earlier sessions.
+- **Agent work.** Tool output and model output were close in both clients. The extra one or two requests in VS Code
+  are within normal run-to-run variation.
+- **Cost.** Weighting cache reads at 0.1×, cache writes at 1.25× and output at 5× the input price, a run cost about
+  42k input-token equivalents in Parley and about 68k in VS Code, roughly 38% less.
+- **Long turns.** Every request re-reads the whole context, so the 20k gap repeats on each one. A turn with 80
+  requests re-reads about 1.5M more tokens in VS Code.
+
+This is a small sample: two runs per client, Claude Code 2.1.306 (VS Code) and 2.1.308 (Parley), measured on
+2026-10-22. The starting context barely changes between runs, so that gap is reliable. The request count of a long
+task varies by about ±40% between runs, and this test doesn't show whether turns run longer in either client. Your
+numbers depend on your plugins, skills, MCP servers and `CLAUDE.md` files, which both clients load.
 
 ## Updates
 Once per editor session Parley checks for a newer release: a Git tag on GitHub, or a newer version in the registry
