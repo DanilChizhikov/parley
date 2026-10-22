@@ -14,6 +14,7 @@ namespace DTech.Parley.Editor.UI
 
         private readonly ScrollView _scroll;
         private readonly VisualElement _empty;
+        private readonly Label _emptyProfile;
         private readonly Dictionary<TranscriptBlock, BlockView> _views = new ();
         private readonly Dictionary<string, ToolCardView> _toolCards = new ();
         private readonly Dictionary<TranscriptEntry, VisualElement> _entries = new ();
@@ -31,12 +32,21 @@ namespace DTech.Parley.Editor.UI
             _scroll.AddToClassList("pl-transcript__scroll");
             _scroll.verticalScroller.valueChanged += ScrolledHandler;
             _scroll.contentContainer.RegisterCallback<GeometryChangedEvent>(ContentGeometryChangedHandler);
+            _scroll.RegisterCallback<WheelEvent>(WheelHandler, TrickleDown.TrickleDown);
             Add(_scroll);
             _empty = new VisualElement();
             _empty.AddToClassList("pl-empty");
             _empty.Add(ParleyStyles.Text("Parley", "pl-empty__title"));
-            _empty.Add(ParleyStyles.Text("Ask about your project, request changes, or attach the selection, console errors or a screenshot. "
-                + "Shift+Enter adds a new line, / opens commands.", "pl-empty__text"));
+            _emptyProfile = ParleyStyles.Text(string.Empty, "pl-empty__profile");
+            _empty.Add(_emptyProfile);
+            _empty.Add(ParleyStyles.Text("Ask about your project or request changes.", "pl-empty__text"));
+            VisualElement tips = new VisualElement();
+            tips.AddToClassList("pl-empty__tips");
+            tips.Add(Tip("@", "mention an asset or scene object"));
+            tips.Add(Tip("/", "run a command or skill"));
+            tips.Add(Tip("Attach", "add the selection, console errors or a screenshot"));
+            tips.Add(Tip("Shift+Enter", "new line"));
+            _empty.Add(tips);
             _scroll.Add(_empty);
             schedule.Execute(FlushDirty).Every(RefreshIntervalMs);
         }
@@ -91,6 +101,27 @@ namespace DTech.Parley.Editor.UI
             schedule.Execute(ScrollToEnd).ExecuteLater(ScrollDelayMs);
         }
 
+        private static VisualElement Tip(string key, string text)
+        {
+            VisualElement row = new VisualElement();
+            row.AddToClassList("pl-empty__tip");
+            row.Add(ParleyStyles.Text(key, "pl-empty__key"));
+            row.Add(ParleyStyles.Text(text, "pl-empty__tip-text"));
+            return row;
+        }
+
+        private static VisualElement RenderFailure(Exception exception)
+        {
+            VisualElement notice = new VisualElement();
+            notice.AddToClassList("pl-block");
+            notice.AddToClassList("pl-notice");
+            notice.AddToClassList("pl-notice--error");
+            Label label = ParleyStyles.Text("Could not show this part of the chat: " + exception.Message, "pl-notice__text");
+            label.selection.isSelectable = true;
+            notice.Add(label);
+            return notice;
+        }
+
         private void AddEntry(TranscriptEntry entry)
         {
             VisualElement element = new VisualElement();
@@ -119,6 +150,7 @@ namespace DTech.Parley.Editor.UI
             catch (Exception exception)
             {
                 Debug.LogException(exception);
+                container.Add(RenderFailure(exception));
                 return;
             }
 
@@ -135,7 +167,7 @@ namespace DTech.Parley.Editor.UI
 
             if (!string.IsNullOrEmpty(block.ParentToolUseId) && _toolCards.TryGetValue(block.ParentToolUseId, out ToolCardView parent))
             {
-                parent.Nested.Add(view);
+                parent.AddNested(view);
                 return;
             }
 
@@ -164,6 +196,7 @@ namespace DTech.Parley.Editor.UI
         private void UpdateEmpty()
         {
             ParleyStyles.SetVisible(_empty, _entries.Count == 0);
+            _emptyProfile.text = _session == null ? string.Empty : _session.Profile.Name + " · " + ProfileLabels.Describe(_session.Profile);
         }
 
         private void FlushDirty()
@@ -193,6 +226,11 @@ namespace DTech.Parley.Editor.UI
         private void ScrollToEnd()
         {
             _scrollQueued = false;
+            if (!_stickToBottom)
+            {
+                return;
+            }
+
             _scroll.scrollOffset = new Vector2(_scroll.scrollOffset.x, float.MaxValue);
         }
 
@@ -207,6 +245,47 @@ namespace DTech.Parley.Editor.UI
         private void ScrolledHandler(float value)
         {
             _stickToBottom = value >= _scroll.verticalScroller.highValue - StickThreshold;
+        }
+
+        private void WheelHandler(WheelEvent evt)
+        {
+            float delta = evt.delta.y;
+            if (Mathf.Abs(delta) <= Mathf.Abs(evt.delta.x))
+            {
+                return;
+            }
+
+            if (InnerScrolls(evt.target as VisualElement, delta))
+            {
+                if (delta < 0.0f)
+                {
+                    _stickToBottom = false;
+                }
+
+                return;
+            }
+
+            Scroller scroller = _scroll.verticalScroller;
+            scroller.value += delta * (scroller.lowValue < scroller.highValue ? 1.0f : -1.0f) * _scroll.mouseWheelScrollSize;
+            _stickToBottom = scroller.highValue <= scroller.lowValue || (delta > 0.0f && scroller.value >= scroller.highValue - StickThreshold);
+            evt.StopPropagation();
+        }
+
+        private bool InnerScrolls(VisualElement element, float delta)
+        {
+            for (VisualElement current = element; current != null && current != _scroll; current = current.parent)
+            {
+                if (current is ScrollView inner)
+                {
+                    Scroller scroller = inner.verticalScroller;
+                    if (delta < 0.0f ? scroller.value > scroller.lowValue : scroller.value < scroller.highValue)
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
         }
 
         private void EntryAddedHandler(TranscriptEntry entry)

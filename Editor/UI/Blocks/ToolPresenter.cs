@@ -220,8 +220,8 @@ namespace DTech.Parley.Editor.UI
                 }
 
                 VisualElement header = new VisualElement();
-                header.AddToClassList("pl-diff__header");
-                header.Add(ParleyStyles.Text(Relative(Str(change, "path")), "pl-diff__title"));
+                header.AddToClassList("pl-patch__header");
+                header.Add(DiffView.FileLink(Relative(Str(change, "path")), "pl-diff__title"));
                 header.Add(ParleyStyles.Text(ChangeKind(change), ParleyStyles.Muted));
                 list.Add(header);
                 string diff = Str(change, "diff");
@@ -270,7 +270,7 @@ namespace DTech.Parley.Editor.UI
         public static Label TodoLabel(string status, string text)
         {
             string normalized = status ?? "pending";
-            string icon = normalized == "completed" ? "●" : normalized == "in_progress" ? "◐" : "○";
+            string icon = normalized == "completed" ? "✓" : normalized == "in_progress" ? "◐" : "○";
             Label label = ParleyStyles.Text(icon + "  " + (text ?? string.Empty), "pl-todo");
             label.AddToClassList("pl-todo--" + normalized.Replace('_', '-'));
             return label;
@@ -362,8 +362,15 @@ namespace DTech.Parley.Editor.UI
         {
             if (block.IsError && !string.IsNullOrEmpty(block.Result))
             {
-                body.Add(ParleyStyles.Text(Truncate(block.Result, MaxErrorChars), "pl-tool__error"));
+                body.Add(ErrorLabel(Truncate(block.Result, MaxErrorChars)));
             }
+        }
+
+        private static Label ErrorLabel(string text)
+        {
+            Label label = ParleyStyles.Text(text, "pl-tool__error");
+            label.selection.isSelectable = true;
+            return label;
         }
 
         private static void AddMarkdown(VisualElement body, string markdown)
@@ -387,7 +394,7 @@ namespace DTech.Parley.Editor.UI
 
             if (block.IsError)
             {
-                body.Add(ParleyStyles.Text(Truncate(block.Result, MaxErrorChars * 2), "pl-tool__error"));
+                body.Add(ErrorLabel(Truncate(block.Result, MaxErrorChars * 2)));
                 return;
             }
 

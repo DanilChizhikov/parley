@@ -12,6 +12,7 @@ namespace DTech.Parley.Editor.UI
     {
         private readonly VisualElement _formHost;
         private readonly VisualElement _list;
+        private readonly Label _restartHint;
         private readonly StringBuilder _key = new ();
         private readonly List<McpServerStatus> _external = new ();
 
@@ -26,9 +27,16 @@ namespace DTech.Parley.Editor.UI
             header.AddToClassList("pl-mcp__header");
             header.Add(ParleyStyles.Text("MCP servers in this chat", "pl-mcp__title"));
             header.Add(ParleyStyles.Spacer());
-            header.Add(ParleyStyles.Button("Refresh", RefreshStatus, "pl-button--small"));
-            header.Add(ParleyStyles.Button("+ Add", () => OpenForm(null), "pl-button--small"));
+            Button refresh = ParleyStyles.Button("Refresh", RefreshStatus, "pl-button--small");
+            refresh.tooltip = "Ask the agent for the current server status";
+            header.Add(refresh);
+            Button add = ParleyStyles.Button("+ Add", () => OpenForm(null), "pl-button--small");
+            add.tooltip = "Add an MCP server";
+            header.Add(add);
             Add(header);
+            _restartHint = ParleyStyles.Text("Some changes apply with your next message: the agent restarts and resumes this chat.", "pl-mcp__hint");
+            ParleyStyles.SetVisible(_restartHint, false);
+            Add(_restartHint);
             _formHost = new VisualElement();
             Add(_formHost);
             _list = new VisualElement();
@@ -61,9 +69,11 @@ namespace DTech.Parley.Editor.UI
             {
                 _list.Clear();
                 _renderedKey = null;
+                ParleyStyles.SetVisible(_restartHint, false);
                 return;
             }
 
+            ParleyStyles.SetVisible(_restartHint, _session.Backend.HasPendingRestart);
             string key = BuildKey();
             if (key == _renderedKey)
             {
@@ -77,8 +87,8 @@ namespace DTech.Parley.Editor.UI
         private static string Describe(McpServerDefinition definition)
         {
             return definition.Transport == McpTransport.Stdio
-                ? "stdio · " + (definition.Command + " " + definition.Arguments).Trim()
-                : "http · " + definition.Url;
+                ? (definition.Command + " " + definition.Arguments).Trim()
+                : definition.Url;
         }
 
         private static string StateClass(McpConnectionState state)
@@ -100,7 +110,7 @@ namespace DTech.Parley.Editor.UI
                 case McpConnectionState.Connected:
                     return status.ToolCount >= 0 ? "Connected · " + status.ToolCount + (status.ToolCount == 1 ? " tool" : " tools") : "Connected";
                 case McpConnectionState.Failed:
-                    return "Failed";
+                    return "Failed to connect. Fix the server settings, then press Refresh.";
                 case McpConnectionState.NeedsAuth:
                     return _session.Profile.Kind == ProfileKind.Codex ? "Needs sign-in (codex mcp login " + status.Name + ")" : "Needs sign-in (run /mcp in Claude Code)";
                 case McpConnectionState.Disabled:
@@ -150,11 +160,6 @@ namespace DTech.Parley.Editor.UI
             {
                 RenderExternal();
             }
-
-            if (_session.Backend.HasPendingRestart)
-            {
-                _list.Add(ParleyStyles.Text("Some changes apply with your next message: the agent restarts and resumes this chat.", "pl-mcp__hint"));
-            }
         }
 
         private void RenderExternal()
@@ -196,9 +201,10 @@ namespace DTech.Parley.Editor.UI
             row.Add(toggle);
             VisualElement main = new VisualElement();
             main.AddToClassList("pl-mcp__main");
-            main.Add(ParleyStyles.Text(definition.Name, "pl-mcp__name"));
+            main.Add(ToggleName(definition.Name, toggle));
             Label detail = ParleyStyles.Text(Describe(definition), ParleyStyles.Muted);
             detail.AddToClassList("pl-mcp__detail");
+            detail.tooltip = (definition.Transport == McpTransport.Stdio ? "Command: " : "URL: ") + Describe(definition);
             main.Add(detail);
             if (enabled)
             {
@@ -207,12 +213,8 @@ namespace DTech.Parley.Editor.UI
                 AddState(main, status);
             }
 
-            VisualElement actions = new VisualElement();
-            actions.AddToClassList("pl-mcp__actions");
-            actions.Add(ParleyStyles.Button("Edit", () => OpenForm(ParleyUserSettings.instance.FindMcpServer(id)), "pl-button--small"));
-            actions.Add(ParleyStyles.Button("Delete", () => Delete(id), "pl-button--small"));
-            main.Add(actions);
             row.Add(main);
+            row.Add(ParleyStyles.RowActions(() => OpenForm(ParleyUserSettings.instance.FindMcpServer(id)), () => Delete(id), "server"));
             return row;
         }
 
@@ -227,10 +229,18 @@ namespace DTech.Parley.Editor.UI
             row.Add(toggle);
             VisualElement main = new VisualElement();
             main.AddToClassList("pl-mcp__main");
-            main.Add(ParleyStyles.Text(name, "pl-mcp__name"));
+            main.Add(ToggleName(name, toggle));
             AddState(main, status);
             row.Add(main);
             return row;
+        }
+
+        private static Label ToggleName(string name, Toggle toggle)
+        {
+            Label label = ParleyStyles.Text(name, "pl-mcp__name");
+            label.AddToClassList("pl-mcp__name--toggle");
+            label.RegisterCallback<ClickEvent>(_ => toggle.value = !toggle.value);
+            return label;
         }
 
         private void AddState(VisualElement parent, McpServerStatus status)
@@ -255,11 +265,13 @@ namespace DTech.Parley.Editor.UI
         {
             if (_form != null)
             {
+                ParleyStyles.ScrollIntoView(_form);
                 return;
             }
 
             _form = new McpServerForm(definition, SaveForm, CloseForm);
             _formHost.Add(_form);
+            ParleyStyles.ScrollIntoView(_form);
         }
 
         private void SaveForm(McpServerDefinition definition, bool isNew)

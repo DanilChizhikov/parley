@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using DTech.Parley.Editor.Agents.Claude;
 using DTech.Parley.Editor.Agents.Codex;
 using DTech.Parley.Editor.Agents.Local;
+using DTech.Parley.Editor.Agents.Preview;
 using DTech.Parley.Editor.Commands;
 using DTech.Parley.Editor.Mcp;
 using DTech.Parley.Editor.Secrets;
@@ -47,6 +48,8 @@ namespace DTech.Parley.Editor.Sessions
 		public SessionRecord Record { get; }
 
 		public IAgentBackend Backend { get; }
+
+		public bool IsPreview { get; }
 
 		public BackendCapabilities Capabilities { get; private set; } = new ();
 
@@ -98,9 +101,10 @@ namespace DTech.Parley.Editor.Sessions
 		private string _appliedSkillFingerprint;
 		private SkillConfiguration _skillConfiguration = new ();
 
-		public ChatSession(ParleyProfile profile, SessionRecord record)
+		public ChatSession(ParleyProfile profile, SessionRecord record, bool preview = false)
 		{
 			Profile = profile;
+			IsPreview = preview;
 			bool isNew = record == null;
 			Record = record ?? new SessionRecord { Mode = ParleyUserSettings.instance.DefaultMode };
 			if (Record.Kind != profile.Kind)
@@ -114,19 +118,24 @@ namespace DTech.Parley.Editor.Sessions
 			Model = profile.Model;
 			Effort = profile.Effort;
 			ExpireUnresolvedRequests();
-			Backend = profile.Kind switch
-			{
-				ProfileKind.ClaudeCode => new ClaudeCodeBackend(profile, this, ToolCatalog.CreateForMcp(ParleyProjectSettings.instance), Record.BackendSessionId, Record.Mode),
-				ProfileKind.Codex => new CodexBackend(profile, this, ToolCatalog.CreateForMcp(ParleyProjectSettings.instance), Record.BackendSessionId, Record.Mode),
-				ProfileKind.Local => new LocalAgentBackend(profile, this, ToolCatalog.CreateForLocalAgent(ParleyProjectSettings.instance), Record.BackendSessionId, Record.LocalHistory, Record.Mode),
-				_ => throw new ArgumentOutOfRangeException(),
-			};
+			Backend = preview ? new PreviewBackend(profile, this, Record.Mode) : CreateBackend(profile);
 
 			Record.Mode = Backend.Mode;
 			InitializeMcp();
 			ApplyMcp();
 			InitializeSkills(isNew);
 			ApplySkills();
+		}
+
+		private IAgentBackend CreateBackend(ParleyProfile profile)
+		{
+			return profile.Kind switch
+			{
+				ProfileKind.ClaudeCode => new ClaudeCodeBackend(profile, this, ToolCatalog.CreateForMcp(ParleyProjectSettings.instance), Record.BackendSessionId, Record.Mode),
+				ProfileKind.Codex => new CodexBackend(profile, this, ToolCatalog.CreateForMcp(ParleyProjectSettings.instance), Record.BackendSessionId, Record.Mode),
+				ProfileKind.Local => new LocalAgentBackend(profile, this, ToolCatalog.CreateForLocalAgent(ParleyProjectSettings.instance), Record.BackendSessionId, Record.LocalHistory, Record.Mode),
+				_ => throw new ArgumentOutOfRangeException(),
+			};
 		}
 
 		public void Dispose()
@@ -446,6 +455,11 @@ namespace DTech.Parley.Editor.Sessions
 			}
 
 			FlushDeltas();
+			if (IsPreview)
+			{
+				return;
+			}
+
 			Record.BackendSessionId = Backend.SessionId;
 			if (Backend is LocalAgentBackend local)
 			{
@@ -677,7 +691,7 @@ namespace DTech.Parley.Editor.Sessions
 				{
 					if (block.Kind == BlockKind.Request && string.IsNullOrEmpty(block.Resolution))
 					{
-						block.Resolution = "Expired";
+						block.Resolution = "No longer pending (the agent restarted)";
 					}
 
 					if (block.Kind == BlockKind.ToolUse && !block.IsFinished)
@@ -860,7 +874,7 @@ namespace DTech.Parley.Editor.Sessions
 
 		private void RefreshAssetsIfIdle()
 		{
-			if (!Backend.IsBusy)
+			if (!Backend.IsBusy && !IsPreview)
 			{
 				AssetDatabase.Refresh();
 			}

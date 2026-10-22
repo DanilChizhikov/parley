@@ -1,3 +1,4 @@
+using System;
 using UnityEngine.UIElements;
 
 namespace DTech.Parley.Editor.UI
@@ -6,6 +7,7 @@ namespace DTech.Parley.Editor.UI
     {
         private readonly Foldout _foldout = new () { value = false };
         private readonly Label _text;
+        private readonly DateTime _startedUtc = DateTime.UtcNow;
 
         public ThinkingBlockView(TranscriptBlock block) : base(block)
         {
@@ -19,7 +21,7 @@ namespace DTech.Parley.Editor.UI
 
         public override void Refresh()
         {
-            _foldout.text = Block.IsFinished ? "Thinking" : "Thinking…";
+            _foldout.text = Block.IsFinished ? "Thinking" : "Thinking… " + (int)(DateTime.UtcNow - _startedUtc).TotalSeconds + "s";
             if (_foldout.value || Block.IsFinished)
             {
                 _text.text = Block.Text;

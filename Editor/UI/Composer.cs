@@ -15,12 +15,15 @@ namespace DTech.Parley.Editor.UI
 
         private const int MaxSuggestions = 12;
         private const int MinAssetQueryLength = 2;
+        private const double NotificationSeconds = 2.0;
+        private const string DropClass = "pl-composer--drop";
 
         private static readonly HashSet<string> _imageExtensions = new (StringComparer.OrdinalIgnoreCase) { ".png", ".jpg", ".jpeg", ".gif", ".webp" };
 
         private readonly TextField _input;
         private readonly VisualElement _chips;
         private readonly ScrollView _suggestions;
+        private readonly Button _attach;
         private readonly Button _send;
         private readonly Button _stop;
         private readonly List<ChatAttachment> _attachments = new ();
@@ -42,25 +45,30 @@ namespace DTech.Parley.Editor.UI
             Add(_chips);
             _input = new TextField { multiline = true };
             _input.AddToClassList("pl-composer__input");
-            _input.textEdition.placeholder = "Ask Parley…  (Enter to send, Shift+Enter for a new line)";
+            _input.textEdition.placeholder = "Ask Parley…  (@ mentions an asset, / opens commands, Shift+Enter adds a line)";
             _input.verticalScrollerVisibility = ScrollerVisibility.Auto;
             _input.RegisterCallback<KeyDownEvent>(KeyDownHandler, TrickleDown.TrickleDown);
             _input.RegisterValueChangedCallback(InputChangedHandler);
             Add(_input);
             VisualElement bar = new VisualElement();
             bar.AddToClassList("pl-composer__bar");
-            Button attach = ParleyStyles.Button("＋ Attach", ShowAttachMenu, "pl-button--ghost");
-            attach.tooltip = "Attach the selection, console errors, a screenshot or a file";
-            bar.Add(attach);
+            _attach = ParleyStyles.Button("＋ Attach", ShowAttachMenu, "pl-button--ghost");
+            _attach.tooltip = "Attach the selection, console errors, a screenshot or a file. You can also drop files here.";
+            bar.Add(_attach);
             bar.Add(ParleyStyles.Spacer());
             _stop = ParleyStyles.Button("■ Stop", () => OnStop?.Invoke(), "pl-button--danger");
+            _stop.tooltip = "Stop the current reply";
             _send = ParleyStyles.Button("Send ↵", Submit, "pl-button--primary");
             bar.Add(_stop);
             bar.Add(_send);
             Add(bar);
+            RegisterCallback<DragEnterEvent>(_ => AddToClassList(DropClass));
+            RegisterCallback<DragLeaveEvent>(_ => RemoveFromClassList(DropClass));
+            RegisterCallback<DragExitedEvent>(_ => RemoveFromClassList(DropClass));
             RegisterCallback<DragUpdatedEvent>(DragUpdatedHandler);
             RegisterCallback<DragPerformEvent>(DragPerformHandler);
             SetBusy(false);
+            UpdateSendEnabled();
         }
 
         public void SetCommandSource(Func<IReadOnlyList<SlashCommandInfo>> commands)
@@ -72,6 +80,7 @@ namespace DTech.Parley.Editor.UI
         {
             ParleyStyles.SetVisible(_stop, busy);
             _send.text = busy ? "Queue ↵" : "Send ↵";
+            _send.tooltip = busy ? "Queue this message: it is sent when the current reply finishes (Enter)" : "Send (Enter)";
         }
 
         public void FocusInput()
@@ -126,13 +135,22 @@ namespace DTech.Parley.Editor.UI
             {
                 VisualElement chip = new VisualElement();
                 chip.AddToClassList("pl-chip-removable");
-                chip.Add(ParleyStyles.Text((attachment.Kind == AttachmentKind.Image ? "🖼 " : "📎 ") + attachment.Label, "pl-chip-removable__label"));
+                chip.tooltip = (attachment.Kind == AttachmentKind.Image ? "Image: " : "Attachment: ") + attachment.Label;
+                if (attachment.Kind == AttachmentKind.Image)
+                {
+                    chip.Add(ParleyStyles.Text("IMG", "pl-chip-removable__kind"));
+                }
+
+                chip.Add(ParleyStyles.Text(attachment.Label, "pl-chip-removable__label"));
                 ChatAttachment captured = attachment;
-                chip.Add(ParleyStyles.Button("✕", () => RemoveAttachment(captured), "pl-button--chip"));
+                Button remove = ParleyStyles.Button("✕", () => RemoveAttachment(captured), "pl-button--chip");
+                remove.tooltip = "Remove";
+                chip.Add(remove);
                 _chips.Add(chip);
             }
 
             ParleyStyles.SetVisible(_chips, _attachments.Count > 0);
+            UpdateSendEnabled();
         }
 
         private void RemoveAttachment(ChatAttachment attachment)
@@ -151,7 +169,7 @@ namespace DTech.Parley.Editor.UI
             menu.AddItem(new GUIContent("Game camera screenshot"), false, () => AddOrWarn(Attachments.FromGameCamera(), "No camera found."));
             menu.AddSeparator(string.Empty);
             menu.AddItem(new GUIContent("File…"), false, AttachFile);
-            menu.DropDown(new Rect(worldBound.x, worldBound.y, 0.0f, 0.0f));
+            menu.DropDown(_attach.worldBound);
         }
 
         private void AttachFile()
@@ -167,11 +185,28 @@ namespace DTech.Parley.Editor.UI
         {
             if (attachment == null)
             {
-                EditorUtility.DisplayDialog("Parley", warning, "OK");
+                Notify(warning);
                 return;
             }
 
             AddAttachment(attachment);
+        }
+
+        private static void Notify(string message)
+        {
+            EditorWindow window = EditorWindow.focusedWindow;
+            if (window != null)
+            {
+                window.ShowNotification(new GUIContent(message), NotificationSeconds);
+                return;
+            }
+
+            Debug.LogWarning("[Parley] " + message);
+        }
+
+        private void UpdateSendEnabled()
+        {
+            _send.SetEnabled(_attachments.Count > 0 || !string.IsNullOrWhiteSpace(_input.value));
         }
 
         private void UpdateSuggestions()
@@ -342,6 +377,7 @@ namespace DTech.Parley.Editor.UI
 
         private void InputChangedHandler(ChangeEvent<string> evt)
         {
+            UpdateSendEnabled();
             schedule.Execute(UpdateSuggestions);
         }
 
@@ -394,11 +430,12 @@ namespace DTech.Parley.Editor.UI
         private void DragPerformHandler(DragPerformEvent evt)
         {
             DragAndDrop.AcceptDrag();
+            RemoveFromClassList(DropClass);
             foreach (string path in DragAndDrop.paths)
             {
                 if (_imageExtensions.Contains(Path.GetExtension(path)))
                 {
-                    AddAttachment(Attachments.FromPath(path));
+                    AddOrWarn(Attachments.FromPath(path), "Could not read " + Path.GetFileName(path));
                     continue;
                 }
 

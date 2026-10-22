@@ -43,6 +43,7 @@ project info. You can attach the selection, console errors, a Scene or Game scre
     - [Commands](#commands)
     - [Attachments and Commands](#attachments-and-commands)
     - [Sessions](#sessions)
+    - [Debug Preview](#debug-preview)
 - [Project Settings and Trust](#project-settings-and-trust)
 - [Script Reloads](#script-reloads)
 - [Updates](#updates)
@@ -312,6 +313,19 @@ skills, or `@` to complete an asset path.
 Parley saves each chat under `Library/Parley/Sessions`, with its MCP servers and skills. **History** resumes a chat:
 Claude Code continues with `--resume`, Codex resumes its thread, and local chats restore their message history.
 Parley reopens the last chat after a script reload or an editor restart.
+
+### Debug Preview
+`Window/DTech/Parley Debug Preview` opens a separate Parley window driven by a scripted agent. It never starts a CLI
+or calls a model, and its chats are not saved, so you can look at every part of the UI without spending tokens.
+
+- **Preview ▾** in the toolbar plays a scenario: markdown, thinking, tool cards, diffs, a subagent, permission requests,
+  questions, plan approval, todos and background tasks, notices, the sign-in card, a crash, a slow turn to try **Stop**,
+  a full context window and the restart hint. The same scenarios are `/` commands in the composer (`/showcase` plays
+  them all).
+- The profile menu switches between Claude Code, Codex and local model layouts.
+- **Preview ▾ > Windows** opens a panel with every item type, a panel with spec errors, an empty panel, the saved
+  panels list, the release notes window and the preferences.
+- The MCP and Skills tabs, the preferences and saved panels are the real ones: changes there are saved as usual.
 
 ## Project Settings and Trust
 The **This project** section of the preferences holds options shared through version control in

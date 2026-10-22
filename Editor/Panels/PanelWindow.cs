@@ -5,6 +5,7 @@ using DTech.Parley.Editor.UI;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using UnityEditor;
+using UnityEditor.UIElements;
 using UnityEngine;
 using UnityEngine.UIElements;
 
@@ -15,7 +16,9 @@ namespace DTech.Parley.Editor.Panels
 		private const string DefaultTitle = "Panel";
 		private const string SavedPrefix = "saved:";
 		private const string TemporaryPrefix = "temp:";
-		private const float MinWidth = 320.0f;
+		private const string DialogTitle = "Parley";
+		private const float MinWidth = 400.0f;
+		private const double NotificationSeconds = 1.5;
 		private const float MinHeight = 200.0f;
 		private const long RefreshMs = 100;
 
@@ -34,9 +37,11 @@ namespace DTech.Parley.Editor.Panels
 		private bool _selfSave;
 		private ScrollView _scroll;
 		private VisualElement _banner;
+		private List<PanelIssue> _warnings = new ();
+		private bool _bannerDismissed;
 		private TextField _nameField;
-		private Button _saveButton;
-		private Button _revealButton;
+		private ToolbarButton _saveButton;
+		private ToolbarButton _revealButton;
 		private Label _savedLabel;
 
 		public static PanelWindow Open(string panelName, string specJson, string title)
@@ -53,7 +58,7 @@ namespace DTech.Parley.Editor.Panels
 			window._panelName = panelName;
 			window._specJson = specJson;
 			window._title = string.IsNullOrWhiteSpace(title) ? panelName ?? DefaultTitle : title;
-			window.titleContent = new GUIContent(window._title);
+			window.ApplyTitle();
 			window.Show();
 			window.Focus();
 			window.Rebuild();
@@ -98,8 +103,19 @@ namespace DTech.Parley.Editor.Panels
 			return null;
 		}
 
+		private static Texture Icon()
+		{
+			return EditorGUIUtility.IconContent(EditorGUIUtility.isProSkin ? "d_UnityEditor.InspectorWindow" : "UnityEditor.InspectorWindow").image;
+		}
+
+		private void ApplyTitle()
+		{
+			titleContent = new GUIContent(_title ?? DefaultTitle, Icon(), "Parley panel");
+		}
+
 		private void OnEnable()
 		{
+			minSize = new Vector2(MinWidth, MinHeight);
 			PanelStore.Default.OnChanged -= StoreChangedHandler;
 			PanelStore.Default.OnChanged += StoreChangedHandler;
 			EditorApplication.projectChanged -= ProjectChangedHandler;
@@ -125,25 +141,26 @@ namespace DTech.Parley.Editor.Panels
 			VisualElement root = rootVisualElement;
 			ParleyStyles.Apply(root);
 			root.AddToClassList("pl-panel");
-			VisualElement toolbar = new VisualElement();
+			Toolbar toolbar = new Toolbar();
 			toolbar.AddToClassList("pl-panel__toolbar");
-			toolbar.Add(ParleyStyles.Button("Reload", Reload, "pl-button--small"));
-			toolbar.Add(ParleyStyles.Spacer());
-			_savedLabel = ParleyStyles.Text(string.Empty, ParleyStyles.Muted);
+			toolbar.Add(new ToolbarButton(Reload) { text = "Reload", tooltip = "Read the panel again and refresh every value" });
+			toolbar.Add(new ToolbarSpacer { flex = true });
+			_savedLabel = ParleyStyles.Text(string.Empty, "pl-panel__saved");
 			toolbar.Add(_savedLabel);
-			_nameField = new TextField { tooltip = "Name to save this panel under (UserSettings/Parley/Panels)." };
+			_nameField = new TextField { tooltip = "Name to save this panel under (UserSettings/Parley/Panels). Press Enter to save." };
 			_nameField.AddToClassList("pl-panel__name");
 			_nameField.textEdition.placeholder = "panel name";
+			_nameField.RegisterCallback<KeyDownEvent>(NameKeyDownHandler, TrickleDown.TrickleDown);
 			toolbar.Add(_nameField);
-			_saveButton = ParleyStyles.Button("Save", Save, "pl-button--small");
+			_saveButton = new ToolbarButton(Save) { text = "Save", tooltip = "Keep this panel so you can open it later from Window > DTech > Parley Panels" };
 			toolbar.Add(_saveButton);
-			_revealButton = ParleyStyles.Button("Reveal", Reveal, "pl-button--small");
+			_revealButton = new ToolbarButton(Reveal) { text = "Reveal", tooltip = "Show the panel file" };
 			toolbar.Add(_revealButton);
 			root.Add(toolbar);
 			_banner = new VisualElement();
 			_banner.AddToClassList("pl-panel__banner");
 			root.Add(_banner);
-			_scroll = new ScrollView(ScrollViewMode.Vertical) { horizontalScrollerVisibility = ScrollerVisibility.Hidden };
+			_scroll = new ScrollView(ScrollViewMode.VerticalAndHorizontal) { horizontalScrollerVisibility = ScrollerVisibility.Auto };
 			_scroll.AddToClassList("pl-panel__scroll");
 			root.Add(_scroll);
 			root.schedule.Execute(RefreshIfDirty).Every(RefreshMs);
@@ -169,14 +186,16 @@ namespace DTech.Parley.Editor.Panels
 				_builder?.Dispose();
 				_builder = null;
 				UpdateToolbar();
-				foreach (PanelIssue issue in issues)
-				{
-					_scroll.Add(new HelpBox(issue.ToString(), issue.Severity == PanelIssueSeverity.Error ? HelpBoxMessageType.Error : HelpBoxMessageType.Warning));
-				}
-
+				VisualElement content = new VisualElement();
+				content.AddToClassList("pl-panel__content");
+				content.Add(ParleyStyles.Text("This panel can't be shown because its description has problems. Ask Parley to fix them, then press Reload.",
+					"pl-panel__summary"));
+				AddIssues(content, issues);
+				_scroll.Add(content);
 				return;
 			}
 
+			_warnings = issues;
 			_targets = new PanelTargetResolver(_spec);
 			Render();
 		}
@@ -193,42 +212,87 @@ namespace DTech.Parley.Editor.Panels
 			_builder?.Dispose();
 			_builder = null;
 			_title = _spec.Title;
-			titleContent = new GUIContent(_title);
+			ApplyTitle();
 			UpdateToolbar();
 			_targets.Writable = !EditorApplication.isPlayingOrWillChangePlaymode;
 			_refresh.Capture(_spec, _targets);
 			RenderBanner();
 			_view.BeginBuild();
 			_builder = new PanelBuilder(new PanelBuildRequest(_spec, _targets, _view, Rebuild));
-			_scroll.Add(_builder.Build());
+			if (_warnings.Count > 0)
+			{
+				VisualElement warnings = new VisualElement();
+				warnings.AddToClassList("pl-panel__warnings");
+				AddIssues(warnings, _warnings);
+				_scroll.Add(warnings);
+			}
+
+			VisualElement built = _builder.Build();
+			_scroll.Add(built);
+			if (_spec.Items.Count == 0)
+			{
+				VisualElement empty = new VisualElement();
+				empty.AddToClassList("pl-empty");
+				empty.Add(ParleyStyles.Text("This panel is empty", "pl-empty__title"));
+				empty.Add(ParleyStyles.Text("Ask Parley what it should show.", "pl-empty__text"));
+				_scroll.Add(empty);
+			}
+
 			_scroll.contentContainer.RegisterCallback<GeometryChangedEvent>(ScrollGeometryChangedHandler);
 			PersistIfChanged();
+		}
+
+		private static void AddIssues(VisualElement parent, List<PanelIssue> issues)
+		{
+			foreach (PanelIssue issue in issues)
+			{
+				parent.Add(new HelpBox(issue.ToDisplayString(), issue.Severity == PanelIssueSeverity.Error ? HelpBoxMessageType.Error : HelpBoxMessageType.Warning));
+			}
 		}
 
 		private void RenderBanner()
 		{
 			_banner.Clear();
 			PanelCoverage coverage = _refresh.Coverage;
-			if (coverage.Missing.Count == 0)
+			if (coverage.Missing.Count == 0 || _bannerDismissed)
 			{
 				return;
 			}
 
-			foreach (PanelCoverageEntry entry in coverage.Missing)
+			PanelCoverageEntry entry = coverage.Missing[0];
+			VisualElement row = new VisualElement();
+			row.AddToClassList("pl-panel__banner-row");
+			string assets = entry.Count == 1 ? " asset is" : " assets are";
+			string more = coverage.Missing.Count > 1 ? " (and " + (coverage.Missing.Count - 1) + " more types)" : string.Empty;
+			HelpBox box = new HelpBox(entry.Count + " " + entry.TypeName + assets + " not shown here" + more + ". Ask Parley to add them, or to list them with a search so new ones appear on their own.",
+				HelpBoxMessageType.Info);
+			List<string> lines = new List<string>();
+			foreach (PanelCoverageEntry missing in coverage.Missing)
 			{
-				VisualElement row = new VisualElement();
-				row.AddToClassList("pl-panel__banner-row");
-				string assets = entry.Count == 1 ? " asset is" : " assets are";
-				row.Add(new HelpBox(entry.Count + " " + entry.TypeName + assets + " not in this panel. Ask Parley to add them, or use a query item so the panel keeps up by itself.",
-					HelpBoxMessageType.Info));
-				if (!string.IsNullOrEmpty(entry.FirstPath))
-				{
-					string path = entry.FirstPath;
-					row.Add(ParleyStyles.Button("Ping", () => EditorGUIUtility.PingObject(AssetDatabase.LoadMainAssetAtPath(path)), "pl-button--small"));
-				}
-
-				_banner.Add(row);
+				lines.Add(missing.Count + " × " + missing.TypeName);
 			}
+
+			box.tooltip = string.Join("\n", lines);
+			row.Add(box);
+			if (!string.IsNullOrEmpty(entry.FirstPath))
+			{
+				string path = entry.FirstPath;
+				Button ping = ParleyStyles.Button("Ping", () => EditorGUIUtility.PingObject(AssetDatabase.LoadMainAssetAtPath(path)), "pl-button--small");
+				ping.tooltip = "Highlight one of them in the Project window";
+				row.Add(ping);
+			}
+
+			Button dismiss = ParleyStyles.Button("✕", DismissBanner, "pl-button--small");
+			dismiss.AddToClassList("pl-button--ghost");
+			dismiss.tooltip = "Hide this note for this panel";
+			row.Add(dismiss);
+			_banner.Add(row);
+		}
+
+		private void DismissBanner()
+		{
+			_bannerDismissed = true;
+			_banner.Clear();
 		}
 
 		private void RefreshIfDirty()
@@ -292,10 +356,13 @@ namespace DTech.Parley.Editor.Panels
 			}
 
 			bool saved = !string.IsNullOrEmpty(_panelName);
-			ParleyStyles.SetVisible(_nameField, !saved);
-			ParleyStyles.SetVisible(_saveButton, !saved);
+			bool valid = _spec != null;
+			ParleyStyles.SetVisible(_nameField, !saved && valid);
+			ParleyStyles.SetVisible(_saveButton, !saved && valid);
 			ParleyStyles.SetVisible(_revealButton, saved);
-			_savedLabel.text = saved ? _panelName : "not saved";
+			_savedLabel.text = saved ? "Saved as " + _panelName : valid ? "Unsaved" : string.Empty;
+			_savedLabel.tooltip = saved ? PanelStore.Default.PathFor(_panelName) : "This panel closes for good unless you save it";
+			_savedLabel.EnableInClassList("pl-panel__saved--unsaved", !saved);
 			if (!saved && string.IsNullOrEmpty(_nameField.value))
 			{
 				_nameField.SetValueWithoutNotify(PanelStore.Slug(_title) ?? string.Empty);
@@ -317,11 +384,12 @@ namespace DTech.Parley.Editor.Panels
 			string slug = PanelStore.Slug(_nameField.value);
 			if (slug == null)
 			{
-				EditorUtility.DisplayDialog(DefaultTitle, "Enter a name with letters or digits.", "OK");
+				ShowNotification(new GUIContent("Enter a name with letters or digits"), NotificationSeconds);
+				_nameField.Focus();
 				return;
 			}
 
-			if (PanelStore.Default.Exists(slug) && !EditorUtility.DisplayDialog(DefaultTitle, "Panel '" + slug + "' exists. Overwrite?", "Overwrite", "Cancel"))
+			if (PanelStore.Default.Exists(slug) && !EditorUtility.DisplayDialog(DialogTitle, "A panel called '" + slug + "' already exists. Overwrite it?", "Overwrite", "Cancel"))
 			{
 				return;
 			}
@@ -336,19 +404,25 @@ namespace DTech.Parley.Editor.Panels
 				// Keep the raw text: the window already shows the parse error.
 			}
 
-			_panelName = slug;
-			_key = SavedPrefix + slug;
 			_selfSave = true;
 			try
 			{
 				PanelStore.Default.Save(slug, json);
+			}
+			catch (Exception exception) when (exception is IOException || exception is UnauthorizedAccessException)
+			{
+				EditorUtility.DisplayDialog(DialogTitle, "Could not save the panel: " + exception.Message, "OK");
+				return;
 			}
 			finally
 			{
 				_selfSave = false;
 			}
 
+			_panelName = slug;
+			_key = SavedPrefix + slug;
 			UpdateToolbar();
+			ShowNotification(new GUIContent("Saved"), NotificationSeconds);
 		}
 
 		private void Reveal()
@@ -358,6 +432,17 @@ namespace DTech.Parley.Editor.Panels
 			{
 				EditorUtility.RevealInFinder(path);
 			}
+		}
+
+		private void NameKeyDownHandler(KeyDownEvent evt)
+		{
+			if (evt.keyCode != KeyCode.Return && evt.keyCode != KeyCode.KeypadEnter)
+			{
+				return;
+			}
+
+			Save();
+			evt.StopPropagation();
 		}
 
 		private void ProjectChangedHandler()

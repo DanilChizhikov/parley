@@ -27,18 +27,22 @@ namespace DTech.Parley.Editor.UI
             AddToClassList("pl-mcp__form");
             Add(ParleyStyles.Text(original == null ? "New MCP server" : "Edit " + original.Name, "pl-mcp__subtitle"));
             Add(CreateTextField(new TextFieldRequest("Name", _draft.Name, value => _draft.Name = value.Trim(), "my-server")));
-            EnumField transport = new EnumField("Transport", _draft.Transport);
+            EnumField transport = new EnumField("Runs as", _draft.Transport)
+            {
+                tooltip = "Local command: Parley starts the server as a process. Remote URL: the server already runs somewhere and speaks HTTP.",
+            };
             transport.RegisterValueChangedCallback(TransportChangedHandler);
             Add(transport);
             _stdio = new VisualElement();
             _stdio.Add(CreateTextField(new TextFieldRequest("Command", _draft.Command, value => _draft.Command = value, "npx")));
             _stdio.Add(CreateTextField(new TextFieldRequest("Arguments", _draft.Arguments, value => _draft.Arguments = value, "-y @modelcontextprotocol/server-everything")));
-            _environment = new McpVariableList("Environment variables", "NAME", _draft.Environment, _draft.SecretOwner, DiscardSecret);
+            _stdio.Add(ParleyStyles.Text("Separated by spaces; wrap an argument that contains spaces in double quotes.", "pl-mcp__field-hint"));
+            _environment = new McpVariableList("Environment variables", "NAME", _draft.Environment, _draft.SecretOwner, DiscardSecret, ShowError);
             _stdio.Add(_environment);
             Add(_stdio);
             _http = new VisualElement();
             _http.Add(CreateTextField(new TextFieldRequest("URL", _draft.Url, value => _draft.Url = value, "https://example.com/mcp")));
-            _headers = new McpVariableList("Headers", "Header-Name", _draft.Headers, _draft.SecretOwner, DiscardSecret);
+            _headers = new McpVariableList("Headers", "Header-Name", _draft.Headers, _draft.SecretOwner, DiscardSecret, ShowError);
             _http.Add(_headers);
             Add(_http);
             Toggle byDefault = new Toggle("Enable in new chats") { value = _draft.EnabledByDefault };
@@ -49,8 +53,8 @@ namespace DTech.Parley.Editor.UI
             Add(_error);
             VisualElement buttons = new VisualElement();
             buttons.AddToClassList("pl-mcp__form-buttons");
-            buttons.Add(ParleyStyles.Button("Save", Save, "pl-button--primary"));
             buttons.Add(ParleyStyles.Button("Cancel", Cancel));
+            buttons.Add(ParleyStyles.Button("Save", Save, "pl-button--primary"));
             Add(buttons);
             UpdateTransport();
         }
@@ -64,9 +68,9 @@ namespace DTech.Parley.Editor.UI
             return field;
         }
 
-        private static string ValidateVariables(List<McpVariable> variables)
+        private static string ValidateVariables(List<McpVariable> variables, StringComparer comparer)
         {
-            HashSet<string> keys = new (StringComparer.OrdinalIgnoreCase);
+            HashSet<string> keys = new (comparer);
             foreach (McpVariable variable in variables)
             {
                 string key = (variable.Key ?? string.Empty).Trim();
@@ -87,8 +91,7 @@ namespace DTech.Parley.Editor.UI
         private void Save()
         {
             string error = Validate() ?? (_draft.Transport == McpTransport.Stdio ? _environment : _headers).CommitSecrets();
-            ParleyStyles.SetVisible(_error, error != null);
-            _error.text = error ?? string.Empty;
+            ShowError(error);
             if (error != null)
             {
                 return;
@@ -100,6 +103,12 @@ namespace DTech.Parley.Editor.UI
             }
 
             _onSave(_draft, _original == null);
+        }
+
+        private void ShowError(string error)
+        {
+            ParleyStyles.SetVisible(_error, error != null);
+            _error.text = error ?? string.Empty;
         }
 
         private void Cancel()
@@ -122,12 +131,12 @@ namespace DTech.Parley.Editor.UI
 
             if (_draft.Transport == McpTransport.Stdio)
             {
-                return string.IsNullOrWhiteSpace(_draft.Command) ? "Enter the command that starts the server." : ValidateVariables(_draft.Environment);
+                return string.IsNullOrWhiteSpace(_draft.Command) ? "Enter the command that starts the server." : ValidateVariables(_draft.Environment, StringComparer.Ordinal);
             }
 
             bool validUrl = Uri.TryCreate((_draft.Url ?? string.Empty).Trim(), UriKind.Absolute, out Uri uri)
                 && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
-            return validUrl ? ValidateVariables(_draft.Headers) : "Enter an http(s) URL.";
+            return validUrl ? ValidateVariables(_draft.Headers, StringComparer.OrdinalIgnoreCase) : "Enter an http(s) URL.";
         }
 
         private void DiscardSecret(McpVariable variable)

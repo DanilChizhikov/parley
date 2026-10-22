@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- `Window/DTech/Parley Debug Preview`: a Parley window driven by a scripted agent that shows every chat block, card,
+  side panel state and window without starting a CLI or calling a model.
+
+### Fixed
+- Scrolling the chat with the mouse wheel no longer stops or jumps back to the bottom when the pointer passes over
+  question cards, text fields, code blocks or tables.
+
 ## [0.2.0] - 2026-10-21
 
 ### Added

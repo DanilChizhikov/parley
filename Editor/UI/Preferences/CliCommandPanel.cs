@@ -11,9 +11,11 @@ namespace DTech.Parley.Editor.UI
         private const int MaxLogChars = 12000;
         private const int VisibleTokenLength = 16;
 
+        private readonly ScrollView _scroll;
         private readonly Label _log;
         private readonly Button _openUrl;
         private readonly Button _cancel;
+        private readonly Button _close;
         private readonly FeedbackRow _codeRow;
         private readonly StringBuilder _output = new ();
 
@@ -29,13 +31,19 @@ namespace DTech.Parley.Editor.UI
             _log = ParleyStyles.Text(string.Empty, "pl-cli__log");
             _log.selection.isSelectable = true;
             ParleyStyles.UseMonospace(_log);
-            Add(_log);
+            _scroll = new ScrollView(ScrollViewMode.Vertical);
+            _scroll.AddToClassList("pl-cli__scroll");
+            _scroll.Add(_log);
+            Add(_scroll);
             VisualElement buttons = new VisualElement();
-            buttons.AddToClassList("pl-request__buttons");
+            buttons.AddToClassList("pl-profile__buttons");
             _openUrl = ParleyStyles.Button("Open sign-in page", () => Application.OpenURL(_url), "pl-button--primary");
             _cancel = ParleyStyles.Button("Cancel", Cancel, "pl-button--ghost");
+            _close = ParleyStyles.Button("Close", () => ParleyStyles.SetVisible(this, false), "pl-button--ghost");
+            _close.tooltip = "Hide this log";
             buttons.Add(_openUrl);
             buttons.Add(_cancel);
+            buttons.Add(_close);
             Add(buttons);
             _codeRow = new FeedbackRow("Paste the code from the browser if asked", "Submit code", SubmitCode);
             Add(_codeRow);
@@ -119,7 +127,8 @@ namespace DTech.Parley.Editor.UI
         private void SetRunning(bool running)
         {
             ParleyStyles.SetVisible(_cancel, running);
-            ParleyStyles.SetVisible(_codeRow, running);
+            ParleyStyles.SetVisible(_close, !running);
+            ParleyStyles.SetVisible(_codeRow, running && !string.IsNullOrEmpty(_url));
             ParleyStyles.SetVisible(_openUrl, running && !string.IsNullOrEmpty(_url));
         }
 
@@ -132,6 +141,7 @@ namespace DTech.Parley.Editor.UI
             }
 
             _log.text = _output.ToString().TrimEnd();
+            _scroll.schedule.Execute(() => _scroll.scrollOffset = new Vector2(0.0f, float.MaxValue));
         }
 
         private void OutputHandler(string line)

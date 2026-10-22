@@ -8,30 +8,50 @@ namespace DTech.Parley.Editor.UI
     internal sealed class TrustCard : VisualElement
     {
         private const int MaxPromptPreviewChars = 300;
+        private const string PreviewMessage = "This project's Parley settings changed outside Parley (ProjectSettings/ParleySettings.asset). They are ignored until you trust them:"
+            + "\n• Extra directories the agent may access: ../SharedAssets, ~/Downloads"
+            + "\n• Extra instructions: Always answer in English and run the tests after every edit.";
 
         private readonly Label _message;
 
         private string _dismissedFingerprint;
         private string _renderedFingerprint;
 
+        public bool ForcePreview { get; set; }
+
         public TrustCard()
         {
-            AddToClassList("pl-auth");
+            AddToClassList("pl-trust");
+            Add(ParleyStyles.Text("Review shared project settings", "pl-auth__title"));
             _message = ParleyStyles.Text(string.Empty, "pl-auth__text");
             _message.selection.isSelectable = true;
             Add(_message);
             Add(ParleyStyles.Text("Trusting applies to chats started after this point (press New).", ParleyStyles.Muted));
             VisualElement buttons = new VisualElement();
-            buttons.AddToClassList("pl-request__buttons");
-            buttons.Add(ParleyStyles.Button("Trust", TrustClickedHandler, "pl-button--primary"));
-            buttons.Add(ParleyStyles.Button("Preferences", ParleyWindow.OpenPreferences));
-            buttons.Add(ParleyStyles.Button("Ignore", IgnoreClickedHandler, "pl-button--ghost"));
+            buttons.AddToClassList("pl-auth__buttons");
+            Button trust = ParleyStyles.Button("Trust", TrustClickedHandler, "pl-button--primary");
+            trust.tooltip = "Use these values in this project's chats";
+            buttons.Add(trust);
+            Button preferences = ParleyStyles.Button("Open preferences", ParleyWindow.OpenPreferences);
+            preferences.tooltip = "Review the values in Preferences";
+            buttons.Add(preferences);
+            Button later = ParleyStyles.Button("Not now", IgnoreClickedHandler, "pl-button--ghost");
+            later.tooltip = "Hide until Unity reloads; the values stay ignored";
+            buttons.Add(later);
             Add(buttons);
             ParleyStyles.SetVisible(this, false);
         }
 
         public void Refresh()
         {
+            if (ForcePreview)
+            {
+                ParleyStyles.SetVisible(this, true);
+                _message.text = PreviewMessage;
+                _renderedFingerprint = null;
+                return;
+            }
+
             ParleyProjectSettings settings = ParleyProjectSettings.instance;
             bool visible = !settings.IsTrusted && settings.Fingerprint != _dismissedFingerprint;
             ParleyStyles.SetVisible(this, visible);
@@ -44,7 +64,7 @@ namespace DTech.Parley.Editor.UI
 
         private static string Describe(ParleyProjectSettings settings)
         {
-            StringBuilder builder = new StringBuilder("ProjectSettings/ParleySettings.asset changed. Parley ignores these values until you trust them:");
+            StringBuilder builder = new StringBuilder("This project's Parley settings changed outside Parley (ProjectSettings/ParleySettings.asset). They are ignored until you trust them:");
             AppendList(builder, "Extra directories the agent may access", settings.ConfiguredAdditionalDirectories);
             AppendList(builder, "Extra instruction files", settings.ConfiguredInstructionFiles);
             if (!string.IsNullOrWhiteSpace(settings.ConfiguredAppendSystemPrompt))
@@ -65,12 +85,26 @@ namespace DTech.Parley.Editor.UI
 
         private void TrustClickedHandler()
         {
+            if (ForcePreview)
+            {
+                ForcePreview = false;
+                Refresh();
+                return;
+            }
+
             ParleyProjectSettings.instance.Trust();
             Refresh();
         }
 
         private void IgnoreClickedHandler()
         {
+            if (ForcePreview)
+            {
+                ForcePreview = false;
+                Refresh();
+                return;
+            }
+
             _dismissedFingerprint = ParleyProjectSettings.instance.Fingerprint;
             Refresh();
         }
