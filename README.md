@@ -44,6 +44,7 @@ project info. You can attach the selection, console errors, a Scene or Game scre
     - [Commands](#commands)
     - [Attachments and Commands](#attachments-and-commands)
     - [Sessions](#sessions)
+    - [Token Usage and Plan Limits](#token-usage-and-plan-limits)
     - [Debug Preview](#debug-preview)
 - [Project Settings and Trust](#project-settings-and-trust)
 - [Script Reloads](#script-reloads)
@@ -72,7 +73,7 @@ project info. You can attach the selection, console errors, a Scene or Game scre
     ```
 3. Unity will automatically import the package.
 
-To pin a release, add its tag: `https://github.com/DanilChizhikov/parley.git#v0.2.0`.
+To pin a release, add its tag: `https://github.com/DanilChizhikov/parley.git#v0.3.0`.
 
 Parley depends on `com.unity.nuget.newtonsoft-json`; Unity installs it automatically.
 
@@ -88,8 +89,11 @@ Parley depends on `com.unity.nuget.newtonsoft-json`; Unity installs it automatic
 - Streaming markdown with code highlighting, tables, task lists and clickable `path:line` references
 - Tool cards with unified diffs for edits and collapsible output
 - Subagent output nested under its Agent tool card
-- Side panel with the latest plan, todos, background tasks (with a Stop button), and this chat's MCP servers and
-  skills
+- Side panel with the latest plan, todos, background tasks (with a Stop button), this chat's MCP servers and
+  skills (with search), and its token usage
+- Token usage per model, agent, turn and tool result, with an XML export to hand to an agent for analysis
+- Claude Code and Codex plan limits next to Send: what is left of the 5-hour session and the weekly limit, and when
+  they reset
 - Unity editor tools served to Claude Code as an in-process MCP server (`mcp__unity__*`), to Codex as dynamic tools,
   and to local models natively (`unity_*`)
 - Panels: editor windows the agent builds from a JSON spec, with no C# and no recompile
@@ -105,11 +109,11 @@ Parley depends on `com.unity.nuget.newtonsoft-json`; Unity installs it automatic
 ## Usage
 
 ### Open the Window
-Use `Window/DTech/Parley`. The toolbar holds the profile, model, permission mode and effort selectors, the **MCP**,
+Use `Window/DTech/Parley/AI Chat`. The toolbar holds the profile, model, permission mode and effort selectors, the **MCP**,
 **Skills** and **Preset** buttons, plus **New**, **History**, **Panel** and preferences. Press Enter to send and Shift+Enter for a
 new line. While the agent works, Send queues your message and **Stop** interrupts the turn.
 
-**Panel** toggles the side panel. Its tabs are **Todos**, **Plan**, **Tasks**, **MCP** and **Skills**.
+**Panel** toggles the side panel. Its tabs are **Todos**, **Plan**, **Tasks**, **MCP**, **Skills** and **Usage**.
 
 ### Profiles and Sign-in
 Profiles live in `Preferences/DTech/Parley`. Parley starts with a Claude Code profile, a Codex profile and two local
@@ -240,7 +244,7 @@ scripts recompile, and nothing is added to `Assets`.
   shows actually changed.
 - A panel built from explicit targets shows a banner when assets of the same type are not in it, with a Ping button.
 - Save a panel from its toolbar or with `panel_save`. Saved panels live in `UserSettings/Parley/Panels/<name>.json` and
-  reopen from `Window/DTech/Parley Panels`. Open panels survive script reloads, and a panel saved again refreshes its
+  reopen from `Window/DTech/Parley/Panels`. Open panels survive script reloads, and a panel saved again refreshes its
   window.
 
 ### MCP Servers
@@ -332,9 +336,21 @@ Parley saves each chat under `Library/Parley/Sessions`, with its MCP servers and
 Claude Code continues with `--resume`, Codex resumes its thread, and local chats restore their message history.
 Parley reopens the last chat after a script reload or an editor restart.
 
+### Token Usage and Plan Limits
+The **Usage** tab of the side panel shows what the chat has spent: totals per model and per agent (subagents
+separately), every turn with its calls, the largest tool results, peak context and cost. When a pause outlives the
+prompt cache and the whole context is written again, the tab says so. **Copy XML** and **Export XML…** save the report,
+so you can paste it into a chat and ask the agent where the tokens went. Usage is recorded for Claude Code, Codex and
+local models.
+
+With a Claude Code or Codex subscription, a circle next to **Send** shows what is left of your plan: the 5-hour session
+on the left half and the weekly limit on the right. Click it for the percentages, a countdown and the reset time.
+
 ### Debug Preview
-`Window/DTech/Parley Debug Preview` opens a separate Parley window driven by a scripted agent. It never starts a CLI
-or calls a model, and its chats are not saved, so you can look at every part of the UI without spending tokens.
+The preview is for working on Parley itself. Add `PARLEY_DEBUGG` to **Project Settings > Player > Scripting Define
+Symbols**, then `Window/DTech/Parley/AI Chat Debug Preview` opens a separate Parley window driven by a scripted agent.
+It never starts a CLI or calls a model, and its chats are not saved, so you can look at every part of the UI without
+spending tokens.
 
 - **Preview ▾** in the toolbar plays a scenario: markdown, thinking, tool cards, diffs, a subagent, permission requests,
   questions, plan approval, todos and background tasks, notices, the sign-in card, a crash, a slow turn to try **Stop**,
@@ -385,6 +401,10 @@ This is a small sample: two runs per client, Claude Code 2.1.306 (VS Code) and 2
 2026-10-22. The starting context barely changes between runs, so that gap is reliable. The request count of a long
 task varies by about ±40% between runs, and this test doesn't show whether turns run longer in either client. Your
 numbers depend on your plugins, skills, MCP servers and `CLAUDE.md` files, which both clients load.
+
+On a real task the gap is smaller. Fixing a bug with a skill command and a 50 KB attached file took 19 requests and
+about 238k input-token equivalents in Parley, and 18 requests and about 244k in VS Code. Parley's smaller context saved
+about 340k cache reads over the turn, and a colder prompt cache on the first request took most of that back.
 
 ## Updates
 Once per editor session Parley checks for a newer release: a Git tag on GitHub, or a newer version in the registry
