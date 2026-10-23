@@ -1,7 +1,5 @@
-using System;
 using System.Collections.Generic;
 using System.Globalization;
-using DTech.Parley.Editor.Panels;
 using DTech.Parley.Editor.Sessions;
 using DTech.Parley.Editor.Updates;
 using UnityEditor;
@@ -9,6 +7,8 @@ using UnityEditor.UIElements;
 using UnityEngine;
 using UnityEngine.UIElements;
 #if PARLEY_DEBUGG
+using System;
+using DTech.Parley.Editor.Panels;
 using DTech.Parley.Editor.Agents.Preview;
 #endif
 
