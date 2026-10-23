@@ -58,10 +58,13 @@ namespace DTech.Parley.Tests.EditorMode
         [TestCase(null)]
         public void XmlModelFallsBackToLastMainCall(string model)
         {
-            SessionRecord record = new SessionRecord { Usage = SampleLog() };
+            UsageLog log = SampleLog();
+            log.Turns[1].Calls.Add(new UsageCall { Id = "m4", TimeUtc = Start.AddHours(1).AddSeconds(5), Model = "haiku", Agent = "agent1", Output = 1 });
+            SessionRecord record = new SessionRecord { Usage = log };
             XDocument document = UsageXmlExporter.Build(record, model, Start);
 
             Assert.AreEqual("opus", (string)document.Root.Attribute("model"));
+            Assert.AreEqual("sonnet", (string)UsageXmlExporter.Build(record, "sonnet", Start).Root.Attribute("model"));
         }
 
         [Test]

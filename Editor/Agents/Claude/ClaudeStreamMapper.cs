@@ -454,7 +454,7 @@ namespace DTech.Parley.Editor.Agents.Claude
 				(long?)usage["cache_creation_input_tokens"] ?? 0,
 				(long?)usage["cache_read_input_tokens"] ?? 0,
 				(long?)usage["output_tokens"] ?? 0,
-				0));
+				(long?)(usage["output_tokens_details"] as JObject)?["thinking_tokens"] ?? 0));
 		}
 
 		private string CurrentMessage(string parent)
