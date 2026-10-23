@@ -72,6 +72,22 @@ namespace DTech.Parley.Tests.EditorMode
         }
 
         [Test]
+        public void ClaudeStatusNeverListsUnityAsExternal()
+        {
+            McpConfiguration configuration = CreateConfiguration();
+            configuration.DisabledExternal.Add("unity");
+            JObject response = JObject.Parse(@"{""mcpServers"":[
+                {""name"":""unity"",""status"":""connected"",""scope"":""dynamic"",""source"":""dynamic"",""config"":{""type"":""sdk"",""name"":""unity""}},
+                {""name"":""github"",""status"":""connected"",""scope"":""user""}]}");
+
+            List<McpServerStatus> statuses = ClaudeWire.ParseMcpStatus(response, configuration);
+
+            Assert.AreEqual(1, statuses.Count);
+            Assert.AreEqual("github", statuses[0].Name);
+            Assert.AreEqual(0, ClaudeWire.PassthroughMcpServers(response).Count);
+        }
+
+        [Test]
         public void CodexConfigOverridesServersAndDisablesExternal()
         {
             McpConfiguration configuration = CreateConfiguration();
@@ -107,6 +123,25 @@ namespace DTech.Parley.Tests.EditorMode
             Assert.AreEqual(McpConnectionState.NeedsAuth, statuses[2].State);
             Assert.AreEqual(McpConnectionState.Pending, statuses[3].State);
             Assert.AreEqual("nope", statuses[3].Error);
+        }
+
+        [Test]
+        public void ClaudeSetServersRemovesDisabledExternalsFromPassthrough()
+        {
+            McpConfiguration configuration = CreateConfiguration();
+            configuration.DisabledExternal.Add("mine");
+
+            JObject passthrough = new JObject
+            {
+                ["mine"] = new JObject { ["type"] = "stdio", ["command"] = "node" },
+                ["other"] = new JObject { ["type"] = "stdio", ["command"] = "python" },
+            };
+
+            JObject servers = ClaudeWire.McpServers(configuration, passthrough, false);
+
+            Assert.IsNull(servers["mine"]);
+            Assert.AreEqual("python", (string)servers["other"]["command"]);
+            Assert.AreEqual("npx", (string)servers["echo"]["command"]);
         }
 
         private static McpConfiguration CreateConfiguration()

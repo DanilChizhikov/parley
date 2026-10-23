@@ -12,6 +12,8 @@ namespace DTech.Parley.Editor.UI
 
         private const string Root = "pl-root";
         private const string Mono = "pl-mono";
+        private const string TextClass = "pl-text";
+        private const long SkinPollMs = 1000;
 
         private const string MainSheet = "Parley/Parley";
         private const string DarkTokens = "Parley/ParleyTokensDark";
@@ -47,8 +49,28 @@ namespace DTech.Parley.Editor.UI
         public static void Apply(VisualElement root)
         {
             root.AddToClassList(Root);
-            AddSheet(root, IsDark ? DarkTokens : LightTokens);
+            bool dark = IsDark;
+            StyleSheet tokens = AddSheet(root, dark ? DarkTokens : LightTokens);
             AddSheet(root, MainSheet);
+            root.schedule.Execute(() =>
+            {
+                if (dark == IsDark)
+                {
+                    return;
+                }
+
+                dark = IsDark;
+                if (tokens != null)
+                {
+                    root.styleSheets.Remove(tokens);
+                }
+
+                tokens = Resources.Load<StyleSheet>(dark ? DarkTokens : LightTokens);
+                if (tokens != null)
+                {
+                    root.styleSheets.Add(tokens);
+                }
+            }).Every(SkinPollMs);
         }
 
         public static void UseMonospace(VisualElement element)
@@ -61,7 +83,7 @@ namespace DTech.Parley.Editor.UI
         {
             Label label = new Label(text) { enableRichText = true };
             label.selection.isSelectable = true;
-            label.style.whiteSpace = WhiteSpace.Normal;
+            label.AddToClassList(TextClass);
             if (className != null)
             {
                 label.AddToClassList(className);
@@ -74,7 +96,7 @@ namespace DTech.Parley.Editor.UI
         public static Label Text(string text, string className = null)
         {
             Label label = new Label(text) { enableRichText = false };
-            label.style.whiteSpace = WhiteSpace.Normal;
+            label.AddToClassList(TextClass);
             if (className != null)
             {
                 label.AddToClassList(className);
@@ -97,7 +119,66 @@ namespace DTech.Parley.Editor.UI
 
         public static VisualElement Spacer()
         {
-            return new VisualElement { style = { flexGrow = 1.0f } };
+            VisualElement spacer = new VisualElement();
+            spacer.AddToClassList("pl-spacer");
+            return spacer;
+        }
+
+        public static Toggle AllToggle(int enabled, int total, Action<bool> onChange)
+        {
+            Toggle toggle = new Toggle { text = "All", value = total > 0 && enabled == total, showMixedValue = enabled > 0 && enabled < total };
+            toggle.tooltip = "Turn every item in this section on or off for this chat";
+            toggle.AddToClassList("pl-mcp__all");
+            toggle.RegisterValueChangedCallback(evt => onChange(evt.newValue));
+            return toggle;
+        }
+
+        public static VisualElement RowActions(Action edit, Action delete, string noun)
+        {
+            VisualElement actions = new VisualElement();
+            actions.AddToClassList("pl-mcp__actions");
+            Button editButton = ParleyStyles.Button("Edit", edit, "pl-button--small");
+            editButton.tooltip = "Edit this " + noun;
+            actions.Add(editButton);
+            Button deleteButton = ParleyStyles.Button("Delete", delete, "pl-button--small");
+            deleteButton.AddToClassList("pl-button--danger");
+            deleteButton.tooltip = "Delete this " + noun;
+            actions.Add(deleteButton);
+            return actions;
+        }
+
+        public static TextField SearchField(Action<string> onChange)
+        {
+            TextField field = new TextField { tooltip = "Filter by name or description" };
+            field.textEdition.placeholder = "Search…";
+            field.AddToClassList("pl-search");
+            field.RegisterValueChangedCallback(evt => onChange(evt.newValue ?? string.Empty));
+            field.RegisterCallback<KeyDownEvent>(evt =>
+            {
+                if (evt.keyCode == KeyCode.Escape && field.value.Length > 0)
+                {
+                    field.value = string.Empty;
+                    evt.StopPropagation();
+                }
+            });
+            return field;
+        }
+
+        public static bool Matches(string query, string first, string second = null)
+        {
+            string trimmed = query?.Trim();
+            if (string.IsNullOrEmpty(trimmed))
+            {
+                return true;
+            }
+
+            return (first != null && first.IndexOf(trimmed, StringComparison.OrdinalIgnoreCase) >= 0)
+                || (second != null && second.IndexOf(trimmed, StringComparison.OrdinalIgnoreCase) >= 0);
+        }
+
+        public static void ScrollIntoView(VisualElement element)
+        {
+            element.schedule.Execute(() => element.GetFirstAncestorOfType<ScrollView>()?.ScrollTo(element));
         }
 
         public static void SetVisible(VisualElement element, bool visible)
@@ -105,16 +186,17 @@ namespace DTech.Parley.Editor.UI
             element.style.display = visible ? DisplayStyle.Flex : DisplayStyle.None;
         }
 
-        private static void AddSheet(VisualElement root, string path)
+        private static StyleSheet AddSheet(VisualElement root, string path)
         {
             StyleSheet sheet = Resources.Load<StyleSheet>(path);
             if (sheet == null)
             {
                 Debug.LogWarning("[Parley] Style sheet not found: " + path);
-                return;
+                return null;
             }
 
             root.styleSheets.Add(sheet);
+            return sheet;
         }
     }
 }

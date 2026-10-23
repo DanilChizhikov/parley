@@ -25,9 +25,10 @@ namespace DTech.Parley.Editor.UI
             container.AddToClassList("pl-md-code");
             VisualElement header = new VisualElement();
             header.AddToClassList("pl-md-code__header");
-            header.Add(ParleyStyles.Text(string.IsNullOrEmpty(language) ? "code" : language, "pl-md-code__lang"));
+            header.Add(ParleyStyles.Text(string.IsNullOrEmpty(language) ? "code" : language == "error" ? "Error" : language, "pl-md-code__lang"));
             header.Add(ParleyStyles.Spacer());
             Button copy = ParleyStyles.Button("Copy", null, "pl-button--small");
+            copy.tooltip = "Copy to clipboard";
             copy.clicked += () =>
             {
                 EditorGUIUtility.systemCopyBuffer = code;
@@ -37,11 +38,10 @@ namespace DTech.Parley.Editor.UI
 
             header.Add(copy);
             container.Add(header);
-            ScrollView scroll = new ScrollView(ScrollViewMode.Horizontal);
+            ScrollView scroll = new ScrollView(ScrollViewMode.VerticalAndHorizontal);
             scroll.AddToClassList("pl-md-code__scroll");
             Label label = new Label(highlight ? CodeHighlighter.Highlight(code, language) : InlineMarkdown.Escape(code)) { enableRichText = true };
             label.selection.isSelectable = true;
-            label.style.whiteSpace = WhiteSpace.NoWrap;
             label.AddToClassList("pl-md-code__text");
             ParleyStyles.UseMonospace(label);
             scroll.Add(label);

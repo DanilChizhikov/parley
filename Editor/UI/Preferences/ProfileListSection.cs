@@ -56,25 +56,81 @@ namespace DTech.Parley.Editor.UI
             RebuildList();
         }
 
+        private static string UniqueName(string name)
+        {
+            string candidate = name;
+            int index = 2;
+            while (IsNameTaken(candidate))
+            {
+                candidate = name + " " + index++;
+            }
+
+            return candidate;
+        }
+
+        private static bool IsNameTaken(string name)
+        {
+            foreach (ParleyProfile profile in ParleyUserSettings.instance.Profiles)
+            {
+                if (profile.Name == name)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         private void RebuildList()
         {
             _list.Clear();
-            foreach (ParleyProfile profile in ParleyUserSettings.instance.Profiles)
+            ParleyUserSettings settings = ParleyUserSettings.instance;
+            ParleyProfile active = settings.ActiveProfile;
+            foreach (ParleyProfile profile in settings.Profiles)
             {
                 ParleyProfile captured = profile;
-                Button item = ParleyStyles.Button(profile.Name + "\n" + ProfileLabels.Describe(profile), () => Select(captured), "pl-prefs__profile-item");
+                Button item = ParleyStyles.Button(string.Empty, () => Select(captured), "pl-prefs__profile-item");
                 item.EnableInClassList("pl-prefs__profile-item--selected", profile == _selected);
+                VisualElement title = new VisualElement();
+                title.AddToClassList("pl-prefs__profile-title");
+                title.Add(ParleyStyles.Text(profile.Name, "pl-prefs__profile-name"));
+                if (profile == active)
+                {
+                    Label badge = ParleyStyles.Text("Active", "pl-chip");
+                    badge.tooltip = "Used by new chats";
+                    title.Add(badge);
+                }
+
+                item.Add(title);
+                item.Add(ParleyStyles.Text(ProfileLabels.Describe(profile), ParleyStyles.Muted));
                 _list.Add(item);
             }
 
             VisualElement actions = new VisualElement();
             actions.AddToClassList("pl-prefs__profile-actions");
-            actions.Add(ParleyStyles.Button("+ Claude", () => AddProfile(ParleyProfile.CreateClaude("Claude Code", ClaudeAuthMethod.ClaudeAiLogin)), "pl-button--small"));
-            actions.Add(ParleyStyles.Button("+ Codex", () => AddProfile(ParleyProfile.CreateCodex("Codex", CodexAuthMethod.CliDefault)), "pl-button--small"));
-            actions.Add(ParleyStyles.Button("+ Local", () => AddProfile(ParleyProfile.CreateLocal("Local model", LocalPreset.LmStudio)), "pl-button--small"));
-            actions.Add(ParleyStyles.Button("Duplicate", DuplicateSelected, "pl-button--small"));
-            actions.Add(ParleyStyles.Button("Delete", DeleteSelected, "pl-button--small"));
+            Button add = ParleyStyles.Button("+ Add ▾", null, "pl-button--small");
+            add.tooltip = "Add a Claude Code, Codex or local model profile";
+            add.clicked += () => ShowAddMenu(add);
+            actions.Add(add);
+            Button duplicate = ParleyStyles.Button("Duplicate", DuplicateSelected, "pl-button--small");
+            duplicate.tooltip = "Copy the selected profile with its secrets";
+            actions.Add(duplicate);
+            Button delete = ParleyStyles.Button("Delete", DeleteSelected, "pl-button--small");
+            delete.AddToClassList("pl-button--danger");
+            bool canDelete = settings.Profiles.Count > 1;
+            delete.SetEnabled(canDelete);
+            delete.tooltip = canDelete ? "Delete the selected profile and its secrets" : "At least one profile is required";
+            actions.Add(delete);
             _list.Add(actions);
+        }
+
+        private void ShowAddMenu(VisualElement anchor)
+        {
+            GenericMenu menu = new GenericMenu();
+            menu.AddItem(new GUIContent("Claude Code"), false, () => AddProfile(ParleyProfile.CreateClaude(UniqueName("Claude Code"), ClaudeAuthMethod.ClaudeAiLogin)));
+            menu.AddItem(new GUIContent("Codex"), false, () => AddProfile(ParleyProfile.CreateCodex(UniqueName("Codex"), CodexAuthMethod.CliDefault)));
+            menu.AddItem(new GUIContent("Local model"), false, () => AddProfile(ParleyProfile.CreateLocal(UniqueName("Local model"), LocalPreset.LmStudio)));
+            menu.DropDown(anchor.worldBound);
         }
 
         private void AddProfile(ParleyProfile profile)
@@ -86,6 +142,7 @@ namespace DTech.Parley.Editor.UI
         private void DuplicateSelected()
         {
             ParleyProfile copy = _selected.Clone();
+            copy.Name = UniqueName(copy.Name);
             CopySecrets(_selected.Id, copy.Id);
             AddProfile(copy);
         }

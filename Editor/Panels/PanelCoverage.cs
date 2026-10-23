@@ -9,6 +9,8 @@ namespace DTech.Parley.Editor.Panels
 	{
 		public const int MaxTypes = 4;
 
+		private static readonly HashSet<string> _broadTypes = new (StringComparer.Ordinal) { "GameObject", "SceneAsset", "DefaultAsset" };
+
 		public static PanelCoverage Empty { get; } = new PanelCoverage(new List<PanelCoverageEntry>());
 
 		public IReadOnlyList<PanelCoverageEntry> Missing => _missing;
@@ -39,7 +41,7 @@ namespace DTech.Parley.Editor.Panels
 
 				shown.Add(PanelQuery.KeyOf(target));
 				string typeName = target.GetType().Name;
-				if (!types.Contains(typeName) && types.Count < MaxTypes)
+				if (!_broadTypes.Contains(typeName) && !types.Contains(typeName) && types.Count < MaxTypes)
 				{
 					types.Add(typeName);
 				}

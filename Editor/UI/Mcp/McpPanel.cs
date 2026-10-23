@@ -12,12 +12,14 @@ namespace DTech.Parley.Editor.UI
     {
         private readonly VisualElement _formHost;
         private readonly VisualElement _list;
+        private readonly Label _restartHint;
         private readonly StringBuilder _key = new ();
         private readonly List<McpServerStatus> _external = new ();
 
         private ChatSession _session;
         private McpServerForm _form;
         private string _renderedKey;
+        private string _filter = string.Empty;
 
         public McpPanel()
         {
@@ -26,9 +28,21 @@ namespace DTech.Parley.Editor.UI
             header.AddToClassList("pl-mcp__header");
             header.Add(ParleyStyles.Text("MCP servers in this chat", "pl-mcp__title"));
             header.Add(ParleyStyles.Spacer());
-            header.Add(ParleyStyles.Button("Refresh", RefreshStatus, "pl-button--small"));
-            header.Add(ParleyStyles.Button("+ Add", () => OpenForm(null), "pl-button--small"));
+            Button refresh = ParleyStyles.Button("Refresh", RefreshStatus, "pl-button--small");
+            refresh.tooltip = "Ask the agent for the current server status";
+            header.Add(refresh);
+            Button add = ParleyStyles.Button("+ Add", () => OpenForm(null), "pl-button--small");
+            add.tooltip = "Add an MCP server";
+            header.Add(add);
             Add(header);
+            Add(ParleyStyles.SearchField(value =>
+            {
+                _filter = value;
+                Refresh();
+            }));
+            _restartHint = ParleyStyles.Text("Some changes apply with your next message: the agent restarts and resumes this chat.", "pl-mcp__hint");
+            ParleyStyles.SetVisible(_restartHint, false);
+            Add(_restartHint);
             _formHost = new VisualElement();
             Add(_formHost);
             _list = new VisualElement();
@@ -61,9 +75,11 @@ namespace DTech.Parley.Editor.UI
             {
                 _list.Clear();
                 _renderedKey = null;
+                ParleyStyles.SetVisible(_restartHint, false);
                 return;
             }
 
+            ParleyStyles.SetVisible(_restartHint, _session.Backend.HasPendingRestart);
             string key = BuildKey();
             if (key == _renderedKey)
             {
@@ -77,8 +93,8 @@ namespace DTech.Parley.Editor.UI
         private static string Describe(McpServerDefinition definition)
         {
             return definition.Transport == McpTransport.Stdio
-                ? "stdio · " + (definition.Command + " " + definition.Arguments).Trim()
-                : "http · " + definition.Url;
+                ? (definition.Command + " " + definition.Arguments).Trim()
+                : definition.Url;
         }
 
         private static string StateClass(McpConnectionState state)
@@ -100,7 +116,7 @@ namespace DTech.Parley.Editor.UI
                 case McpConnectionState.Connected:
                     return status.ToolCount >= 0 ? "Connected · " + status.ToolCount + (status.ToolCount == 1 ? " tool" : " tools") : "Connected";
                 case McpConnectionState.Failed:
-                    return "Failed";
+                    return "Failed to connect. Fix the server settings, then press Refresh.";
                 case McpConnectionState.NeedsAuth:
                     return _session.Profile.Kind == ProfileKind.Codex ? "Needs sign-in (codex mcp login " + status.Name + ")" : "Needs sign-in (run /mcp in Claude Code)";
                 case McpConnectionState.Disabled:
@@ -114,7 +130,7 @@ namespace DTech.Parley.Editor.UI
         {
             _key.Clear();
             _key.Append(_session.Record.Id).Append('|').Append(_session.Profile.Kind).Append('|').Append(_session.Backend.HasPendingRestart)
-                .Append('|').Append(_session.Backend.IsRunning).Append('|');
+                .Append('|').Append(_session.Backend.IsRunning).Append('|').Append(_filter).Append('|');
             foreach (McpServerDefinition definition in ParleyUserSettings.instance.McpServers)
             {
                 _key.Append(definition.Id).Append(':').Append(definition.Name).Append(':').Append(Describe(definition)).Append(':')
@@ -125,7 +141,7 @@ namespace DTech.Parley.Editor.UI
             foreach (McpServerStatus status in _session.McpStatuses)
             {
                 _key.Append(status.Name).Append(':').Append(status.IsExternal).Append(':').Append(status.State).Append(':')
-                    .Append(status.ToolCount).Append(':').Append(status.Error).Append(';');
+                    .Append(status.ToolCount).Append(':').Append(status.Error).Append(':').Append(_session.IsExternalMcpServerEnabled(status.Name)).Append(';');
             }
 
             return _key.ToString();
@@ -134,41 +150,58 @@ namespace DTech.Parley.Editor.UI
         private void Render()
         {
             _list.Clear();
-            _list.Add(ParleyStyles.Text("Parley servers", "pl-mcp__section"));
             IReadOnlyList<McpServerDefinition> definitions = ParleyUserSettings.instance.McpServers;
+            List<string> ids = new ();
+            int enabled = 0;
+            foreach (McpServerDefinition definition in definitions)
+            {
+                ids.Add(definition.Id);
+                enabled += _session.IsMcpServerEnabled(definition.Id) ? 1 : 0;
+            }
+
+            _list.Add(SectionHeader("Parley servers", enabled, ids, value => _session?.SetMcpServersEnabled(ids, value)));
             if (definitions.Count == 0)
             {
                 _list.Add(ParleyStyles.Text("No servers yet. Add one, then switch it on for this chat.", ParleyStyles.Muted));
             }
 
+            int shown = 0;
             foreach (McpServerDefinition definition in definitions)
             {
-                _list.Add(BuildServerRow(definition));
+                if (ParleyStyles.Matches(_filter, definition.Name, Describe(definition)))
+                {
+                    _list.Add(BuildServerRow(definition));
+                    shown++;
+                }
             }
 
+            AddNoMatches(definitions.Count, shown);
             if (_session.Profile.Kind != ProfileKind.Local)
             {
                 RenderExternal();
-            }
-
-            if (_session.Backend.HasPendingRestart)
-            {
-                _list.Add(ParleyStyles.Text("Some changes apply with your next message: the agent restarts and resumes this chat.", "pl-mcp__hint"));
             }
         }
 
         private void RenderExternal()
         {
             string source = _session.Profile.Kind == ProfileKind.Codex ? "Codex" : "Claude Code";
-            _list.Add(ParleyStyles.Text("From " + source + " config", "pl-mcp__section"));
             _external.Clear();
+            List<string> names = new ();
+            int enabled = 0;
             foreach (McpServerStatus status in _session.McpStatuses)
             {
                 if (status.IsExternal)
                 {
                     _external.Add(status);
+                    if (!names.Contains(status.Name))
+                    {
+                        names.Add(status.Name);
+                        enabled += _session.IsExternalMcpServerEnabled(status.Name) ? 1 : 0;
+                    }
                 }
             }
+
+            _list.Add(SectionHeader("From " + source + " config", enabled, names, value => _session?.SetExternalMcpServersEnabled(names, value)));
 
             if (_external.Count == 0)
             {
@@ -178,9 +211,24 @@ namespace DTech.Parley.Editor.UI
             }
 
             _external.Sort((left, right) => string.Compare(left.Name, right.Name, StringComparison.OrdinalIgnoreCase));
+            int shown = 0;
             foreach (McpServerStatus status in _external)
             {
-                _list.Add(BuildExternalRow(status));
+                if (ParleyStyles.Matches(_filter, status.Name))
+                {
+                    _list.Add(BuildExternalRow(status));
+                    shown++;
+                }
+            }
+
+            AddNoMatches(_external.Count, shown);
+        }
+
+        private void AddNoMatches(int total, int shown)
+        {
+            if (total > 0 && shown == 0)
+            {
+                _list.Add(ParleyStyles.Text("No matches.", ParleyStyles.Muted));
             }
         }
 
@@ -196,9 +244,10 @@ namespace DTech.Parley.Editor.UI
             row.Add(toggle);
             VisualElement main = new VisualElement();
             main.AddToClassList("pl-mcp__main");
-            main.Add(ParleyStyles.Text(definition.Name, "pl-mcp__name"));
+            main.Add(ToggleName(definition.Name, toggle));
             Label detail = ParleyStyles.Text(Describe(definition), ParleyStyles.Muted);
             detail.AddToClassList("pl-mcp__detail");
+            detail.tooltip = (definition.Transport == McpTransport.Stdio ? "Command: " : "URL: ") + Describe(definition);
             main.Add(detail);
             if (enabled)
             {
@@ -207,12 +256,8 @@ namespace DTech.Parley.Editor.UI
                 AddState(main, status);
             }
 
-            VisualElement actions = new VisualElement();
-            actions.AddToClassList("pl-mcp__actions");
-            actions.Add(ParleyStyles.Button("Edit", () => OpenForm(ParleyUserSettings.instance.FindMcpServer(id)), "pl-button--small"));
-            actions.Add(ParleyStyles.Button("Delete", () => Delete(id), "pl-button--small"));
-            main.Add(actions);
             row.Add(main);
+            row.Add(ParleyStyles.RowActions(() => OpenForm(ParleyUserSettings.instance.FindMcpServer(id)), () => Delete(id), "server"));
             return row;
         }
 
@@ -227,10 +272,32 @@ namespace DTech.Parley.Editor.UI
             row.Add(toggle);
             VisualElement main = new VisualElement();
             main.AddToClassList("pl-mcp__main");
-            main.Add(ParleyStyles.Text(name, "pl-mcp__name"));
+            main.Add(ToggleName(name, toggle));
             AddState(main, status);
             row.Add(main);
             return row;
+        }
+
+        private static VisualElement SectionHeader(string title, int enabled, List<string> items, Action<bool> setAll)
+        {
+            VisualElement header = new VisualElement();
+            header.AddToClassList("pl-mcp__header");
+            header.Add(ParleyStyles.Text(title, "pl-mcp__section"));
+            header.Add(ParleyStyles.Spacer());
+            if (items.Count > 0)
+            {
+                header.Add(ParleyStyles.AllToggle(enabled, items.Count, setAll));
+            }
+
+            return header;
+        }
+
+        private static Label ToggleName(string name, Toggle toggle)
+        {
+            Label label = ParleyStyles.Text(name, "pl-mcp__name");
+            label.AddToClassList("pl-mcp__name--toggle");
+            label.RegisterCallback<ClickEvent>(_ => toggle.value = !toggle.value);
+            return label;
         }
 
         private void AddState(VisualElement parent, McpServerStatus status)
@@ -255,11 +322,13 @@ namespace DTech.Parley.Editor.UI
         {
             if (_form != null)
             {
+                ParleyStyles.ScrollIntoView(_form);
                 return;
             }
 
             _form = new McpServerForm(definition, SaveForm, CloseForm);
             _formHost.Add(_form);
+            ParleyStyles.ScrollIntoView(_form);
         }
 
         private void SaveForm(McpServerDefinition definition, bool isNew)

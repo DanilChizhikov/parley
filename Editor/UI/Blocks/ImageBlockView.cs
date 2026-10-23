@@ -10,6 +10,7 @@ namespace DTech.Parley.Editor.UI
         private const float MaxImageSize = 220.0f;
 
         private readonly Image _image;
+        private readonly Label _error;
 
         private Texture2D _texture;
         private bool _failed;
@@ -20,6 +21,9 @@ namespace DTech.Parley.Editor.UI
             _image = new Image { scaleMode = ScaleMode.ScaleToFit };
             _image.AddToClassList("pl-image");
             Add(_image);
+            _error = ParleyStyles.Text("Image could not be loaded.", "pl-image__error");
+            ParleyStyles.SetVisible(_error, false);
+            Add(_error);
             Add(ParleyStyles.Text(block.Text, ParleyStyles.Muted));
             RegisterCallback<AttachToPanelEvent>(AttachedHandler);
             RegisterCallback<DetachFromPanelEvent>(DetachedHandler);
@@ -39,8 +43,7 @@ namespace DTech.Parley.Editor.UI
             catch (FormatException exception)
             {
                 Debug.LogWarning("[Parley] Could not decode an image attachment: " + exception.Message);
-                _failed = true;
-                ParleyStyles.SetVisible(_image, false);
+                ShowFailure();
                 return;
             }
 
@@ -49,8 +52,7 @@ namespace DTech.Parley.Editor.UI
             {
                 Object.DestroyImmediate(_texture);
                 _texture = null;
-                _failed = true;
-                ParleyStyles.SetVisible(_image, false);
+                ShowFailure();
                 return;
             }
 
@@ -60,6 +62,13 @@ namespace DTech.Parley.Editor.UI
             _image.style.height = height;
             _image.style.width = height * aspect;
             ParleyStyles.SetVisible(_image, true);
+        }
+
+        private void ShowFailure()
+        {
+            _failed = true;
+            ParleyStyles.SetVisible(_image, false);
+            ParleyStyles.SetVisible(_error, true);
         }
 
         private void AttachedHandler(AttachToPanelEvent evt)

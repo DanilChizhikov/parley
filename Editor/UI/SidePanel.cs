@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Text;
 using DTech.Parley.Editor.Sessions;
 using UnityEngine.UIElements;
 
@@ -7,17 +8,19 @@ namespace DTech.Parley.Editor.UI
 {
     internal sealed class SidePanel : VisualElement
     {
-        private static readonly SidePanelTab[] _order = { SidePanelTab.Todos, SidePanelTab.Plan, SidePanelTab.Tasks, SidePanelTab.Mcp, SidePanelTab.Skills };
+        private static readonly SidePanelTab[] _order = { SidePanelTab.Todos, SidePanelTab.Plan, SidePanelTab.Tasks, SidePanelTab.Mcp, SidePanelTab.Skills, SidePanelTab.Usage };
 
         private readonly Dictionary<SidePanelTab, Button> _tabs = new ();
         private readonly ScrollView _content;
         private readonly MarkdownView _plan = new ();
         private readonly McpPanel _mcp = new ();
         private readonly SkillsPanel _skills = new ();
+        private readonly UsagePanel _usage = new ();
 
         private ChatSession _session;
         private SidePanelTab _tab = SidePanelTab.Todos;
         private string _renderedPlan;
+        private string _renderedList;
 
         public SidePanel()
         {
@@ -28,6 +31,7 @@ namespace DTech.Parley.Editor.UI
             {
                 SidePanelTab captured = tab;
                 Button button = ParleyStyles.Button(tab == SidePanelTab.Mcp ? "MCP" : tab.ToString(), () => ShowTab(captured), "pl-side__tab");
+                button.tooltip = TabTooltip(tab);
                 _tabs[tab] = button;
                 header.Add(button);
             }
@@ -42,8 +46,10 @@ namespace DTech.Parley.Editor.UI
         {
             _session = session;
             _renderedPlan = null;
+            _renderedList = null;
             _mcp.Bind(session);
             _skills.Bind(session);
+            _usage.Bind(session);
             if (session != null && !string.IsNullOrEmpty(session.Record.LatestPlan) && session.Todos.Count == 0)
             {
                 _tab = SidePanelTab.Plan;
@@ -56,6 +62,7 @@ namespace DTech.Parley.Editor.UI
         {
             _tab = tab;
             _renderedPlan = null;
+            _renderedList = null;
             Refresh();
         }
 
@@ -78,6 +85,8 @@ namespace DTech.Parley.Editor.UI
             _tabs[SidePanelTab.Mcp].text = mcpCount > 0 ? "MCP " + mcpCount : "MCP";
             int skillCount = SkillsPanel.EnabledCount(_session);
             _tabs[SidePanelTab.Skills].text = skillCount > 0 ? "Skills " + skillCount : "Skills";
+            long usageTokens = UsagePanel.TotalTokens(_session);
+            _tabs[SidePanelTab.Usage].text = usageTokens > 0 ? "Usage " + StatusBar.FormatTokens(usageTokens) : "Usage";
             switch (_tab)
             {
                 case SidePanelTab.Plan:
@@ -104,6 +113,11 @@ namespace DTech.Parley.Editor.UI
                 {
                     RenderSkills();
                 } break;
+
+                case SidePanelTab.Usage:
+                {
+                    RenderUsage();
+                } break;
                 
                 default:
                     throw new ArgumentOutOfRangeException();
@@ -122,7 +136,14 @@ namespace DTech.Parley.Editor.UI
             _content.Clear();
             if (string.IsNullOrEmpty(plan))
             {
-                _content.Add(ParleyStyles.Text("No plan yet. Switch the mode to Plan to have the agent explore and propose one.", ParleyStyles.Muted));
+                _content.Add(ParleyStyles.Text("No plan yet. In Plan mode the agent explores the project and proposes a plan before changing anything.", ParleyStyles.Muted));
+                if (_session.Mode != PermissionMode.Plan)
+                {
+                    Button switchMode = ParleyStyles.Button("Switch to Plan mode", () => _session?.SetMode(PermissionMode.Plan), "pl-button--small");
+                    switchMode.AddToClassList("pl-side__action");
+                    _content.Add(switchMode);
+                }
+
                 return;
             }
 
@@ -152,8 +173,68 @@ namespace DTech.Parley.Editor.UI
             _skills.Refresh();
         }
 
+        private void RenderUsage()
+        {
+            if (!_content.Contains(_usage))
+            {
+                _content.Clear();
+                _content.Add(_usage);
+            }
+
+            _usage.Refresh();
+        }
+
+        private static string TabTooltip(SidePanelTab tab)
+        {
+            return tab switch
+            {
+                SidePanelTab.Todos => "The agent's checklist for the current work",
+                SidePanelTab.Plan => "The latest plan from Plan mode",
+                SidePanelTab.Tasks => "Background commands and subagents",
+                SidePanelTab.Mcp => "MCP servers available in this chat",
+                SidePanelTab.Usage => "Token usage of this chat, per API call",
+                _ => "Skills available in this chat",
+            };
+        }
+
+        private static string DescribeStatus(string status)
+        {
+            return status switch
+            {
+                "running" => "Running",
+                "pending" => "Waiting",
+                "completed" => "Done",
+                "failed" => "Failed",
+                "killed" or "stopped" => "Stopped",
+                null => string.Empty,
+                _ => status,
+            };
+        }
+
+        private bool IsRendered(string signature)
+        {
+            if (signature == _renderedList)
+            {
+                return true;
+            }
+
+            _renderedList = signature;
+            return false;
+        }
+
         private void RenderTodos()
         {
+            StringBuilder signature = new StringBuilder("todos");
+            foreach (TodoItem todo in _session.Todos)
+            {
+                signature.Append('|').Append(todo.Status).Append(':').Append(todo.Content).Append(':').Append(todo.ActiveForm);
+            }
+
+            if (IsRendered(signature.ToString()))
+            {
+                return;
+            }
+
             _content.Clear();
             if (_session.Todos.Count == 0)
             {
@@ -170,6 +251,17 @@ namespace DTech.Parley.Editor.UI
 
         private void RenderTasks()
         {
+            StringBuilder signature = new StringBuilder("tasks");
+            foreach (BackgroundTaskInfo task in _session.Tasks)
+            {
+                signature.Append('|').Append(task.TaskId).Append(':').Append(task.Status).Append(':').Append(task.LastToolName).Append(':').Append(task.Summary);
+            }
+
+            if (IsRendered(signature.ToString()))
+            {
+                return;
+            }
+
             _content.Clear();
             if (_session.Tasks.Count == 0)
             {
@@ -188,19 +280,33 @@ namespace DTech.Parley.Editor.UI
             VisualElement row = new VisualElement();
             row.AddToClassList("pl-task");
             bool running = task.Status == "running" || task.Status == "pending";
-            string icon = running ? "● " : task.Status == "completed" ? "✓ " : "✕ ";
-            row.Add(ParleyStyles.Text(icon + (task.Description ?? task.TaskId), "pl-task__title"));
-            string detail = task.TaskType + (string.IsNullOrEmpty(task.LastToolName) ? string.Empty : " · " + task.LastToolName) + " · " + task.Status;
+            bool completed = task.Status == "completed";
+            VisualElement title = new VisualElement();
+            title.AddToClassList("pl-task__header");
+            Label icon = ParleyStyles.Text(running ? "●" : completed ? "✓" : "✕", "pl-task__icon");
+            icon.AddToClassList(running ? "pl-task__icon--running" : completed ? "pl-task__icon--done" : "pl-task__icon--failed");
+            icon.tooltip = DescribeStatus(task.Status);
+            title.Add(icon);
+            Label name = ParleyStyles.Text(task.Description ?? task.TaskId, "pl-task__title");
+            name.selection.isSelectable = true;
+            title.Add(name);
+            row.Add(title);
+            string detail = task.TaskType + (string.IsNullOrEmpty(task.LastToolName) ? string.Empty : " · " + task.LastToolName) + " · " + DescribeStatus(task.Status);
             row.Add(ParleyStyles.Text(detail, ParleyStyles.Muted));
             if (!string.IsNullOrEmpty(task.Summary))
             {
-                row.Add(ParleyStyles.Text(task.Summary, "pl-task__summary"));
+                Label summary = ParleyStyles.Text(task.Summary, "pl-task__summary");
+                summary.selection.isSelectable = true;
+                row.Add(summary);
             }
 
             if (running)
             {
                 string id = task.TaskId;
-                row.Add(ParleyStyles.Button("Stop", () => _session?.StopTask(id), "pl-button--small"));
+                Button stop = ParleyStyles.Button("Stop", () => _session?.StopTask(id), "pl-button--small");
+                stop.tooltip = "Stop this task";
+                stop.AddToClassList("pl-side__action");
+                row.Add(stop);
             }
 
             return row;

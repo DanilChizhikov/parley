@@ -20,6 +20,7 @@ namespace DTech.Parley.Editor.Agents.Claude
 	{
 		private const int InitializeTimeoutMs = 60000;
 		private const int ControlTimeoutMs = 30000;
+		private const double RateLimitRefreshSeconds = 30.0;
 		private const int GracefulExitMs = 3000;
 		private const string AllowBypassFlag = "--allow-dangerously-skip-permissions";
 		private const string RestrictedFlag = "--restricted";
@@ -27,6 +28,8 @@ namespace DTech.Parley.Editor.Agents.Claude
 
 		private static readonly string[] Efforts = { "low", "medium", "high", "xhigh", "max" };
 		private static readonly string[] RestrictedTruthyValues = { "1", "true", "yes", "on" };
+
+		private static string _warnedOutdatedExecutable;
 
 		private readonly ParleyProfile _profile;
 		private readonly IAgentSink _sink;
@@ -68,6 +71,9 @@ namespace DTech.Parley.Editor.Agents.Claude
 		private bool _mcpReady;
 		private bool _disposed;
 		private bool _contextUsageUnavailable;
+		private bool _rateLimitsUnavailable;
+		private bool _rateLimitsLoading;
+		private DateTime _rateLimitsFetchedAt = DateTime.MinValue;
 		private int _requestCounter;
 
 		public ClaudeCodeBackend(
@@ -322,6 +328,11 @@ namespace DTech.Parley.Editor.Agents.Claude
 			_sink.SkillsChanged(_reportedSkills);
 		}
 
+		public void RefreshRateLimits()
+		{
+			_ = RefreshRateLimitsAsync(false);
+		}
+
 		private static string WriteRunFile(string name, JObject content)
 		{
 			string path = Path.Combine(ProjectPaths.RunFolder, name);
@@ -415,6 +426,22 @@ namespace DTech.Parley.Editor.Agents.Claude
 			}
 		}
 
+		private static async Task WarnIfOutdatedAsync(string executable, string path)
+		{
+			if (executable == _warnedOutdatedExecutable)
+			{
+				return;
+			}
+
+			Version version = await CliVersions.GetParsedVersionAsync(executable, path);
+			if (ClaudeCliLocator.IsOutdated(version))
+			{
+				_warnedOutdatedExecutable = executable;
+				Debug.LogWarning("[Parley] Claude Code CLI " + version + " at " + executable + " is older than " + ClaudeCliLocator.MinimumVersion +
+					". Run 'claude update' or remove this install.");
+			}
+		}
+
 		private static string LastLines(string text, int count)
 		{
 			string[] lines = text.Split('\n');
@@ -446,6 +473,8 @@ namespace DTech.Parley.Editor.Agents.Claude
 			};
 
 			string environmentPath = ShellEnvironment.Merge(Path.GetDirectoryName(executable), path);
+			await WarnIfOutdatedAsync(executable, environmentPath);
+			cancellationToken.ThrowIfCancellationRequested();
 			ApplyEnvironment(startInfo, auth, environmentPath);
 			_process = new ChildProcess(startInfo);
 			_process.OnStdoutLine += StdoutLineHandler;
@@ -483,7 +512,7 @@ namespace DTech.Parley.Editor.Agents.Claude
 			JObject status = await ReadMcpStatusAsync();
 			_passthroughMcpServers = ClaudeWire.PassthroughMcpServers(status);
 			_mcpReady = true;
-			if (_mcp.Servers.Count > 0)
+			if (_mcp.Servers.Count > 0 || _mcp.DisabledExternal.Count > 0)
 			{
 				await ApplyMcpServersAsync();
 			}
@@ -491,6 +520,8 @@ namespace DTech.Parley.Editor.Agents.Claude
 			{
 				_sink.McpStatusChanged(ClaudeWire.ParseMcpStatus(status, _mcp));
 			}
+
+			_ = RefreshRateLimitsAsync(true);
 		}
 
 		private List<string> BuildArguments(AuthEnvironment auth, bool restricted)
@@ -549,7 +580,11 @@ namespace DTech.Parley.Editor.Agents.Claude
 
 			if (_skills.Disabled.Count > 0)
 			{
-				denyRules.Add(ClaudeWire.SkillDenyRules(_skills.Disabled));
+				string skillRules = ClaudeWire.SkillDenyRules(_skills.Disabled);
+				if (skillRules.Length > 0)
+				{
+					denyRules.Add(skillRules);
+				}
 			}
 
 			if (denyRules.Count > 0)
@@ -595,8 +630,8 @@ namespace DTech.Parley.Editor.Agents.Claude
 			if (_unityTools.Tools.Count > 0)
 			{
 				builder.Append(" Unity editor tools are available from the MCP server 'unity' (")
-					.Append(string.Join(", ", ToolNames())).Append("). After changing C# scripts call ")
-					.Append(SdkMcpBridge.ToolPrefix).Append("refresh and fix the compiler errors it reports.");
+					.Append(string.Join(", ", ToolNames())).Append("). When all C# edits for the task are done, call ")
+					.Append(SdkMcpBridge.ToolPrefix).Append("refresh once (not after each file) and fix the compiler errors it reports.");
 			}
 
 			builder.Append(" Do not edit files under Library/ or Temp/, and never change GUIDs in .meta files by hand.");
@@ -817,6 +852,42 @@ namespace DTech.Parley.Editor.Agents.Claude
 			catch (Exception)
 			{
 				_contextUsageUnavailable = IsRunning;
+			}
+		}
+
+		private async Task RefreshRateLimitsAsync(bool force)
+		{
+			if (!IsRunning || _rateLimitsUnavailable || _rateLimitsLoading)
+			{
+				return;
+			}
+
+			if (!force && (DateTime.UtcNow - _rateLimitsFetchedAt).TotalSeconds < RateLimitRefreshSeconds)
+			{
+				return;
+			}
+
+			_rateLimitsLoading = true;
+			try
+			{
+				JObject usage = await SendControlAsync(new JObject { ["subtype"] = "get_usage", ["skip_behaviors"] = true }, ControlTimeoutMs);
+				_rateLimitsFetchedAt = DateTime.UtcNow;
+				RateLimits limits = ClaudeRateLimits.FromUsage(usage);
+				if (limits != null)
+				{
+					_sink.RateLimitsChanged(limits);
+				}
+			}
+			catch (TimeoutException)
+			{
+			}
+			catch (Exception)
+			{
+				_rateLimitsUnavailable = IsRunning;
+			}
+			finally
+			{
+				_rateLimitsLoading = false;
 			}
 		}
 

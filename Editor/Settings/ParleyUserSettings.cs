@@ -80,6 +80,10 @@ namespace DTech.Parley.Editor
 
 		public IReadOnlyList<AutoSkill> AutoSkills => _autoSkills;
 
+		public IReadOnlyList<ChatPreset> Presets => _presets;
+
+		public ChatPreset DefaultPreset => FindPreset(_defaultPresetId);
+
 		public string LastSessionId
 		{
 			get => _lastSessionId;
@@ -102,6 +106,8 @@ namespace DTech.Parley.Editor
 		[SerializeField] private List<McpServerDefinition> _mcpServers = new ();
 		[SerializeField] private List<AutoSkill> _autoSkills = new ();
 		[SerializeField] private List<string> _defaultLibrarySkills = new ();
+		[SerializeField] private List<ChatPreset> _presets = new ();
+		[SerializeField] private string _defaultPresetId;
 
 		private bool _saveQueued;
 
@@ -309,10 +315,103 @@ namespace DTech.Parley.Editor
 				changed = true;
 			}
 
+			foreach (ChatPreset preset in _presets)
+			{
+				changed |= RenameInPreset(preset, previousName, name);
+			}
+
 			if (changed)
 			{
 				MarkDirty();
 			}
+		}
+
+		public void RemoveLibrarySkill(string name)
+		{
+			bool changed = _defaultLibrarySkills.Remove(name);
+			AutoSkill auto = FindAutoSkill(name);
+			if (auto != null)
+			{
+				changed |= _autoSkills.Remove(auto);
+			}
+
+			foreach (ChatPreset preset in _presets)
+			{
+				changed |= preset.EnabledLibrarySkills.Remove(name);
+				changed |= preset.AutoSkills.RemoveAll(skill => skill.Name == name) > 0;
+			}
+
+			if (changed)
+			{
+				MarkDirty();
+			}
+		}
+
+		public ChatPreset FindPreset(string id)
+		{
+			if (string.IsNullOrEmpty(id))
+			{
+				return null;
+			}
+
+			foreach (ChatPreset preset in _presets)
+			{
+				if (preset.Id == id)
+				{
+					return preset;
+				}
+			}
+
+			return null;
+		}
+
+		public bool IsPresetNameTaken(string name, string exceptId)
+		{
+			foreach (ChatPreset preset in _presets)
+			{
+				if (preset.Id != exceptId && string.Equals(preset.Name, name?.Trim(), StringComparison.OrdinalIgnoreCase))
+				{
+					return true;
+				}
+			}
+
+			return false;
+		}
+
+		public void SavePreset(ChatPreset preset)
+		{
+			for (int i = 0; i < _presets.Count; i++)
+			{
+				if (_presets[i].Id == preset.Id)
+				{
+					_presets[i] = preset;
+					MarkDirty();
+					return;
+				}
+			}
+
+			_presets.Add(preset);
+			MarkDirty();
+		}
+
+		public void RemovePreset(ChatPreset preset)
+		{
+			if (!_presets.Remove(preset))
+			{
+				return;
+			}
+
+			if (_defaultPresetId == preset.Id)
+			{
+				_defaultPresetId = null;
+			}
+
+			MarkDirty();
+		}
+
+		public void SetDefaultPreset(ChatPreset preset)
+		{
+			Set(ref _defaultPresetId, preset?.Id);
 		}
 
 		public IEnumerable<AllowRule> RulesFor(string projectRoot)
@@ -397,6 +496,41 @@ namespace DTech.Parley.Editor
 				_saveQueued = false;
 				Save(true);
 			};
+		}
+
+		private static bool RenameInPreset(ChatPreset preset, string previousName, string name)
+		{
+			bool changed = false;
+			int index = preset.EnabledLibrarySkills.IndexOf(previousName);
+			if (index >= 0)
+			{
+				if (preset.EnabledLibrarySkills.Contains(name))
+				{
+					preset.EnabledLibrarySkills.RemoveAt(index);
+				}
+				else
+				{
+					preset.EnabledLibrarySkills[index] = name;
+				}
+
+				changed = true;
+			}
+
+			if (preset.AutoSkills.Exists(skill => skill.Name == name))
+			{
+				return preset.AutoSkills.RemoveAll(skill => skill.Name == previousName) > 0 || changed;
+			}
+
+			foreach (AutoSkill skill in preset.AutoSkills)
+			{
+				if (skill.Name == previousName)
+				{
+					skill.Name = name;
+					changed = true;
+				}
+			}
+
+			return changed;
 		}
 
 		private void EnsureDefaults()

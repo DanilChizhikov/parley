@@ -14,6 +14,9 @@ using DTech.Parley.Editor.Skills;
 using DTech.Parley.Editor.Tools;
 using Newtonsoft.Json.Linq;
 using UnityEditor;
+#if PARLEY_DEBUGG
+using DTech.Parley.Editor.Agents.Preview;
+#endif
 
 namespace DTech.Parley.Editor.Sessions
 {
@@ -41,12 +44,15 @@ namespace DTech.Parley.Editor.Sessions
 		private readonly List<SkillInfo> _skills = new ();
 		private readonly List<SlashCommandInfo> _commands = new ();
 		private readonly CancellationTokenSource _lifetime = new ();
+		private readonly UsageTracker _usage = new (ProjectPaths.Root);
 
 		public ParleyProfile Profile { get; }
 
 		public SessionRecord Record { get; }
 
 		public IAgentBackend Backend { get; }
+
+		public bool IsPreview { get; }
 
 		public BackendCapabilities Capabilities { get; private set; } = new ();
 
@@ -67,6 +73,8 @@ namespace DTech.Parley.Editor.Sessions
 		public long ContextUsed { get; private set; }
 
 		public long ContextMax { get; private set; }
+
+		public RateLimits RateLimits { get; private set; }
 
 		public string AuthMessage { get; private set; }
 
@@ -98,9 +106,10 @@ namespace DTech.Parley.Editor.Sessions
 		private string _appliedSkillFingerprint;
 		private SkillConfiguration _skillConfiguration = new ();
 
-		public ChatSession(ParleyProfile profile, SessionRecord record)
+		public ChatSession(ParleyProfile profile, SessionRecord record, bool preview = false)
 		{
 			Profile = profile;
+			IsPreview = preview;
 			bool isNew = record == null;
 			Record = record ?? new SessionRecord { Mode = ParleyUserSettings.instance.DefaultMode };
 			if (Record.Kind != profile.Kind)
@@ -111,22 +120,40 @@ namespace DTech.Parley.Editor.Sessions
 
 			Record.ProfileId = profile.Id;
 			Record.Kind = profile.Kind;
+			Record.Usage ??= new UsageLog();
+			_usage.Bind(Record.Usage);
 			Model = profile.Model;
 			Effort = profile.Effort;
 			ExpireUnresolvedRequests();
-			Backend = profile.Kind switch
+			#if PARLEY_DEBUGG
+			Backend = preview ? new PreviewBackend(profile, this, Record.Mode) : CreateBackend(profile);
+			#else
+			Backend = CreateBackend(profile);
+			#endif
+			
+
+			Record.Mode = Backend.Mode;
+			ChatPreset preset = isNew ? ParleyUserSettings.instance.DefaultPreset : null;
+			if (preset != null)
+			{
+				ChatPresets.ApplyTo(Record, preset);
+			}
+
+			InitializeMcp();
+			ApplyMcp();
+			InitializeSkills(isNew && preset == null);
+			ApplySkills();
+		}
+
+		private IAgentBackend CreateBackend(ParleyProfile profile)
+		{
+			return profile.Kind switch
 			{
 				ProfileKind.ClaudeCode => new ClaudeCodeBackend(profile, this, ToolCatalog.CreateForMcp(ParleyProjectSettings.instance), Record.BackendSessionId, Record.Mode),
 				ProfileKind.Codex => new CodexBackend(profile, this, ToolCatalog.CreateForMcp(ParleyProjectSettings.instance), Record.BackendSessionId, Record.Mode),
 				ProfileKind.Local => new LocalAgentBackend(profile, this, ToolCatalog.CreateForLocalAgent(ParleyProjectSettings.instance), Record.BackendSessionId, Record.LocalHistory, Record.Mode),
 				_ => throw new ArgumentOutOfRangeException(),
 			};
-
-			Record.Mode = Backend.Mode;
-			InitializeMcp();
-			ApplyMcp();
-			InitializeSkills(isNew);
-			ApplySkills();
 		}
 
 		public void Dispose()
@@ -187,6 +214,7 @@ namespace DTech.Parley.Editor.Sessions
 			}
 
 			AddUserEntry(turn);
+			_usage.BeginTurn(turn.Text, DateTime.UtcNow);
 			if (Record.Entries.Count <= 2 || Record.Title == SessionRecord.DefaultTitle)
 			{
 				Record.Title = SessionStore.MakeTitle(turn.Text);
@@ -262,42 +290,30 @@ namespace DTech.Parley.Editor.Sessions
 
 		public void SetMcpServerEnabled(string definitionId, bool enabled)
 		{
-			if (enabled == IsMcpServerEnabled(definitionId))
-			{
-				return;
-			}
+			SetMcpServersEnabled(new[] { definitionId }, enabled);
+		}
 
-			if (enabled)
+		public void SetMcpServersEnabled(IEnumerable<string> definitionIds, bool enabled)
+		{
+			if (SetMembership(Record.EnabledMcpServerIds, definitionIds, enabled))
 			{
-				Record.EnabledMcpServerIds.Add(definitionId);
+				ApplyMcp();
+				Save();
 			}
-			else
-			{
-				Record.EnabledMcpServerIds.Remove(definitionId);
-			}
-
-			ApplyMcp();
-			Save();
 		}
 
 		public void SetExternalMcpServerEnabled(string name, bool enabled)
 		{
-			if (enabled == IsExternalMcpServerEnabled(name))
-			{
-				return;
-			}
+			SetExternalMcpServersEnabled(new[] { name }, enabled);
+		}
 
-			if (enabled)
+		public void SetExternalMcpServersEnabled(IEnumerable<string> names, bool enabled)
+		{
+			if (SetMembership(Record.DisabledExternalMcpServers, names, !enabled))
 			{
-				Record.DisabledExternalMcpServers.Remove(name);
+				ApplyMcp();
+				Save();
 			}
-			else
-			{
-				Record.DisabledExternalMcpServers.Add(name);
-			}
-
-			ApplyMcp();
-			Save();
 		}
 
 		public void ReapplyMcp()
@@ -340,42 +356,88 @@ namespace DTech.Parley.Editor.Sessions
 
 		public void SetLibrarySkillEnabled(string name, bool enabled)
 		{
-			if (enabled == IsLibrarySkillEnabled(name))
-			{
-				return;
-			}
+			SetLibrarySkillsEnabled(new[] { name }, enabled);
+		}
 
-			if (enabled)
+		public void SetLibrarySkillsEnabled(IEnumerable<string> names, bool enabled)
+		{
+			if (SetMembership(Record.EnabledLibrarySkills, names, enabled))
 			{
-				Record.EnabledLibrarySkills.Add(name);
+				ApplySkills();
+				Save();
 			}
-			else
-			{
-				Record.EnabledLibrarySkills.Remove(name);
-			}
-
-			ApplySkills();
-			Save();
 		}
 
 		public void SetExternalSkillEnabled(string name, bool enabled)
 		{
-			if (enabled == IsExternalSkillEnabled(name))
+			SetExternalSkillsEnabled(new[] { name }, enabled);
+		}
+
+		public void SetExternalSkillsEnabled(IEnumerable<string> names, bool enabled)
+		{
+			if (SetMembership(Record.DisabledExternalSkills, names, !enabled))
+			{
+				ApplySkills();
+				Save();
+			}
+		}
+
+		public void ApplyPreset(ChatPreset preset)
+		{
+			ChatPresets.ApplyTo(Record, preset);
+			ApplyMcp();
+			ApplySkills();
+			Save();
+		}
+
+		public bool IsAutoSkillPending(string name)
+		{
+			return Record.PendingAutoSkills != null && Record.PendingAutoSkills.Exists(skill => skill.Name == name);
+		}
+
+		public void SetAutoSkill(string name, string arguments, bool queue)
+		{
+			if (string.IsNullOrWhiteSpace(name))
 			{
 				return;
 			}
 
-			if (enabled)
+			name = name.Trim().TrimStart('/');
+			arguments = (arguments ?? string.Empty).Trim();
+			Record.PendingAutoSkills ??= new List<SkillInvocation>();
+			SkillInvocation configured = Record.AutoSkills.Find(skill => skill.Name == name);
+			if (configured == null)
 			{
-				Record.DisabledExternalSkills.Remove(name);
+				Record.AutoSkills.Add(new SkillInvocation { Name = name, Arguments = arguments });
 			}
 			else
 			{
-				Record.DisabledExternalSkills.Add(name);
+				configured.Arguments = arguments;
 			}
 
-			ApplySkills();
+			SkillInvocation pending = Record.PendingAutoSkills.Find(skill => skill.Name == name);
+			if (pending == null && queue)
+			{
+				Record.PendingAutoSkills.Add(new SkillInvocation { Name = name, Arguments = arguments });
+			}
+			else if (pending != null)
+			{
+				pending.Arguments = arguments;
+			}
+
 			Save();
+			RaiseState();
+		}
+
+		public void RemoveAutoSkill(string name)
+		{
+			bool removed = Record.AutoSkills.RemoveAll(skill => skill.Name == name) > 0;
+			removed |= Record.PendingAutoSkills != null && Record.PendingAutoSkills.RemoveAll(skill => skill.Name == name) > 0;
+			if (removed)
+			{
+				Save();
+				RaiseState();
+			}
 		}
 
 		public void RenameLibrarySkill(string previousName, string name)
@@ -386,6 +448,8 @@ namespace DTech.Parley.Editor.Sessions
 				Record.EnabledLibrarySkills[index] = name;
 			}
 
+			RenameInvocations(Record.AutoSkills, previousName, name);
+			RenameInvocations(Record.PendingAutoSkills, previousName, name);
 			ApplySkills();
 			Save();
 		}
@@ -398,6 +462,11 @@ namespace DTech.Parley.Editor.Sessions
 		public void RefreshSkills()
 		{
 			Backend.RefreshSkills();
+		}
+
+		public void RefreshRateLimits()
+		{
+			Backend.RefreshRateLimits();
 		}
 
 		public void SkipPendingAutoSkill(string name)
@@ -446,6 +515,11 @@ namespace DTech.Parley.Editor.Sessions
 			}
 
 			FlushDeltas();
+			if (IsPreview)
+			{
+				return;
+			}
+
 			Record.BackendSessionId = Backend.SessionId;
 			if (Backend is LocalAgentBackend local)
 			{
@@ -462,6 +536,7 @@ namespace DTech.Parley.Editor.Sessions
 		private void InitializeMcp()
 		{
 			Record.DisabledExternalMcpServers ??= new List<string>();
+			Record.DisabledExternalMcpServers.RemoveAll(McpServerResolver.IsReserved);
 			if (Record.EnabledMcpServerIds != null)
 			{
 				return;
@@ -505,7 +580,7 @@ namespace DTech.Parley.Editor.Sessions
 			{
 				foreach (string name in Record.DisabledExternalMcpServers)
 				{
-					if (!configuration.HasServer(name))
+					if (!configuration.HasServer(name) && !McpServerResolver.IsReserved(name))
 					{
 						configuration.DisabledExternal.Add(name);
 					}
@@ -515,7 +590,49 @@ namespace DTech.Parley.Editor.Sessions
 			return configuration;
 		}
 
-		private void InitializeSkills(bool isNew)
+		private static void RenameInvocations(List<SkillInvocation> skills, string previousName, string name)
+		{
+			if (skills == null || previousName == name)
+			{
+				return;
+			}
+
+			bool exists = skills.Exists(skill => skill.Name == name);
+			if (exists)
+			{
+				skills.RemoveAll(skill => skill.Name == previousName);
+				return;
+			}
+
+			foreach (SkillInvocation skill in skills)
+			{
+				if (skill.Name == previousName)
+				{
+					skill.Name = name;
+				}
+			}
+		}
+
+		private static bool SetMembership(List<string> list, IEnumerable<string> names, bool member)
+		{
+			bool changed = false;
+			foreach (string name in names)
+			{
+				if (member && !list.Contains(name))
+				{
+					list.Add(name);
+					changed = true;
+				}
+				else if (!member)
+				{
+					changed |= list.Remove(name);
+				}
+			}
+
+			return changed;
+		}
+
+		private void InitializeSkills(bool useDefaultAutoSkills)
 		{
 			ParleyUserSettings settings = ParleyUserSettings.instance;
 			Record.DisabledExternalSkills ??= new List<string>();
@@ -531,17 +648,24 @@ namespace DTech.Parley.Editor.Sessions
 				}
 			}
 
-			if (!isNew)
+			if (useDefaultAutoSkills)
 			{
-				return;
+				Record.PendingAutoSkills = new List<SkillInvocation>();
+				foreach (AutoSkill skill in settings.AutoSkills)
+				{
+					if (!string.IsNullOrWhiteSpace(skill.Name))
+					{
+						Record.PendingAutoSkills.Add(new SkillInvocation { Name = skill.Name.Trim(), Arguments = skill.Arguments ?? string.Empty });
+					}
+				}
 			}
 
-			Record.PendingAutoSkills = new List<SkillInvocation>();
-			foreach (AutoSkill skill in settings.AutoSkills)
+			if (Record.AutoSkills == null)
 			{
-				if (!string.IsNullOrWhiteSpace(skill.Name))
+				Record.AutoSkills = new List<SkillInvocation>();
+				foreach (SkillInvocation skill in Record.PendingAutoSkills ?? new List<SkillInvocation>())
 				{
-					Record.PendingAutoSkills.Add(new SkillInvocation { Name = skill.Name.Trim(), Arguments = skill.Arguments ?? string.Empty });
+					Record.AutoSkills.Add(new SkillInvocation { Name = skill.Name, Arguments = skill.Arguments });
 				}
 			}
 		}
@@ -607,9 +731,17 @@ namespace DTech.Parley.Editor.Sessions
 
 		private void RestoreAutoSkills(List<SkillInvocation> skills)
 		{
-			if (skills != null && Record.PendingAutoSkills != null && Record.PendingAutoSkills.Count == 0)
+			if (skills == null || Record.PendingAutoSkills == null)
 			{
-				Record.PendingAutoSkills.AddRange(skills);
+				return;
+			}
+
+			for (int i = skills.Count - 1; i >= 0; i--)
+			{
+				if (!IsAutoSkillPending(skills[i].Name))
+				{
+					Record.PendingAutoSkills.Insert(0, skills[i]);
+				}
 			}
 		}
 
@@ -677,7 +809,7 @@ namespace DTech.Parley.Editor.Sessions
 				{
 					if (block.Kind == BlockKind.Request && string.IsNullOrEmpty(block.Resolution))
 					{
-						block.Resolution = "Expired";
+						block.Resolution = "No longer pending (the agent restarted)";
 					}
 
 					if (block.Kind == BlockKind.ToolUse && !block.IsFinished)
@@ -860,7 +992,7 @@ namespace DTech.Parley.Editor.Sessions
 
 		private void RefreshAssetsIfIdle()
 		{
-			if (!Backend.IsBusy)
+			if (!Backend.IsBusy && !IsPreview)
 			{
 				AssetDatabase.Refresh();
 			}
@@ -977,11 +1109,13 @@ namespace DTech.Parley.Editor.Sessions
 			}
 
 			block.IsFinished = request.Kind != BlockKind.ToolUse;
+			_usage.BlockFinalized(request);
 			OnBlockChanged?.Invoke(block);
 		}
 
 		void IAgentSink.ToolResult(ToolResultRequest request)
 		{
+			_usage.ToolResult(request);
 			if (string.IsNullOrEmpty(request.ToolUseId) || !_blocksByToolId.TryGetValue(request.ToolUseId, out TranscriptBlock block))
 			{
 				return;
@@ -1075,6 +1209,25 @@ namespace DTech.Parley.Editor.Sessions
 			RaiseState();
 		}
 
+		void IAgentSink.RateLimitsChanged(RateLimits limits)
+		{
+			if (limits == null)
+			{
+				return;
+			}
+
+			RateLimits = RateLimits == null ? limits : RateLimits.MergedWith(limits);
+			RaiseState();
+		}
+
+		void IAgentSink.UsageReported(UsageReport report)
+		{
+			if (_usage.Report(report, Model, DateTime.UtcNow))
+			{
+				RaiseState();
+			}
+		}
+
 		void IAgentSink.McpStatusChanged(IReadOnlyList<McpServerStatus> servers)
 		{
 			_mcpStatuses.Clear();
@@ -1083,7 +1236,7 @@ namespace DTech.Parley.Editor.Sessions
 			{
 				foreach (string name in Record.DisabledExternalMcpServers)
 				{
-					if (FindMcpStatus(name, true) == null)
+					if (FindMcpStatus(name, true) == null && !McpServerResolver.IsReserved(name))
 					{
 						_mcpStatuses.Add(new McpServerStatus { Name = name, State = McpConnectionState.Disabled, IsExternal = true });
 					}
@@ -1099,7 +1252,7 @@ namespace DTech.Parley.Editor.Sessions
 			_skills.AddRange(skills);
 			foreach (string name in Record.DisabledExternalSkills)
 			{
-				if (!ContainsSkill(name))
+				if (!ContainsSkill(name) && name.IndexOf(':') < 0)
 				{
 					_skills.Add(new SkillInfo { Name = name });
 				}
@@ -1116,6 +1269,7 @@ namespace DTech.Parley.Editor.Sessions
 		void IAgentSink.TurnCompleted(TurnResult result)
 		{
 			LastTurn = result;
+			_usage.CompleteTurn(result);
 			if (result.CostUsd.HasValue)
 			{
 				Record.CostUsd = result.CostUsd.Value;

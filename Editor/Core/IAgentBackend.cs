@@ -24,5 +24,6 @@ namespace DTech.Parley.Editor
 		void RefreshMcpStatus();
 		void SetSkillConfiguration(SkillConfiguration configuration);
 		void RefreshSkills();
+		void RefreshRateLimits();
 	}
 }

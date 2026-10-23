@@ -35,7 +35,7 @@ namespace DTech.Parley.Editor.UI
             scroll.Add(ParleyStyles.Text("Parley", "pl-prefs__title"));
             scroll.Add(BuildGeneral());
             scroll.Add(BuildProject());
-            VisualElement profiles = Section("Profiles");
+            VisualElement profiles = Section("Profiles", "Secrets are stored in " + SecretStores.Default.Description + ", never in project files.");
             profiles.Add(new ProfileListSection());
             scroll.Add(profiles);
         }
@@ -46,55 +46,87 @@ namespace DTech.Parley.Editor.UI
             VisualElement section = Section("General");
             section.Add(new CliPathField("Claude Code CLI path", settings.CliPathOverride, value => settings.CliPathOverride = value, DetectClaudeAsync));
             section.Add(new CliPathField("Codex CLI path", settings.CodexCliPathOverride, value => settings.CodexCliPathOverride = value, DetectCodexAsync));
-            EnumField mode = new EnumField("Default permission mode", settings.DefaultMode);
-            mode.RegisterValueChangedCallback(evt => settings.DefaultMode = (PermissionMode)evt.newValue);
+            EnumField mode = new EnumField("Default permission mode", settings.DefaultMode)
+            {
+                tooltip = "Mode new chats start in. You can still switch it from the Parley toolbar.",
+            };
+            mode.RegisterValueChangedCallback(evt =>
+            {
+                PermissionMode selected = (PermissionMode)evt.newValue;
+                if (selected == PermissionMode.BypassPermissions && !ParleyWindow.ConfirmBypass())
+                {
+                    mode.SetValueWithoutNotify(evt.previousValue);
+                    return;
+                }
+
+                settings.DefaultMode = selected;
+            });
             section.Add(mode);
             Toggle reload = BoolField("Defer script reload while the agent works", settings.LockReloadDuringTurn, value => settings.LockReloadDuringTurn = value);
             reload.tooltip = "Keeps Unity from reloading assemblies mid-turn, which would stop the agent. Compilation still runs; the reload happens when the turn ends.";
             section.Add(reload);
-            section.Add(BoolField("Show thinking", settings.ShowThinking, value => settings.ShowThinking = value));
-            section.Add(BoolField("Open sign-in links automatically", settings.OpenLoginLinks, value => settings.OpenLoginLinks = value));
-            section.Add(ParleyStyles.Text("Secrets are stored in " + SecretStores.Default.Description + ", never in project files.", ParleyStyles.Muted));
+            Toggle thinking = BoolField("Show thinking", settings.ShowThinking, value => settings.ShowThinking = value);
+            thinking.tooltip = "Show the model's reasoning blocks in the chat.";
+            section.Add(thinking);
+            Toggle links = BoolField("Open sign-in links automatically", settings.OpenLoginLinks, value => settings.OpenLoginLinks = value);
+            links.tooltip = "Open the browser as soon as a sign-in command prints a link.";
+            section.Add(links);
             return section;
         }
 
         private static VisualElement BuildProject()
         {
             ParleyProjectSettings project = ParleyProjectSettings.instance;
-            VisualElement section = Section("This project (ProjectSettings/ParleySettings.asset)");
+            VisualElement section = Section("This project", "Shared with your team through ProjectSettings/ParleySettings.asset.");
             section.Add(BuildTrustRow(project));
-            TextField prompt = new TextField("Extra instructions") { value = project.ConfiguredAppendSystemPrompt ?? string.Empty, multiline = true, isDelayed = true };
+            TextField prompt = new TextField("Extra instructions")
+            {
+                value = project.ConfiguredAppendSystemPrompt ?? string.Empty,
+                multiline = true,
+                isDelayed = true,
+                tooltip = "Appended to the agent's system prompt in every chat for this project.",
+            };
             prompt.AddToClassList("pl-prefs__multiline");
             prompt.RegisterValueChangedCallback(evt => project.ConfiguredAppendSystemPrompt = evt.newValue);
             section.Add(prompt);
             TextField directories = ListField("Extra directories", project.ConfiguredAdditionalDirectories, project.SetAdditionalDirectories);
             directories.textEdition.placeholder = "Comma-separated folders the agent may access";
             section.Add(directories);
-            section.Add(BoolField("Include project instruction files (CLAUDE.md, AGENTS.md, CODEX.md, …) for local models", project.IncludeProjectInstructions,
-                value => project.IncludeProjectInstructions = value));
+            Toggle instructions = BoolField("Project instruction files", project.IncludeProjectInstructions, value => project.IncludeProjectInstructions = value);
+            instructions.tooltip = "Give local models the project's instruction files (CLAUDE.md, AGENTS.md, CODEX.md, …). Claude Code and Codex read them on their own.";
+            section.Add(instructions);
             TextField instructionFiles = ListField("Extra instruction files", project.ConfiguredInstructionFiles, project.SetInstructionFiles);
             instructionFiles.textEdition.placeholder = "Comma-separated files added to the local agent's instructions";
             section.Add(instructionFiles);
             Toggle unityTools = BoolField("Unity editor tools", project.UnityToolsEnabled, value => project.UnityToolsEnabled = value);
             unityTools.tooltip = "Claude Code sees them as " + SdkMcpBridge.ToolPrefix + "*, Codex and local models as " + ToolCatalog.UnityLocalPrefix + "*.";
             section.Add(unityTools);
+            VisualElement children = new VisualElement();
+            children.AddToClassList("pl-prefs__children");
             foreach (IParleyTool tool in ToolCatalog.CreateUnityTools())
             {
                 string name = tool.Name;
-                Toggle toggle = BoolField("    " + name, !Contains(project.DisabledUnityTools, name), value => project.SetUnityToolEnabled(name, value));
+                Toggle toggle = BoolField(name, !Contains(project.DisabledUnityTools, name), value => project.SetUnityToolEnabled(name, value));
                 toggle.tooltip = tool.Description;
-                section.Add(toggle);
+                children.Add(toggle);
             }
 
+            children.SetEnabled(project.UnityToolsEnabled);
+            unityTools.RegisterValueChangedCallback(evt => children.SetEnabled(evt.newValue));
+            section.Add(children);
             return section;
         }
 
         private static VisualElement BuildTrustRow(ParleyProjectSettings project)
         {
             VisualElement row = new VisualElement();
-            row.AddToClassList("pl-request__buttons");
-            row.Add(ParleyStyles.Text("Not trusted: these values were changed outside Parley and are ignored until you trust them.", ParleyStyles.Muted));
-            row.Add(ParleyStyles.Button("Trust", project.Trust, "pl-button--small"));
+            row.AddToClassList("pl-banner");
+            row.AddToClassList("pl-banner--warning");
+            row.Add(ParleyStyles.Text("Not trusted: these values were changed outside Parley (for example by a pull) and are ignored until you review and trust them.",
+                "pl-banner__text"));
+            Button trust = ParleyStyles.Button("Trust", project.Trust, "pl-button--small");
+            trust.tooltip = "Use the values below in this project's chats";
+            row.Add(trust);
             ParleyStyles.SetVisible(row, !project.IsTrusted);
             row.schedule.Execute(() => ParleyStyles.SetVisible(row, !project.IsTrusted)).Every(TrustPollMs);
             return row;
@@ -109,7 +141,10 @@ namespace DTech.Parley.Editor.UI
             }
 
             string version = await ClaudeCliLocator.GetVersionAsync(path, await ShellEnvironment.GetLoginPathAsync());
-            return DescribeExecutable(path, version);
+            string description = DescribeExecutable(path, version);
+            return ClaudeCliLocator.IsOutdated(CliVersions.ParseVersion(version))
+                ? description + " · outdated (needs " + ClaudeCliLocator.MinimumVersion + "+), run 'claude update' or remove this install"
+                : description;
         }
 
         private static async Task<string> DetectCodexAsync()
@@ -129,11 +164,16 @@ namespace DTech.Parley.Editor.UI
             return path + (string.IsNullOrEmpty(version) ? string.Empty : " · " + version);
         }
 
-        private static VisualElement Section(string title)
+        private static VisualElement Section(string title, string subtitle = null)
         {
             VisualElement section = new VisualElement();
             section.AddToClassList("pl-prefs__section");
             section.Add(ParleyStyles.Text(title, "pl-prefs__section-title"));
+            if (subtitle != null)
+            {
+                section.Add(ParleyStyles.Text(subtitle, ParleyStyles.Muted));
+            }
+
             return section;
         }
 

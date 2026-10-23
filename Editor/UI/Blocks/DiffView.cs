@@ -13,7 +13,7 @@ namespace DTech.Parley.Editor.UI
             AddToClassList("pl-diff");
             List<DiffLine> lines = LineDiff.Compute(LineDiff.SplitLines(oldText), LineDiff.SplitLines(newText));
             Add(BuildHeader(lines, title));
-            ScrollView scroll = new ScrollView(ScrollViewMode.Horizontal);
+            ScrollView scroll = new ScrollView(ScrollViewMode.VerticalAndHorizontal);
             scroll.AddToClassList("pl-diff__scroll");
             VisualElement body = new VisualElement();
             body.AddToClassList("pl-diff__body");
@@ -42,12 +42,24 @@ namespace DTech.Parley.Editor.UI
             header.AddToClassList("pl-diff__header");
             if (!string.IsNullOrEmpty(title))
             {
-                header.Add(ParleyStyles.Text(title, "pl-diff__title"));
+                header.Add(FileLink(title, "pl-diff__title"));
+            }
+            else
+            {
+                header.Add(ParleyStyles.Spacer());
             }
 
             header.Add(ParleyStyles.Text("+" + added, "pl-diff__added"));
             header.Add(ParleyStyles.Text("-" + removed, "pl-diff__removed"));
             return header;
+        }
+
+        public static Label FileLink(string path, string className)
+        {
+            string link = "<link=\"" + LinkHandler.FileScheme + path + "\"><color=" + ParleyStyles.LinkColor + ">" + InlineMarkdown.Escape(path) + "</color></link>";
+            Label label = ParleyStyles.RichLabel(link, className);
+            label.tooltip = "Open " + path;
+            return label;
         }
 
         private static void AddRows(VisualElement body, List<DiffHunk> hunks)
@@ -109,7 +121,6 @@ namespace DTech.Parley.Editor.UI
         {
             Label label = new Label(text) { enableRichText = false };
             label.selection.isSelectable = true;
-            label.style.whiteSpace = WhiteSpace.NoWrap;
             label.AddToClassList("pl-diff__row");
             label.AddToClassList(className);
             ParleyStyles.UseMonospace(label);

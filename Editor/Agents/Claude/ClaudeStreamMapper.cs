@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 using Newtonsoft.Json.Linq;
@@ -12,6 +14,7 @@ namespace DTech.Parley.Editor.Agents.Claude
 		private readonly IAgentSink _sink;
 		private readonly Dictionary<string, string> _currentMessage = new ();
 		private readonly Dictionary<string, int> _finalBlocks = new ();
+		private readonly Dictionary<string, string> _currentModel = new ();
 
 		public string SessionId { get; private set; }
 
@@ -40,6 +43,7 @@ namespace DTech.Parley.Editor.Agents.Claude
 			ConfirmedSessionId = null;
 			_currentMessage.Clear();
 			_finalBlocks.Clear();
+			_currentModel.Clear();
 			_assistantTextThisTurn = false;
 		}
 
@@ -152,7 +156,15 @@ namespace DTech.Parley.Editor.Agents.Claude
 			switch ((string)streamEvent["type"])
 			{
 				case "message_start":
-					_currentMessage[parent] = (string)streamEvent["message"]?["id"] ?? string.Empty;
+				{
+					JObject started = streamEvent["message"] as JObject;
+					_currentMessage[parent] = (string)started?["id"] ?? string.Empty;
+					_currentModel[parent] = (string)started?["model"];
+					ReportUsage(CurrentMessage(parent), started?["usage"] as JObject, parent);
+					break;
+				}
+				case "message_delta":
+					ReportUsage(CurrentMessage(parent), streamEvent["usage"] as JObject, parent);
 					break;
 				case "content_block_start":
 				{
@@ -206,6 +218,12 @@ namespace DTech.Parley.Editor.Agents.Claude
 			JObject body = message["message"] as JObject;
 			string parent = (string)message["parent_tool_use_id"] ?? string.Empty;
 			string messageId = (string)body?["id"] ?? string.Empty;
+			if (body?["model"] is JValue model)
+			{
+				_currentModel[parent] = (string)model;
+			}
+
+			ReportUsage(messageId, body?["usage"] as JObject, parent);
 			if (body?["content"] is JArray content)
 			{
 				foreach (JToken token in content)
@@ -357,14 +375,21 @@ namespace DTech.Parley.Editor.Agents.Claude
 		private void HandleRateLimit(JObject message)
 		{
 			JObject info = message["rate_limit_info"] as JObject;
+			RateLimits limits = ClaudeRateLimits.FromRateLimitInfo(info);
+			if (limits != null)
+			{
+				_sink.RateLimitsChanged(limits);
+			}
+
 			string status = (string)info?["status"];
 			if (string.IsNullOrEmpty(status) || status == "allowed")
 			{
 				return;
 			}
 
-			string resets = (string)info["resetsAt"];
-			_sink.Notice(NoticeLevel.Warning, "Rate limit: " + status + (string.IsNullOrEmpty(resets) ? string.Empty : " (resets at " + resets + ")"));
+			DateTimeOffset? resets = RateLimitTimes.Parse(info["resetsAt"]);
+			string resetsText = resets.HasValue ? " (resets at " + resets.Value.ToLocalTime().ToString("g", CultureInfo.InvariantCulture) + ")" : string.Empty;
+			_sink.Notice(NoticeLevel.Warning, "Rate limit: " + status + resetsText);
 		}
 
 		private void HandleAuthStatus(JObject message)
@@ -411,6 +436,25 @@ namespace DTech.Parley.Editor.Agents.Claude
 				Summary = (string)message["summary"],
 				ToolUseId = (string)message["tool_use_id"],
 			};
+		}
+
+		private void ReportUsage(string callId, JObject usage, string parent)
+		{
+			if (usage == null || string.IsNullOrEmpty(callId))
+			{
+				return;
+			}
+
+			_currentModel.TryGetValue(parent, out string model);
+			_sink.UsageReported(new UsageReport(
+				callId,
+				NullIfEmpty(parent),
+				model,
+				(long?)usage["input_tokens"] ?? 0,
+				(long?)usage["cache_creation_input_tokens"] ?? 0,
+				(long?)usage["cache_read_input_tokens"] ?? 0,
+				(long?)usage["output_tokens"] ?? 0,
+				(long?)(usage["output_tokens_details"] as JObject)?["thinking_tokens"] ?? 0));
 		}
 
 		private string CurrentMessage(string parent)

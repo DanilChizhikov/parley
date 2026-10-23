@@ -8,7 +8,7 @@ namespace DTech.Parley.Editor.Panels
 {
 	internal static class PanelActions
 	{
-		private const string DialogTitle = "Parley Panel";
+		private const string DialogTitle = "Parley";
 
 		public static bool Run(PanelTargetResolver targets, PanelItem item, Object scope)
 		{
@@ -38,7 +38,8 @@ namespace DTech.Parley.Editor.Panels
 				: targets.Resolve(item.Target, item.Component);
 			if (target == null)
 			{
-				EditorUtility.DisplayDialog(DialogTitle, "Target '" + item.Target + "' not found.", "OK");
+				string name = string.IsNullOrEmpty(item.Target) ? item.Component : item.Target;
+				EditorUtility.DisplayDialog(DialogTitle, "Could not find '" + name + "'. Open the scene that contains it, then try again.", "OK");
 				return false;
 			}
 

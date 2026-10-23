@@ -44,6 +44,12 @@ namespace DTech.Parley.Editor.Panels
 			return builder.ToString().TrimEnd();
 		}
 
+		public string ToDisplayString()
+		{
+			string prefix = Severity == PanelIssueSeverity.Error ? "Error" : "Warning";
+			return string.IsNullOrEmpty(Location) ? prefix + ": " + Message : prefix + " in " + Location + ": " + Message;
+		}
+
 		public override string ToString()
 		{
 			string prefix = Severity == PanelIssueSeverity.Error ? "error" : "warning";

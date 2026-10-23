@@ -17,15 +17,15 @@ namespace DTech.Parley.Editor.UI
         private readonly StringBuilder _key = new ();
         private readonly List<SkillInfo> _external = new ();
         private readonly List<SkillDocument> _library = new ();
+        private readonly List<string> _names = new ();
+        private readonly AutoSkillDraft _chatDraft = new ();
+        private readonly AutoSkillDraft _defaultsDraft = new ();
 
         private ChatSession _session;
         private SkillForm _form;
-        private TextField _newAutoName;
-        private TextField _newAutoArguments;
         private string _renderedKey;
-        private string _draftAutoName = string.Empty;
-        private string _draftAutoArguments = string.Empty;
         private bool _libraryLoaded;
+        private string _filter = string.Empty;
 
         public SkillsPanel()
         {
@@ -34,15 +34,22 @@ namespace DTech.Parley.Editor.UI
             header.AddToClassList("pl-mcp__header");
             header.Add(ParleyStyles.Text("Skills in this chat", "pl-mcp__title"));
             header.Add(ParleyStyles.Spacer());
-            header.Add(ParleyStyles.Button("Refresh", RefreshSkills, "pl-button--small"));
+            Button refresh = ParleyStyles.Button("Refresh", RefreshSkills, "pl-button--small");
+            refresh.tooltip = "Reload the skill list";
+            header.Add(refresh);
             Add(header);
+            Add(ParleyStyles.SearchField(value =>
+            {
+                _filter = value;
+                Refresh();
+            }));
+            _restartHint = ParleyStyles.Text("Some changes apply with your next message: the agent restarts and resumes this chat.", "pl-mcp__hint");
+            ParleyStyles.SetVisible(_restartHint, false);
+            Add(_restartHint);
             _formHost = new VisualElement();
             Add(_formHost);
             _list = new VisualElement();
             Add(_list);
-            _restartHint = ParleyStyles.Text("Some changes apply with your next message: the agent restarts and resumes this chat.", "pl-mcp__hint");
-            ParleyStyles.SetVisible(_restartHint, false);
-            Add(_restartHint);
         }
 
         public static int EnabledCount(ChatSession session)
@@ -121,11 +128,18 @@ namespace DTech.Parley.Editor.UI
             return row;
         }
 
-        private static VisualElement CreateMain(string name, string description)
+        private static VisualElement CreateMain(string name, string description, Toggle toggle = null)
         {
             VisualElement main = new VisualElement();
             main.AddToClassList("pl-mcp__main");
-            main.Add(ParleyStyles.Text(name, "pl-mcp__name"));
+            Label title = ParleyStyles.Text(name, "pl-mcp__name");
+            if (toggle != null)
+            {
+                title.AddToClassList("pl-mcp__name--toggle");
+                title.RegisterCallback<ClickEvent>(_ => toggle.value = !toggle.value);
+            }
+
+            main.Add(title);
             if (!string.IsNullOrWhiteSpace(description))
             {
                 Label detail = ParleyStyles.Text(description.Trim(), ParleyStyles.Muted);
@@ -141,20 +155,16 @@ namespace DTech.Parley.Editor.UI
         private string BuildKey()
         {
             _key.Clear();
-            _key.Append(_session.Record.Id).Append('|').Append(_session.Profile.Kind).Append('|').Append(_session.Backend.IsRunning).Append('|');
-            foreach (AutoSkill skill in ParleyUserSettings.instance.AutoSkills)
+            ParleyUserSettings settings = ParleyUserSettings.instance;
+            _key.Append(_session.Record.Id).Append('|').Append(_session.Profile.Kind).Append('|').Append(_session.Backend.IsRunning).Append('|').Append(_filter).Append('|');
+            _key.Append(settings.DefaultPreset?.Id).Append(':').Append(settings.DefaultPreset?.Name).Append('|');
+            foreach (AutoSkill skill in settings.AutoSkills)
             {
                 _key.Append(skill.Name).Append(':').Append(skill.Arguments).Append(';');
             }
 
-            _key.Append('|');
-            if (_session.Record.PendingAutoSkills != null)
-            {
-                foreach (SkillInvocation skill in _session.Record.PendingAutoSkills)
-                {
-                    _key.Append(skill.Name).Append(':').Append(skill.Arguments).Append(';');
-                }
-            }
+            AppendInvocations(_session.Record.AutoSkills);
+            AppendInvocations(_session.Record.PendingAutoSkills);
 
             _key.Append('|');
             foreach (SkillDocument document in _library)
@@ -171,57 +181,92 @@ namespace DTech.Parley.Editor.UI
             return _key.ToString();
         }
 
+        private void AppendInvocations(List<SkillInvocation> skills)
+        {
+            _key.Append('|');
+            if (skills == null)
+            {
+                return;
+            }
+
+            foreach (SkillInvocation skill in skills)
+            {
+                _key.Append(skill.Name).Append(':').Append(skill.Arguments).Append(';');
+            }
+        }
+
         private void Render()
         {
             _list.Clear();
-            RenderAuto();
+            if (string.IsNullOrWhiteSpace(_filter))
+            {
+                RenderAuto();
+            }
+
             RenderLibrary();
             RenderExternal();
         }
 
         private void RenderAuto()
         {
-            _list.Add(ParleyStyles.Text("Auto-run in new chats", "pl-mcp__section"));
-            _list.Add(ParleyStyles.Text("Each new chat runs these before its first message.", ParleyStyles.Muted));
-            foreach (AutoSkill skill in ParleyUserSettings.instance.AutoSkills)
+            _list.Add(ParleyStyles.Text("Auto-run in this chat", "pl-mcp__section"));
+            List<SkillInvocation> configured = _session.Record.AutoSkills;
+            if (configured.Count == 0)
             {
-                _list.Add(BuildAutoRow(skill));
+                _list.Add(ParleyStyles.Text("Skills added here run before your next message.", ParleyStyles.Muted));
             }
 
-            VisualElement add = CreateRow();
-            add.AddToClassList("pl-skills__auto-row");
-            _newAutoName = new TextField { value = _draftAutoName, tooltip = "Skill name" };
-            _newAutoName.textEdition.placeholder = "skill";
-            _newAutoName.RegisterValueChangedCallback(evt => _draftAutoName = evt.newValue ?? string.Empty);
-            _newAutoName.AddToClassList("pl-skills__auto-name");
-            add.Add(_newAutoName);
-            add.Add(ParleyStyles.Button("▾", ShowSkillMenu, "pl-button--small"));
-            _newAutoArguments = new TextField { value = _draftAutoArguments, tooltip = "Arguments" };
-            _newAutoArguments.textEdition.placeholder = "arguments";
-            _newAutoArguments.RegisterValueChangedCallback(evt => _draftAutoArguments = evt.newValue ?? string.Empty);
-            _newAutoArguments.AddToClassList("pl-skills__auto-args");
-            add.Add(_newAutoArguments);
-            add.Add(ParleyStyles.Button("Add", AddAutoSkill, "pl-button--small"));
-            _list.Add(add);
-            List<SkillInvocation> pending = _session.Record.PendingAutoSkills;
-            if (pending == null || pending.Count == 0)
+            foreach (SkillInvocation skill in configured)
             {
+                _list.Add(BuildChatAutoRow(skill));
+            }
+
+            _list.Add(BuildAddRow(_chatDraft, "Run this skill before your next message in this chat", AddChatAutoSkill));
+            _list.Add(ParleyStyles.Text("Auto-run in new chats", "pl-mcp__section"));
+            ChatPreset preset = ParleyUserSettings.instance.DefaultPreset;
+            if (preset != null)
+            {
+                _list.Add(ParleyStyles.Text("New chats use the preset '" + preset.Name + "'. Change it with Preset ▾ in the toolbar.", ParleyStyles.Muted));
                 return;
             }
 
-            _list.Add(ParleyStyles.Text("This chat, before your first message:", ParleyStyles.Muted));
-            foreach (SkillInvocation skill in pending)
+            _list.Add(ParleyStyles.Text("Each new chat runs these before its first message.", ParleyStyles.Muted));
+            foreach (AutoSkill skill in ParleyUserSettings.instance.AutoSkills)
             {
-                string name = skill.Name;
-                VisualElement row = CreateRow();
-                VisualElement main = CreateMain(skill.ToCommand(), _session.IsSkillEnabled(name) ? null : "Off in this chat, so it is skipped.");
-                row.Add(main);
-                row.Add(ParleyStyles.Button("Skip", () => _session?.SkipPendingAutoSkill(name), "pl-button--small"));
-                _list.Add(row);
+                _list.Add(BuildDefaultAutoRow(skill));
             }
+
+            _list.Add(BuildAddRow(_defaultsDraft, "Run this skill at the start of every new chat", AddDefaultAutoSkill));
         }
 
-        private VisualElement BuildAutoRow(AutoSkill skill)
+        private VisualElement BuildChatAutoRow(SkillInvocation skill)
+        {
+            string name = skill.Name;
+            bool pending = _session.IsAutoSkillPending(name);
+            VisualElement row = CreateRow();
+            row.AddToClassList("pl-skills__auto-row");
+            string state = !_session.IsSkillEnabled(name) ? "Off in this chat, so it is skipped." : pending ? "Runs with your next message" : "Not queued";
+            VisualElement main = CreateMain("/" + name, state);
+            TextField arguments = new TextField { value = skill.Arguments ?? string.Empty, isDelayed = true, tooltip = "Arguments" };
+            arguments.textEdition.placeholder = "arguments";
+            arguments.AddToClassList("pl-skills__auto-args");
+            arguments.RegisterValueChangedCallback(evt => _session?.SetAutoSkill(name, evt.newValue, false));
+            row.Add(main);
+            row.Add(arguments);
+            if (pending)
+            {
+                Button skip = ParleyStyles.Button("Skip", () => _session?.SkipPendingAutoSkill(name), "pl-button--small");
+                skip.tooltip = "Don't run it this time, keep it in the list";
+                row.Add(skip);
+            }
+
+            Button remove = ParleyStyles.Button("Remove", () => _session?.RemoveAutoSkill(name), "pl-button--small");
+            remove.tooltip = "Remove it from this chat";
+            row.Add(remove);
+            return row;
+        }
+
+        private VisualElement BuildDefaultAutoRow(AutoSkill skill)
         {
             string name = skill.Name;
             VisualElement row = CreateRow();
@@ -232,8 +277,39 @@ namespace DTech.Parley.Editor.UI
             arguments.AddToClassList("pl-skills__auto-args");
             arguments.RegisterValueChangedCallback(evt => ParleyUserSettings.instance.SetAutoSkill(name, evt.newValue));
             row.Add(arguments);
-            row.Add(ParleyStyles.Button("Remove", () => RemoveAutoSkill(name), "pl-button--small"));
+            Button remove = ParleyStyles.Button("Remove", () => RemoveDefaultAutoSkill(name), "pl-button--small");
+            remove.tooltip = "Stop running it in new chats";
+            row.Add(remove);
             return row;
+        }
+
+        private VisualElement BuildAddRow(AutoSkillDraft draft, string tooltip, Action<AutoSkillDraft> onAdd)
+        {
+            VisualElement add = CreateRow();
+            add.AddToClassList("pl-skills__auto-row");
+            Button addButton = ParleyStyles.Button("Add", () => onAdd(draft), "pl-button--small");
+            addButton.tooltip = tooltip;
+            addButton.SetEnabled(draft.SkillName.Length > 0);
+            TextField name = new TextField { value = draft.Name, tooltip = "Skill name" };
+            name.textEdition.placeholder = "skill";
+            name.RegisterValueChangedCallback(evt =>
+            {
+                draft.Name = evt.newValue ?? string.Empty;
+                addButton.SetEnabled(draft.SkillName.Length > 0);
+            });
+            name.AddToClassList("pl-skills__auto-name");
+            add.Add(name);
+            Button pick = ParleyStyles.Button("▾", () => ShowSkillMenu(name), "pl-button--small");
+            pick.AddToClassList("pl-skills__pick");
+            pick.tooltip = "Pick a skill";
+            add.Add(pick);
+            TextField arguments = new TextField { value = draft.Arguments, tooltip = "Arguments" };
+            arguments.textEdition.placeholder = "arguments";
+            arguments.RegisterValueChangedCallback(evt => draft.Arguments = evt.newValue ?? string.Empty);
+            arguments.AddToClassList("pl-skills__auto-args");
+            add.Add(arguments);
+            add.Add(addButton);
+            return add;
         }
 
         private void RenderLibrary()
@@ -242,9 +318,29 @@ namespace DTech.Parley.Editor.UI
             header.AddToClassList("pl-mcp__header");
             header.Add(ParleyStyles.Text("Parley skills", "pl-mcp__section"));
             header.Add(ParleyStyles.Spacer());
-            header.Add(ParleyStyles.Button("+ New", () => OpenForm(null), "pl-button--small"));
-            header.Add(ParleyStyles.Button("Import…", Import, "pl-button--small"));
-            header.Add(ParleyStyles.Button("Folder", RevealLibrary, "pl-button--small"));
+            if (_library.Count > 0)
+            {
+                _names.Clear();
+                int enabled = 0;
+                foreach (SkillDocument document in _library)
+                {
+                    _names.Add(document.Name);
+                    enabled += _session.IsLibrarySkillEnabled(document.Name) ? 1 : 0;
+                }
+
+                List<string> names = new (_names);
+                header.Add(ParleyStyles.AllToggle(enabled, names.Count, value => _session?.SetLibrarySkillsEnabled(names, value)));
+            }
+
+            Button create = ParleyStyles.Button("+ Add", () => OpenForm(null), "pl-button--small");
+            create.tooltip = "Write a new skill";
+            header.Add(create);
+            Button import = ParleyStyles.Button("Import…", Import, "pl-button--small");
+            import.tooltip = "Copy a folder with a SKILL.md into the library";
+            header.Add(import);
+            Button reveal = ParleyStyles.Button("Open folder", RevealLibrary, "pl-button--small");
+            reveal.tooltip = "Show the skill library folder";
+            header.Add(reveal);
             _list.Add(header);
             if (_library.Count == 0)
             {
@@ -252,9 +348,24 @@ namespace DTech.Parley.Editor.UI
                 return;
             }
 
+            int shown = 0;
             foreach (SkillDocument document in _library)
             {
-                _list.Add(BuildLibraryRow(document));
+                if (ParleyStyles.Matches(_filter, document.Name, document.Description))
+                {
+                    _list.Add(BuildLibraryRow(document));
+                    shown++;
+                }
+            }
+
+            AddNoMatches(shown);
+        }
+
+        private void AddNoMatches(int shown)
+        {
+            if (shown == 0)
+            {
+                _list.Add(ParleyStyles.Text("No matches.", ParleyStyles.Muted));
             }
         }
 
@@ -266,13 +377,8 @@ namespace DTech.Parley.Editor.UI
             toggle.AddToClassList("pl-mcp__toggle");
             toggle.RegisterValueChangedCallback(evt => _session?.SetLibrarySkillEnabled(name, evt.newValue));
             row.Add(toggle);
-            VisualElement main = CreateMain(name, document.Description);
-            VisualElement actions = new VisualElement();
-            actions.AddToClassList("pl-mcp__actions");
-            actions.Add(ParleyStyles.Button("Edit", () => OpenForm(SkillLibrary.Find(name)), "pl-button--small"));
-            actions.Add(ParleyStyles.Button("Delete", () => Delete(name), "pl-button--small"));
-            main.Add(actions);
-            row.Add(main);
+            row.Add(CreateMain(name, document.Description, toggle));
+            row.Add(ParleyStyles.RowActions(() => OpenForm(SkillLibrary.Find(name)), () => Delete(name), "skill"));
             return row;
         }
 
@@ -285,16 +391,33 @@ namespace DTech.Parley.Editor.UI
                 _ => "From skill folders",
             };
 
-            _list.Add(ParleyStyles.Text(source, "pl-mcp__section"));
             _external.Clear();
+            _names.Clear();
+            int enabled = 0;
             foreach (SkillInfo skill in _session.Skills)
             {
-                if (!skill.IsLibrary)
+                if (!skill.IsLibrary && skill.CanDisable)
                 {
                     _external.Add(skill);
+                    if (!_names.Contains(skill.Name))
+                    {
+                        _names.Add(skill.Name);
+                        enabled += _session.IsExternalSkillEnabled(skill.Name) ? 1 : 0;
+                    }
                 }
             }
 
+            VisualElement header = new VisualElement();
+            header.AddToClassList("pl-mcp__header");
+            header.Add(ParleyStyles.Text(source, "pl-mcp__section"));
+            header.Add(ParleyStyles.Spacer());
+            if (_names.Count > 0)
+            {
+                List<string> names = new (_names);
+                header.Add(ParleyStyles.AllToggle(enabled, names.Count, value => _session?.SetExternalSkillsEnabled(names, value)));
+            }
+
+            _list.Add(header);
             if (_external.Count == 0)
             {
                 string hint = _session.Backend.IsRunning ? "None found." : "Shown once the chat has started.";
@@ -303,13 +426,23 @@ namespace DTech.Parley.Editor.UI
             }
 
             _external.Sort((left, right) => string.Compare(left.Name, right.Name, StringComparison.OrdinalIgnoreCase));
-            foreach (SkillInfo skill in _external)
+            int shown = 0;
+            for (int i = 0; i < _external.Count; i++)
             {
-                _list.Add(BuildExternalRow(skill));
+                if (!ParleyStyles.Matches(_filter, _external[i].Name, _external[i].Description))
+                {
+                    continue;
+                }
+
+                bool duplicate = (i > 0 && _external[i - 1].Name == _external[i].Name) || (i + 1 < _external.Count && _external[i + 1].Name == _external[i].Name);
+                _list.Add(BuildExternalRow(_external[i], duplicate));
+                shown++;
             }
+
+            AddNoMatches(shown);
         }
 
-        private VisualElement BuildExternalRow(SkillInfo skill)
+        private VisualElement BuildExternalRow(SkillInfo skill, bool duplicate)
         {
             string name = skill.Name;
             bool enabled = _session.IsExternalSkillEnabled(name);
@@ -318,11 +451,24 @@ namespace DTech.Parley.Editor.UI
             toggle.AddToClassList("pl-mcp__toggle");
             toggle.RegisterValueChangedCallback(evt => _session?.SetExternalSkillEnabled(name, evt.newValue));
             row.Add(toggle);
-            row.Add(CreateMain(name, enabled ? skill.Description : "Off in this chat"));
+            VisualElement main = CreateMain(name, skill.Description, toggle);
+            if (duplicate && !string.IsNullOrEmpty(skill.Path))
+            {
+                Label source = ParleyStyles.Text(skill.Path, "pl-mcp__source");
+                source.tooltip = skill.Path;
+                main.Add(source);
+            }
+
+            if (!enabled)
+            {
+                main.Add(ParleyStyles.Text("Off in this chat", "pl-mcp__state-text"));
+            }
+
+            row.Add(main);
             return row;
         }
 
-        private void ShowSkillMenu()
+        private void ShowSkillMenu(TextField target)
         {
             GenericMenu menu = new GenericMenu();
             List<string> names = new ();
@@ -348,28 +494,39 @@ namespace DTech.Parley.Editor.UI
             foreach (string name in names)
             {
                 string captured = name;
-                menu.AddItem(new UnityEngine.GUIContent(name.Replace("/", "∕")), false, () => _newAutoName.value = captured);
+                menu.AddItem(new UnityEngine.GUIContent(name.Replace("/", "∕")), false, () => target.value = captured);
             }
 
-            menu.DropDown(_newAutoName.worldBound);
+            menu.DropDown(target.worldBound);
         }
 
-        private void AddAutoSkill()
+        private void AddChatAutoSkill(AutoSkillDraft draft)
         {
-            string name = _draftAutoName.Trim().TrimStart('/');
-            if (name.Length == 0)
+            if (draft.SkillName.Length == 0)
             {
                 return;
             }
 
-            ParleyUserSettings.instance.SetAutoSkill(name, _draftAutoArguments);
-            _draftAutoName = string.Empty;
-            _draftAutoArguments = string.Empty;
+            _session?.SetAutoSkill(draft.SkillName, draft.Arguments, true);
+            draft.Clear();
             _renderedKey = null;
             Refresh();
         }
 
-        private void RemoveAutoSkill(string name)
+        private void AddDefaultAutoSkill(AutoSkillDraft draft)
+        {
+            if (draft.SkillName.Length == 0)
+            {
+                return;
+            }
+
+            ParleyUserSettings.instance.SetAutoSkill(draft.SkillName, draft.Arguments);
+            draft.Clear();
+            _renderedKey = null;
+            Refresh();
+        }
+
+        private void RemoveDefaultAutoSkill(string name)
         {
             ParleyUserSettings.instance.RemoveAutoSkill(name);
             _renderedKey = null;
@@ -378,13 +535,16 @@ namespace DTech.Parley.Editor.UI
 
         private void OpenForm(SkillDocument document)
         {
-            if (_form != null)
+            if (_form != null && !_form.ConfirmDiscard())
             {
+                ParleyStyles.ScrollIntoView(_form);
                 return;
             }
 
+            _formHost.Clear();
             _form = new SkillForm(document, SaveForm, CloseForm);
             _formHost.Add(_form);
+            ParleyStyles.ScrollIntoView(_form);
         }
 
         private void SaveForm(SkillDocument document, string previousName, bool enabledByDefault)
@@ -476,8 +636,8 @@ namespace DTech.Parley.Editor.UI
                 return;
             }
 
-            ParleyUserSettings.instance.SetLibrarySkillDefault(name, false);
-            ParleyUserSettings.instance.RemoveAutoSkill(name);
+            ParleyUserSettings.instance.RemoveLibrarySkill(name);
+            _session?.RemoveAutoSkill(name);
             ReloadLibrary();
             _session?.ReapplySkills();
         }
@@ -500,6 +660,21 @@ namespace DTech.Parley.Editor.UI
         {
             _session?.RefreshSkills();
             ReloadLibrary();
+        }
+
+        private sealed class AutoSkillDraft
+        {
+            public string Name { get; set; } = string.Empty;
+
+            public string Arguments { get; set; } = string.Empty;
+
+            public string SkillName => Name.Trim().TrimStart('/');
+
+            public void Clear()
+            {
+                Name = string.Empty;
+                Arguments = string.Empty;
+            }
         }
     }
 }

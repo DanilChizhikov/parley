@@ -49,12 +49,13 @@ namespace DTech.Parley.Editor.UI
                 return;
             }
 
-            if (string.IsNullOrWhiteSpace(_field.value))
+            string text = _field.value?.Trim() ?? string.Empty;
+            if (text.Length == 0 && !_allowEmpty)
             {
                 return;
             }
 
-            Submit(_field.value.Trim());
+            Submit(text);
             evt.StopPropagation();
         }
     }
