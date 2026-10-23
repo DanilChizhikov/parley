@@ -72,6 +72,22 @@ namespace DTech.Parley.Tests.EditorMode
         }
 
         [Test]
+        public void ClaudeStatusNeverListsUnityAsExternal()
+        {
+            McpConfiguration configuration = CreateConfiguration();
+            configuration.DisabledExternal.Add("unity");
+            JObject response = JObject.Parse(@"{""mcpServers"":[
+                {""name"":""unity"",""status"":""connected"",""scope"":""dynamic"",""source"":""dynamic"",""config"":{""type"":""sdk"",""name"":""unity""}},
+                {""name"":""github"",""status"":""connected"",""scope"":""user""}]}");
+
+            List<McpServerStatus> statuses = ClaudeWire.ParseMcpStatus(response, configuration);
+
+            Assert.AreEqual(1, statuses.Count);
+            Assert.AreEqual("github", statuses[0].Name);
+            Assert.AreEqual(0, ClaudeWire.PassthroughMcpServers(response).Count);
+        }
+
+        [Test]
         public void CodexConfigOverridesServersAndDisablesExternal()
         {
             McpConfiguration configuration = CreateConfiguration();

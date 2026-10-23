@@ -14,6 +14,9 @@
   the reset time.
 
 ### Fixed
+- Claude Code: Parley's own `unity` tools (`refresh`, `compile_status`, …) could be switched off together with the
+  external MCP servers. The CLI then denied every call, so the agent could not compile. `unity` is now never listed as
+  an external server, and chats that already had it switched off are repaired when they load.
 - Claude Code: attached files and selections are sent as separate document blocks. A message starting with a skill
   command (`/caveman …`) no longer sends the attachment to the model twice.
 - Scrolling the chat with the mouse wheel no longer stops or jumps back to the bottom when the pointer passes over

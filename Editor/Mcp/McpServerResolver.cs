@@ -21,7 +21,7 @@ namespace DTech.Parley.Editor.Mcp
 
         public static bool IsValidName(string name)
         {
-            if (string.IsNullOrEmpty(name) || name.Length > MaxNameLength || name == SdkMcpBridge.ServerName)
+            if (string.IsNullOrEmpty(name) || name.Length > MaxNameLength || IsReserved(name))
             {
                 return false;
             }
@@ -35,6 +35,11 @@ namespace DTech.Parley.Editor.Mcp
             }
 
             return true;
+        }
+
+        public static bool IsReserved(string name)
+        {
+            return name == SdkMcpBridge.ServerName;
         }
 
         public static string Normalize(string name)

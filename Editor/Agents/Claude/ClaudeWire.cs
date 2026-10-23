@@ -232,7 +232,8 @@ namespace DTech.Parley.Editor.Agents.Claude
 			foreach (JToken entry in entries)
 			{
 				string name = (string)entry["name"];
-				if (string.IsNullOrEmpty(name) || (string)entry["scope"] != "dynamic" || (string)entry["source"] == "sdk" || !(entry["config"] is JObject config))
+				if (string.IsNullOrEmpty(name) || (string)entry["scope"] != "dynamic" || (string)entry["source"] == "sdk"
+					|| McpServerResolver.IsReserved(name) || !(entry["config"] is JObject config))
 				{
 					continue;
 				}
@@ -322,7 +323,7 @@ namespace DTech.Parley.Editor.Agents.Claude
 			foreach (JToken server in servers)
 			{
 				string name = (string)server["name"];
-				if (string.IsNullOrEmpty(name) || (string)server["source"] == "sdk")
+				if (string.IsNullOrEmpty(name) || (string)server["source"] == "sdk" || McpServerResolver.IsReserved(name))
 				{
 					continue;
 				}
