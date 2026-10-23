@@ -14,6 +14,8 @@
   the reset time.
 
 ### Fixed
+- Token usage export: the `model` attribute of `<parleyUsage>` was empty when the chat used the default model or was
+  reopened before its next turn. It now falls back to the model of the last main-agent call.
 - Claude Code: Parley's own `unity` tools (`refresh`, `compile_status`, …) could be switched off together with the
   external MCP servers. The CLI then denied every call, so the agent could not compile. `unity` is now never listed as
   an external server, and chats that already had it switched off are repaired when they load.

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Xml.Linq;
 
@@ -17,7 +18,7 @@ namespace DTech.Parley.Editor.Sessions
 				new XAttribute("chat", record.Title ?? string.Empty),
 				new XAttribute("profile", record.ProfileId ?? string.Empty),
 				new XAttribute("backend", record.Kind.ToString()),
-				new XAttribute("model", model ?? string.Empty),
+				new XAttribute("model", (string.IsNullOrEmpty(model) ? LastMainModel(log) : model) ?? string.Empty),
 				new XAttribute("exported", Time(exportedUtc)));
 
 			XElement total = Totals("summary", summary.Total);
@@ -116,6 +117,24 @@ namespace DTech.Parley.Editor.Sessions
 				new XAttribute("cacheRead", totals.CacheRead),
 				new XAttribute("output", totals.Output),
 				new XAttribute("reasoning", totals.Reasoning));
+		}
+
+		private static string LastMainModel(UsageLog log)
+		{
+			for (int turnIndex = log.Turns.Count - 1; turnIndex >= 0; turnIndex--)
+			{
+				List<UsageCall> calls = log.Turns[turnIndex].Calls;
+				for (int callIndex = calls.Count - 1; callIndex >= 0; callIndex--)
+				{
+					UsageCall call = calls[callIndex];
+					if ((call.Agent == null || call.Agent == UsageTracker.MainAgent) && !string.IsNullOrEmpty(call.Model))
+					{
+						return call.Model;
+					}
+				}
+			}
+
+			return null;
 		}
 
 		private static string Time(DateTime utc)

@@ -54,6 +54,16 @@ namespace DTech.Parley.Tests.EditorMode
             Assert.AreEqual("3600.0", (string)turns[1].Element("call").Attribute("gapSec"));
         }
 
+        [TestCase("")]
+        [TestCase(null)]
+        public void XmlModelFallsBackToLastMainCall(string model)
+        {
+            SessionRecord record = new SessionRecord { Usage = SampleLog() };
+            XDocument document = UsageXmlExporter.Build(record, model, Start);
+
+            Assert.AreEqual("opus", (string)document.Root.Attribute("model"));
+        }
+
         [Test]
         public void EmptyLogExports()
         {
