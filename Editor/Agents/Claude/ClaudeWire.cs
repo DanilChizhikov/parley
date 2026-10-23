@@ -55,23 +55,28 @@ namespace DTech.Parley.Editor.Agents.Claude
 		public static JArray BuildContent(UserTurn turn)
 		{
 			JArray content = new JArray();
-			StringBuilder text = new StringBuilder(turn.Text ?? string.Empty);
+			if (!string.IsNullOrEmpty(turn.Text))
+			{
+				content.Add(new JObject { ["type"] = "text", ["text"] = turn.Text });
+			}
+
 			foreach (ChatAttachment attachment in turn.Attachments)
 			{
 				if (attachment.Kind == AttachmentKind.Text)
 				{
-					text.Append("\n\n<attachment name=\"").Append(attachment.Label).Append("\">\n").Append(attachment.Text).Append("\n</attachment>");
+					content.Add(new JObject
+					{
+						["type"] = "document",
+						["source"] = new JObject
+						{
+							["type"] = "text",
+							["media_type"] = "text/plain",
+							["data"] = attachment.Text ?? string.Empty,
+						},
+						["title"] = attachment.Label,
+					});
 				}
-			}
-
-			if (text.Length > 0)
-			{
-				content.Add(new JObject { ["type"] = "text", ["text"] = text.ToString() });
-			}
-
-			foreach (ChatAttachment attachment in turn.Attachments)
-			{
-				if (attachment.Kind == AttachmentKind.Image)
+				else if (attachment.Kind == AttachmentKind.Image)
 				{
 					content.Add(new JObject
 					{

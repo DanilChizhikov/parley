@@ -14,6 +14,8 @@
   the reset time.
 
 ### Fixed
+- Claude Code: attached files and selections are sent as separate document blocks. A message starting with a skill
+  command (`/caveman …`) no longer sends the attachment to the model twice.
 - Scrolling the chat with the mouse wheel no longer stops or jumps back to the bottom when the pointer passes over
   question cards, text fields, code blocks or tables.
 
