@@ -55,23 +55,23 @@ namespace DTech.Parley.Editor.Agents.Claude
 		public static JArray BuildContent(UserTurn turn)
 		{
 			JArray content = new JArray();
-			StringBuilder text = new StringBuilder(turn.Text ?? string.Empty);
 			foreach (ChatAttachment attachment in turn.Attachments)
 			{
 				if (attachment.Kind == AttachmentKind.Text)
 				{
-					text.Append("\n\n<attachment name=\"").Append(attachment.Label).Append("\">\n").Append(attachment.Text).Append("\n</attachment>");
+					content.Add(new JObject
+					{
+						["type"] = "document",
+						["source"] = new JObject
+						{
+							["type"] = "text",
+							["media_type"] = "text/plain",
+							["data"] = attachment.Text ?? string.Empty,
+						},
+						["title"] = attachment.Label,
+					});
 				}
-			}
-
-			if (text.Length > 0)
-			{
-				content.Add(new JObject { ["type"] = "text", ["text"] = text.ToString() });
-			}
-
-			foreach (ChatAttachment attachment in turn.Attachments)
-			{
-				if (attachment.Kind == AttachmentKind.Image)
+				else if (attachment.Kind == AttachmentKind.Image)
 				{
 					content.Add(new JObject
 					{
@@ -84,6 +84,11 @@ namespace DTech.Parley.Editor.Agents.Claude
 						},
 					});
 				}
+			}
+
+			if (!string.IsNullOrEmpty(turn.Text))
+			{
+				content.Add(new JObject { ["type"] = "text", ["text"] = turn.Text });
 			}
 
 			return content;
@@ -227,7 +232,8 @@ namespace DTech.Parley.Editor.Agents.Claude
 			foreach (JToken entry in entries)
 			{
 				string name = (string)entry["name"];
-				if (string.IsNullOrEmpty(name) || (string)entry["scope"] != "dynamic" || (string)entry["source"] == "sdk" || !(entry["config"] is JObject config))
+				if (string.IsNullOrEmpty(name) || (string)entry["scope"] != "dynamic" || (string)entry["source"] == "sdk"
+					|| McpServerResolver.IsReserved(name) || !(entry["config"] is JObject config))
 				{
 					continue;
 				}
@@ -317,7 +323,7 @@ namespace DTech.Parley.Editor.Agents.Claude
 			foreach (JToken server in servers)
 			{
 				string name = (string)server["name"];
-				if (string.IsNullOrEmpty(name) || (string)server["source"] == "sdk")
+				if (string.IsNullOrEmpty(name) || (string)server["source"] == "sdk" || McpServerResolver.IsReserved(name))
 				{
 					continue;
 				}

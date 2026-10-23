@@ -54,6 +54,19 @@ namespace DTech.Parley.Tests.EditorMode
             Assert.AreEqual("3600.0", (string)turns[1].Element("call").Attribute("gapSec"));
         }
 
+        [TestCase("")]
+        [TestCase(null)]
+        public void XmlModelFallsBackToLastMainCall(string model)
+        {
+            UsageLog log = SampleLog();
+            log.Turns[1].Calls.Add(new UsageCall { Id = "m4", TimeUtc = Start.AddHours(1).AddSeconds(5), Model = "haiku", Agent = "agent1", Output = 1 });
+            SessionRecord record = new SessionRecord { Usage = log };
+            XDocument document = UsageXmlExporter.Build(record, model, Start);
+
+            Assert.AreEqual("opus", (string)document.Root.Attribute("model"));
+            Assert.AreEqual("sonnet", (string)UsageXmlExporter.Build(record, "sonnet", Start).Root.Attribute("model"));
+        }
+
         [Test]
         public void EmptyLogExports()
         {

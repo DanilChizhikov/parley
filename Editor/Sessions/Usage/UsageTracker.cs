@@ -75,7 +75,7 @@ namespace DTech.Parley.Editor.Sessions
 				CurrentTurn(nowUtc).Calls.Add(call);
 			}
 
-			call.Model = string.IsNullOrEmpty(report.Model) ? call.Model ?? fallbackModel : report.Model;
+			call.Model = string.IsNullOrEmpty(report.Model) ? call.Model ?? (string.IsNullOrEmpty(fallbackModel) ? null : fallbackModel) : report.Model;
 			call.Input = Math.Max(call.Input, report.InputTokens);
 			call.CacheWrite = Math.Max(call.CacheWrite, report.CacheCreationTokens);
 			call.CacheRead = Math.Max(call.CacheRead, report.CacheReadTokens);

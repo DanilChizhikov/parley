@@ -1,10 +1,15 @@
 # Changelog
 
-## [Unreleased]
+## [0.3.0] - 2026-10-23
 
 ### Added
-- `Window/DTech/Parley Debug Preview`: a Parley window driven by a scripted agent that shows every chat block, card,
-  side panel state and window without starting a CLI or calling a model.
+- **Usage** tab in the side panel: tokens per model, per agent and per turn, the largest tool results, peak context,
+  cost and prompt cache rebuilds, for Claude Code, Codex and local models. Claude Code thinking tokens show as
+  reasoning. **Copy XML** and **Export XML…** save the report to hand to an agent.
+- Search fields in the MCP and Skills tabs.
+- `Window/DTech/Parley/AI Chat Debug Preview` (with the `PARLEY_DEBUGG` scripting define): a Parley window driven by a
+  scripted agent that shows every chat block, card, side panel state and window without starting a CLI or calling a
+  model.
 - Presets: **Preset ▾** in the toolbar saves a chat's skills, MCP servers and auto-run skills under a name, applies
   them to any chat in one click, and can be the default for new chats.
 - **All** checkbox in the MCP and Skills section headers switches every server or skill of that section at once.
@@ -13,7 +18,23 @@
   and the weekly limit (right), each filled by what is left. Click it for a popup with percentages, a countdown and
   the reset time.
 
+### Changed
+- Menu items moved under `Window/DTech/Parley/`: **AI Chat** opens the chat window and **Panels** the saved panels.
+- Reworked layout of the chat window, the side panel, the preferences and the skill and profile editors.
+- The agent is told to call `refresh` once after it finishes its C# edits instead of after every file, so
+  recompiling doesn't interrupt it mid-task.
+
 ### Fixed
+- When several Claude Code or Codex installs are found, Parley uses the newest one and warns in the console when
+  Claude Code is older than the supported version.
+- Claude Code: MCP servers switched off for a chat are no longer passed to the CLI, and switched-off skills are applied
+  through skill overrides. Only plugin skills still get a permission rule.
+- Claude Code: Parley's own `unity` tools (`refresh`, `compile_status`, …) could be switched off together with the
+  external MCP servers. The CLI then denied every call, so the agent could not compile. `unity` is now never listed as
+  an external server, and chats that already had it switched off are repaired when they load.
+- Claude Code: attached files and selections are sent as separate document blocks. A message starting with a skill
+  command (`/caveman …`) no longer sends the attachment to the model twice, and the command still runs when the
+  message has attachments.
 - Scrolling the chat with the mouse wheel no longer stops or jumps back to the bottom when the pointer passes over
   question cards, text fields, code blocks or tables.
 

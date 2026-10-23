@@ -536,6 +536,7 @@ namespace DTech.Parley.Editor.Sessions
 		private void InitializeMcp()
 		{
 			Record.DisabledExternalMcpServers ??= new List<string>();
+			Record.DisabledExternalMcpServers.RemoveAll(McpServerResolver.IsReserved);
 			if (Record.EnabledMcpServerIds != null)
 			{
 				return;
@@ -579,7 +580,7 @@ namespace DTech.Parley.Editor.Sessions
 			{
 				foreach (string name in Record.DisabledExternalMcpServers)
 				{
-					if (!configuration.HasServer(name))
+					if (!configuration.HasServer(name) && !McpServerResolver.IsReserved(name))
 					{
 						configuration.DisabledExternal.Add(name);
 					}
@@ -1235,7 +1236,7 @@ namespace DTech.Parley.Editor.Sessions
 			{
 				foreach (string name in Record.DisabledExternalMcpServers)
 				{
-					if (FindMcpStatus(name, true) == null)
+					if (FindMcpStatus(name, true) == null && !McpServerResolver.IsReserved(name))
 					{
 						_mcpStatuses.Add(new McpServerStatus { Name = name, State = McpConnectionState.Disabled, IsExternal = true });
 					}
