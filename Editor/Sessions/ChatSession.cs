@@ -6,7 +6,6 @@ using System.Threading.Tasks;
 using DTech.Parley.Editor.Agents.Claude;
 using DTech.Parley.Editor.Agents.Codex;
 using DTech.Parley.Editor.Agents.Local;
-using DTech.Parley.Editor.Agents.Preview;
 using DTech.Parley.Editor.Commands;
 using DTech.Parley.Editor.Mcp;
 using DTech.Parley.Editor.Secrets;
@@ -15,6 +14,9 @@ using DTech.Parley.Editor.Skills;
 using DTech.Parley.Editor.Tools;
 using Newtonsoft.Json.Linq;
 using UnityEditor;
+#if PARLEY_DEBUGG
+using DTech.Parley.Editor.Agents.Preview;
+#endif
 
 namespace DTech.Parley.Editor.Sessions
 {
@@ -123,7 +125,12 @@ namespace DTech.Parley.Editor.Sessions
 			Model = profile.Model;
 			Effort = profile.Effort;
 			ExpireUnresolvedRequests();
+			#if PARLEY_DEBUGG
 			Backend = preview ? new PreviewBackend(profile, this, Record.Mode) : CreateBackend(profile);
+			#else
+			Backend = CreateBackend(profile);
+			#endif
+			
 
 			Record.Mode = Backend.Mode;
 			ChatPreset preset = isNew ? ParleyUserSettings.instance.DefaultPreset : null;

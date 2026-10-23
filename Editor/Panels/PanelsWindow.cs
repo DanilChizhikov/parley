@@ -9,7 +9,7 @@ namespace DTech.Parley.Editor.Panels
 {
 	internal sealed class PanelsWindow : EditorWindow
 	{
-		private const string MenuPath = "Window/DTech/Parley Panels";
+		private const string MenuPath = "Window/DTech/Parley/Panels";
 		private const string WindowTitle = "Parley Panels";
 		private const string DialogTitle = "Parley";
 		private const float MinWidth = 520.0f;

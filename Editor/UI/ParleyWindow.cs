@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
-using DTech.Parley.Editor.Agents.Preview;
 using DTech.Parley.Editor.Panels;
 using DTech.Parley.Editor.Sessions;
 using DTech.Parley.Editor.Updates;
@@ -9,6 +8,9 @@ using UnityEditor;
 using UnityEditor.UIElements;
 using UnityEngine;
 using UnityEngine.UIElements;
+#if PARLEY_DEBUGG
+using DTech.Parley.Editor.Agents.Preview;
+#endif
 
 namespace DTech.Parley.Editor.UI
 {
@@ -16,17 +18,21 @@ namespace DTech.Parley.Editor.UI
     {
         public const string PreferencesPath = "Preferences/DTech/Parley";
 
-        private const string MenuPath = "Window/DTech/Parley";
-        private const string PreviewMenuPath = "Window/DTech/Parley Debug Preview";
+        private const string MenuPath = "Window/DTech/Parley/AI Chat";
         private const string WindowTitle = "Parley";
-        private const string PreviewTitle = "Parley Preview";
         private const long StateRefreshMs = 100;
         private const int MaxHistoryItems = 30;
         private const double NotificationSeconds = 2.0;
         private const string UpdateDialogTitle = "Update Parley";
         private const string UpdateAvailableText = "Update available ▾";
         private const string ShrinkClass = "pl-toolbar__shrink";
-        private static readonly Vector2 MinWindowSize = new Vector2(360.0f, 320.0f);
+        
+        #if PARLEY_DEBUGG
+        private const string PreviewTitle = "Parley Preview";
+        private const string PreviewMenuPath = "Window/DTech/Parley/AI Chat Debug Preview";
+        #endif
+        
+        private static readonly Vector2 _minWindowSize = new Vector2(360.0f, 320.0f);
 
         private static readonly PermissionMode[] _claudeModes =
         {
@@ -68,10 +74,13 @@ namespace DTech.Parley.Editor.UI
         private ToolbarButton _previewButton;
         private bool _stateDirty = true;
 
+        
+        #if PARLEY_DEBUGG
         private static bool _openingPreview;
 
         [SerializeField] private bool _preview;
         [SerializeField] private ProfileKind _previewKind = ProfileKind.ClaudeCode;
+        #endif
 
         [MenuItem(MenuPath)]
         public static void Open()
@@ -88,6 +97,7 @@ namespace DTech.Parley.Editor.UI
             window._composer?.FocusInput();
         }
 
+        #if PARLEY_DEBUGG
         [MenuItem(PreviewMenuPath)]
         public static void OpenPreview()
         {
@@ -109,6 +119,7 @@ namespace DTech.Parley.Editor.UI
             window.Focus();
             window._composer?.FocusInput();
         }
+        #endif
 
         public static void OpenPreferences()
         {
@@ -155,15 +166,19 @@ namespace DTech.Parley.Editor.UI
                 _ => "Ask before edits: the agent asks before editing files or running commands.",
             };
         }
-
+        
         private static ParleyWindow Find(bool preview)
         {
             foreach (ParleyWindow window in Resources.FindObjectsOfTypeAll<ParleyWindow>())
             {
+                #if PARLEY_DEBUGG
                 if (window._preview == preview)
                 {
                     return window;
                 }
+                #else
+                return window;
+                #endif
             }
 
             return null;
@@ -188,18 +203,25 @@ namespace DTech.Parley.Editor.UI
 
         private void OnEnable()
         {
+            #if PARLEY_DEBUGG
             if (_openingPreview)
             {
                 _preview = true;
             }
 
             titleContent = new GUIContent(_preview ? PreviewTitle : WindowTitle);
-            minSize = MinWindowSize;
+            #else
+            titleContent = new GUIContent(WindowTitle);
+            #endif
+            
+            minSize = _minWindowSize;
+            #if PARLEY_DEBUGG
             if (_preview)
             {
                 StartSession(CreatePreviewProfile(_previewKind), null);
                 return;
             }
+            #endif
 
             ParleyUserSettings settings = ParleyUserSettings.instance;
             SessionRecord record = SessionStore.Load(settings.LastSessionId);
@@ -274,12 +296,14 @@ namespace DTech.Parley.Editor.UI
             toolbar.Add(_mcpButton);
             toolbar.Add(_skillsButton);
             toolbar.Add(_presetButton);
+            #if PARLEY_DEBUGG
             if (_preview)
             {
                 _previewButton = new ToolbarButton(ShowPreviewMenu) { text = "Preview ▾", tooltip = "Play a scripted scenario or open another window in preview. Nothing is sent to a model." };
                 _previewButton.AddToClassList("pl-preview-button");
                 toolbar.Add(_previewButton);
             }
+            #endif
 
             toolbar.Add(new ToolbarSpacer { flex = true });
             _updateButton = new ToolbarButton(ShowUpdateMenu) { text = UpdateAvailableText };
@@ -304,13 +328,22 @@ namespace DTech.Parley.Editor.UI
         private void StartSession(ParleyProfile profile, SessionRecord record)
         {
             EndSession();
+            #if PARLEY_DEBUGG
             _session = new ChatSession(profile, record, _preview);
+            #else
+            _session = new ChatSession(profile, record);
+            #endif
+            
             _session.OnStateChanged += MarkDirty;
             _session.OnRequestRaised += RequestRaisedHandler;
+            #if PARLEY_DEBUGG
             if (!_preview)
             {
                 ParleyUserSettings.instance.SetActive(profile);
             }
+            #else
+            ParleyUserSettings.instance.SetActive(profile);
+            #endif
 
             BindViews();
             _ = _session.EnsureStartedAsync();
@@ -436,6 +469,7 @@ namespace DTech.Parley.Editor.UI
         private void ShowProfileMenu()
         {
             GenericMenu menu = new GenericMenu();
+            #if PARLEY_DEBUGG
             if (_preview)
             {
                 foreach (ProfileKind kind in new[] { ProfileKind.ClaudeCode, ProfileKind.Codex, ProfileKind.Local })
@@ -449,6 +483,7 @@ namespace DTech.Parley.Editor.UI
                 menu.DropDown(_profileButton.worldBound);
                 return;
             }
+            #endif
 
             foreach (ParleyProfile profile in ParleyUserSettings.instance.Profiles)
             {
@@ -703,12 +738,14 @@ namespace DTech.Parley.Editor.UI
         private void ShowHistoryMenu()
         {
             GenericMenu menu = new GenericMenu();
+            #if PARLEY_DEBUGG
             if (_preview)
             {
                 menu.AddDisabledItem(new GUIContent("Preview chats are not saved"));
                 menu.DropDown(_historyButton.worldBound);
                 return;
             }
+            #endif
 
             List<SessionSummary> sessions = SessionStore.List();
             if (sessions.Count == 0)
@@ -754,7 +791,11 @@ namespace DTech.Parley.Editor.UI
 
         private void NewChat()
         {
+            #if PARLEY_DEBUGG
             ParleyProfile profile = _preview ? CreatePreviewProfile(_previewKind) : _session?.Profile ?? ParleyUserSettings.instance.ActiveProfile;
+            #else
+            ParleyProfile profile = _session?.Profile ?? ParleyUserSettings.instance.ActiveProfile;
+            #endif
             StartSession(profile, null);
             _composer?.FocusInput();
         }
@@ -791,6 +832,7 @@ namespace DTech.Parley.Editor.UI
             }
         }
 
+        #if PARLEY_DEBUGG
         private void ShowPreviewMenu()
         {
             GenericMenu menu = new GenericMenu();
@@ -812,7 +854,7 @@ namespace DTech.Parley.Editor.UI
             menu.AddItem(new GUIContent("Windows/Preferences"), false, OpenPreferences);
             menu.DropDown(_previewButton.worldBound);
         }
-
+        
         private void RunPreview(PreviewScenario scenario)
         {
             if (_session == null)
@@ -840,6 +882,7 @@ namespace DTech.Parley.Editor.UI
             _previewKind = kind;
             StartSession(CreatePreviewProfile(kind), null);
         }
+        #endif
 
         private void SideToggledHandler(ChangeEvent<bool> evt)
         {
