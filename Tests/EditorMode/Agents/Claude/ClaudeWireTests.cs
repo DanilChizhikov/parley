@@ -36,12 +36,12 @@ namespace DTech.Parley.Tests.EditorMode
             JObject message = ClaudeWire.UserMessage(turn, "s1");
             JArray content = (JArray)message["message"]["content"];
             Assert.AreEqual("user", (string)message["type"]);
-            Assert.AreEqual("look", (string)content[0]["text"]);
-            Assert.AreEqual("document", (string)content[1]["type"]);
-            Assert.AreEqual("Selection", (string)content[1]["title"]);
-            Assert.AreEqual("Player", (string)content[1]["source"]["data"]);
-            Assert.AreEqual("image", (string)content[2]["type"]);
-            Assert.AreEqual("AAAA", (string)content[2]["source"]["data"]);
+            Assert.AreEqual("document", (string)content[0]["type"]);
+            Assert.AreEqual("Selection", (string)content[0]["title"]);
+            Assert.AreEqual("Player", (string)content[0]["source"]["data"]);
+            Assert.AreEqual("image", (string)content[1]["type"]);
+            Assert.AreEqual("AAAA", (string)content[1]["source"]["data"]);
+            Assert.AreEqual("look", (string)content[2]["text"]);
         }
 
         [Test]

@@ -55,11 +55,6 @@ namespace DTech.Parley.Editor.Agents.Claude
 		public static JArray BuildContent(UserTurn turn)
 		{
 			JArray content = new JArray();
-			if (!string.IsNullOrEmpty(turn.Text))
-			{
-				content.Add(new JObject { ["type"] = "text", ["text"] = turn.Text });
-			}
-
 			foreach (ChatAttachment attachment in turn.Attachments)
 			{
 				if (attachment.Kind == AttachmentKind.Text)
@@ -89,6 +84,11 @@ namespace DTech.Parley.Editor.Agents.Claude
 						},
 					});
 				}
+			}
+
+			if (!string.IsNullOrEmpty(turn.Text))
+			{
+				content.Add(new JObject { ["type"] = "text", ["text"] = turn.Text });
 			}
 
 			return content;

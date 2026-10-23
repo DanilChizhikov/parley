@@ -18,7 +18,8 @@
   external MCP servers. The CLI then denied every call, so the agent could not compile. `unity` is now never listed as
   an external server, and chats that already had it switched off are repaired when they load.
 - Claude Code: attached files and selections are sent as separate document blocks. A message starting with a skill
-  command (`/caveman …`) no longer sends the attachment to the model twice.
+  command (`/caveman …`) no longer sends the attachment to the model twice, and the command still runs when the
+  message has attachments.
 - Scrolling the chat with the mouse wheel no longer stops or jumps back to the bottom when the pointer passes over
   question cards, text fields, code blocks or tables.
 
