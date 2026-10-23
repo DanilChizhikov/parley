@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Threading.Tasks;
 
@@ -8,6 +7,8 @@ namespace DTech.Parley.Editor.Agents.Claude
 {
 	internal static class ClaudeCliLocator
 	{
+		public static readonly Version MinimumVersion = new (2, 1, 285);
+
 		private static string _cached;
 
 		public static IEnumerable<string> Candidates(string home, bool windows)
@@ -45,59 +46,17 @@ namespace DTech.Parley.Editor.Agents.Claude
 				return _cached;
 			}
 
-			foreach (string candidate in Candidates(ProjectPaths.HomeFolder, CommandLine.IsWindows))
-			{
-				if (File.Exists(candidate))
-				{
-					return _cached = candidate;
-				}
-			}
-
-			string found = await ShellEnvironment.WhichAsync("claude");
-			if (!string.IsNullOrEmpty(found) && File.Exists(found))
-			{
-				return _cached = found;
-			}
-
-			return null;
+			return _cached = await CliVersions.LocateNewestAsync(Candidates(ProjectPaths.HomeFolder, CommandLine.IsWindows), "claude");
 		}
 
 		public static Task<string> GetVersionAsync(string executable, string path)
 		{
-			return Task.Run(() => ReadVersion(executable, path));
+			return CliVersions.GetVersionAsync(executable, path);
 		}
 
-		private static string ReadVersion(string executable, string path)
+		public static bool IsOutdated(Version version)
 		{
-			try
-			{
-				ProcessStartInfo startInfo = new ProcessStartInfo(executable, "--version")
-				{
-					UseShellExecute = false,
-					RedirectStandardOutput = true,
-					RedirectStandardError = true,
-					CreateNoWindow = true,
-				};
-
-				if (!string.IsNullOrEmpty(path))
-				{
-					startInfo.Environment["PATH"] = path;
-				}
-
-				using Process process = Process.Start(startInfo);
-				if (process == null)
-				{
-					return null;
-				}
-
-				string output = process.StandardOutput.ReadToEnd();
-				process.WaitForExit(10000);
-				return output.Trim();
-			}
-			catch (Exception)
-			{
-				return null;
-			}
+			return version != null && version < MinimumVersion;
 		}
 	}
 }

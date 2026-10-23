@@ -48,11 +48,16 @@ namespace DTech.Parley.Editor.UI
             _usage.EnableInClassList("pl-status__usage--warning", ContextPercent(session) >= ContextWarningPercent);
         }
 
-        private static string FormatTokens(long tokens)
+        internal static string FormatTokens(long tokens)
         {
             if (tokens < 1000)
             {
                 return tokens.ToString(CultureInfo.InvariantCulture);
+            }
+
+            if (tokens >= 1000000)
+            {
+                return (tokens / 1000000.0).ToString("0.##", CultureInfo.InvariantCulture) + "M";
             }
 
             return (tokens / 1000.0).ToString("0.#", CultureInfo.InvariantCulture) + "k";

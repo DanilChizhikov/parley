@@ -141,7 +141,10 @@ namespace DTech.Parley.Editor.UI
             }
 
             string version = await ClaudeCliLocator.GetVersionAsync(path, await ShellEnvironment.GetLoginPathAsync());
-            return DescribeExecutable(path, version);
+            string description = DescribeExecutable(path, version);
+            return ClaudeCliLocator.IsOutdated(CliVersions.ParseVersion(version))
+                ? description + " · outdated (needs " + ClaudeCliLocator.MinimumVersion + "+), run 'claude update' or remove this install"
+                : description;
         }
 
         private static async Task<string> DetectCodexAsync()

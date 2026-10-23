@@ -7,5 +7,6 @@ namespace DTech.Parley.Editor
         public string ArgumentHint { get; set; }
         public string Path { get; set; }
         public bool IsLibrary { get; set; }
+        public bool CanDisable { get; set; } = true;
     }
 }

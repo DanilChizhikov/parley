@@ -16,6 +16,8 @@ namespace DTech.Parley.Editor
         void BackgroundTaskChanged(BackgroundTaskInfo task);
         void ModeChanged(PermissionMode mode);
         void ContextUsage(long usedTokens, long maxTokens);
+        void UsageReported(UsageReport report);
+        void RateLimitsChanged(RateLimits limits);
         void McpStatusChanged(IReadOnlyList<McpServerStatus> servers);
         void SkillsChanged(IReadOnlyList<SkillInfo> skills);
         void Notice(NoticeLevel level, string text);

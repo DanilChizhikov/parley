@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using DTech.Parley.Editor;
 using DTech.Parley.Editor.Agents.Claude;
 using Newtonsoft.Json.Linq;
@@ -58,6 +59,48 @@ namespace DTech.Parley.Tests.EditorMode
 
             JObject failure = new JObject { ["type"] = "result", ["is_error"] = true, ["errors"] = new JArray(ClaudeWire.MissingConversation + ": abc") };
             Assert.IsTrue(ClaudeWire.IsMissingConversation(failure));
+        }
+
+        [Test]
+        public void SkillDenyRulesOnlyIncludesPluginSkills()
+        {
+            string rules = ClaudeWire.SkillDenyRules(new[] { "code-review", "caveman:ui-ux", "kiss-review", "ui-ux-pro-max:design" });
+            Assert.AreEqual("Skill(caveman:ui-ux),Skill(ui-ux-pro-max:design)", rules);
+        }
+
+        [Test]
+        public void SkillDenyRulesReturnsEmptyWhenNoPlugins()
+        {
+            string rules = ClaudeWire.SkillDenyRules(new[] { "code-review", "kiss-review" });
+            Assert.AreEqual("", rules);
+        }
+
+        [Test]
+        public void LaunchSettingsIncludesAllDisabledInOverrides()
+        {
+            JObject settings = ClaudeWire.LaunchSettings(null, new[] { "code-review", "caveman:ui-ux" });
+            JObject overrides = (JObject)settings["skillOverrides"];
+            Assert.AreEqual("off", (string)overrides["code-review"]);
+            Assert.AreEqual("off", (string)overrides["caveman:ui-ux"]);
+        }
+
+        [Test]
+        public void ParseSkillsMarksPluginsAsNonDisableable()
+        {
+            List<SlashCommandInfo> commands = new ()
+            {
+                new SlashCommandInfo { Name = "code-review", Description = "Review (user)" },
+                new SlashCommandInfo { Name = "caveman:review", Description = "Review plugin" },
+                new SlashCommandInfo { Name = "help", IsBuiltin = true },
+            };
+
+            List<SkillInfo> skills = ClaudeWire.ParseSkills(commands, new HashSet<string>());
+
+            Assert.AreEqual(2, skills.Count);
+            Assert.AreEqual("code-review", skills[0].Name);
+            Assert.IsTrue(skills[0].CanDisable);
+            Assert.AreEqual("caveman:review", skills[1].Name);
+            Assert.IsFalse(skills[1].CanDisable);
         }
     }
 }

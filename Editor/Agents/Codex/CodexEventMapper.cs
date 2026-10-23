@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Text;
 using Newtonsoft.Json;
@@ -78,6 +79,14 @@ namespace DTech.Parley.Editor.Agents.Codex
                     break;
                 case "deprecationNotice":
                     _sink.Notice(NoticeLevel.Info, (string)parameters["summary"] ?? (string)parameters["message"] ?? parameters.ToString());
+                    break;
+                case CodexRateLimits.UpdatedNotification:
+                    RateLimits limits = CodexRateLimits.FromSnapshot(parameters["rateLimits"] as JObject);
+                    if (limits != null)
+                    {
+                        _sink.RateLimitsChanged(limits);
+                    }
+
                     break;
                 case "model/rerouted":
                     _sink.Notice(NoticeLevel.Info, "Codex switched the model to " + ((string)parameters["toModel"] ?? "another model") + ".");
@@ -350,12 +359,37 @@ namespace DTech.Parley.Editor.Agents.Codex
                 return;
             }
 
-            _lastTotal = usage["total"] as JObject;
+            JObject total = usage["total"] as JObject;
+            if (Tokens(total, "totalTokens") != Tokens(_lastTotal, "totalTokens"))
+            {
+                ReportUsage(usage["last"] as JObject);
+            }
+
+            _lastTotal = total;
             long window = (long?)usage["modelContextWindow"] ?? 0;
             if (window > 0)
             {
                 _sink.ContextUsage(Tokens(usage["last"] as JObject, "totalTokens"), window);
             }
+        }
+
+        private void ReportUsage(JObject last)
+        {
+            if (last == null)
+            {
+                return;
+            }
+
+            long cached = Tokens(last, "cachedInputTokens");
+            _sink.UsageReported(new UsageReport(
+                null,
+                null,
+                null,
+                Math.Max(0, Tokens(last, "inputTokens") - cached),
+                0,
+                cached,
+                Tokens(last, "outputTokens"),
+                Tokens(last, "reasoningOutputTokens")));
         }
 
         private void HandleTurnCompleted(JObject turn)

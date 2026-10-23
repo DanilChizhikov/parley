@@ -1,4 +1,3 @@
-using System;
 using System.Collections.Generic;
 using System.IO;
 using DTech.Parley.Editor.Agents.Codex;
@@ -17,14 +16,6 @@ namespace DTech.Parley.Tests.EditorMode
 
             List<string> windows = new (CodexCliLocator.Candidates("C:/Users/user", true));
             StringAssert.EndsWith("codex.cmd", windows[0]);
-        }
-
-        [Test]
-        public void ParsesCliVersion()
-        {
-            Assert.AreEqual(new Version(0, 162, 0), CodexCliLocator.ParseVersion("codex-cli 0.162.0"));
-            Assert.IsNull(CodexCliLocator.ParseVersion("garbage"));
-            Assert.IsNull(CodexCliLocator.ParseVersion(null));
         }
     }
 }

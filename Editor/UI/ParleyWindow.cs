@@ -342,6 +342,7 @@ namespace DTech.Parley.Editor.UI
             _side.Bind(session);
             _authCard.Bind(session);
             _composer.SetCommandSource(() => session.Commands);
+            _composer.SetLimitsSource(() => session.RateLimits, session.RefreshRateLimits);
             MarkDirty();
         }
 
@@ -396,6 +397,7 @@ namespace DTech.Parley.Editor.UI
             _presetButton.text = preset != null ? "Preset: " + preset.Name + " ▾" : "Preset ▾";
             RefreshUpdateButton();
             _composer.SetBusy(session.IsBusy);
+            _composer.RefreshLimits(profile.Kind != ProfileKind.Local);
             _statusBar.Refresh(session);
             _authCard.Refresh();
             _trustCard.Refresh();

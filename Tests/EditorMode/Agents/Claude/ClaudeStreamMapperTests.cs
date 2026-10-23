@@ -70,5 +70,25 @@ namespace DTech.Parley.Tests.EditorMode
             mapper.Handle(JObject.Parse("{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"<local-command-stdout>Total cost: $0</local-command-stdout>\"}"));
             Assert.AreEqual("Info:Total cost: $0", sink.Notices[0]);
         }
+
+        [Test]
+        public void UsageIsReportedPerApiCall()
+        {
+            RecordingSink sink = new RecordingSink();
+            ClaudeStreamMapper mapper = new ClaudeStreamMapper(sink);
+            mapper.Handle(JObject.Parse("{\"type\":\"stream_event\",\"parent_tool_use_id\":null,\"event\":{\"type\":\"message_start\",\"message\":{\"id\":\"m1\",\"model\":\"claude-opus-5-5\",\"usage\":{\"input_tokens\":3,\"cache_creation_input_tokens\":500,\"cache_read_input_tokens\":20000,\"output_tokens\":1}}}}"));
+            mapper.Handle(JObject.Parse("{\"type\":\"stream_event\",\"parent_tool_use_id\":null,\"event\":{\"type\":\"message_delta\",\"usage\":{\"output_tokens\":250}}}"));
+            mapper.Handle(JObject.Parse("{\"type\":\"assistant\",\"parent_tool_use_id\":\"toolu_agent\",\"message\":{\"id\":\"m2\",\"model\":\"claude-haiku-5-5\",\"usage\":{\"input_tokens\":10,\"output_tokens\":40},\"content\":[]}}"));
+
+            Assert.AreEqual(3, sink.UsageReports.Count);
+            Assert.AreEqual("m1", sink.UsageReports[0].CallId);
+            Assert.AreEqual("claude-opus-5-5", sink.UsageReports[0].Model);
+            Assert.AreEqual(20000, sink.UsageReports[0].CacheReadTokens);
+            Assert.AreEqual("m1", sink.UsageReports[1].CallId);
+            Assert.AreEqual(250, sink.UsageReports[1].OutputTokens);
+            Assert.AreEqual("m2", sink.UsageReports[2].CallId);
+            Assert.AreEqual("toolu_agent", sink.UsageReports[2].ParentToolUseId);
+            Assert.AreEqual("claude-haiku-5-5", sink.UsageReports[2].Model);
+        }
     }
 }

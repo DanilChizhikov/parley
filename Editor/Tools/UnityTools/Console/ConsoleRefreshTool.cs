@@ -14,7 +14,7 @@ namespace DTech.Parley.Editor.Tools.UnityTools
         public string Name => "refresh";
 
         public string Description =>
-            "Refresh the AssetDatabase so Unity imports changed files and recompiles scripts, wait for compilation, then report compiler errors. Call after editing C# files.";
+            "Refresh the AssetDatabase so Unity imports changed files and recompiles scripts, wait for compilation, then report compiler errors. Call once after finishing a batch of C# edits, not after each file.";
 
         public JObject InputSchema { get; } = new SchemaBuilder().Build();
 

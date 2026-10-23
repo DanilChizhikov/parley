@@ -29,6 +29,7 @@ namespace DTech.Parley.Editor.Agents.Codex
         private const string CompactCommand = "/compact";
         private const string ImplementPlanMessage = "Implement the plan.";
         private const string ToolCallMethod = "item/tool/call";
+        private const double RateLimitRefreshSeconds = 30.0;
 
         private readonly ParleyProfile _profile;
         private readonly IAgentSink _sink;
@@ -67,7 +68,9 @@ namespace DTech.Parley.Editor.Agents.Codex
         private bool _restartPending;
         private bool _mcpStatusUnavailable;
         private bool _skillsUnavailable;
+        private bool _rateLimitsLoading;
         private bool _disposed;
+        private DateTime _rateLimitsFetchedAt = DateTime.MinValue;
         private McpConfiguration _mcp = new ();
         private SkillConfiguration _skills = new ();
         private BackendCapabilities _capabilities;
@@ -276,6 +279,11 @@ namespace DTech.Parley.Editor.Agents.Codex
             _ = RefreshSkillsAsync();
         }
 
+        public void RefreshRateLimits()
+        {
+            _ = RefreshRateLimitsAsync(false);
+        }
+
         private static string DescribeAccount(JObject account)
         {
             switch ((string)account?["type"])
@@ -345,7 +353,7 @@ namespace DTech.Parley.Editor.Agents.Codex
             string path = await ShellEnvironment.GetLoginPathAsync();
             cancellationToken.ThrowIfCancellationRequested();
             string environmentPath = ShellEnvironment.Merge(Path.GetDirectoryName(executable), path);
-            Version version = CodexEnvironment.UsesManagedHome(_profile) ? await CodexCliLocator.GetParsedVersionAsync(executable, environmentPath) : null;
+            Version version = CodexEnvironment.UsesManagedHome(_profile) ? await CliVersions.GetParsedVersionAsync(executable, environmentPath) : null;
             cancellationToken.ThrowIfCancellationRequested();
             List<string> arguments = new () { "app-server" };
             CodexEnvironment.AddCredentialOptions(arguments, _profile, version);
@@ -395,6 +403,7 @@ namespace DTech.Parley.Editor.Agents.Codex
             _sink.CapabilitiesChanged(_capabilities);
             await SetSkillRootsAsync();
             await OpenThreadAsync();
+            _ = RefreshRateLimitsAsync(true);
         }
 
         private async Task<string> EnsureAccountAsync(string apiKey)
@@ -851,6 +860,39 @@ namespace DTech.Parley.Editor.Agents.Codex
             }
 
             return await completion.Task;
+        }
+
+        private async Task RefreshRateLimitsAsync(bool force)
+        {
+            if (!IsRunning || _rateLimitsLoading)
+            {
+                return;
+            }
+
+            if (!force && (DateTime.UtcNow - _rateLimitsFetchedAt).TotalSeconds < RateLimitRefreshSeconds)
+            {
+                return;
+            }
+
+            _rateLimitsLoading = true;
+            try
+            {
+                JToken response = await SendRequestAsync(CodexRateLimits.ReadMethod, new JObject(), RequestTimeoutMs);
+                _rateLimitsFetchedAt = DateTime.UtcNow;
+                _sink.RateLimitsChanged(CodexRateLimits.FromSnapshot(response?["rateLimits"] as JObject) ?? RateLimits.NotAvailable());
+            }
+            catch (TimeoutException)
+            {
+            }
+            catch (Exception)
+            {
+                _rateLimitsFetchedAt = DateTime.UtcNow;
+                _sink.RateLimitsChanged(RateLimits.NotAvailable());
+            }
+            finally
+            {
+                _rateLimitsLoading = false;
+            }
         }
 
         private async Task RefreshMcpStatusAsync()
