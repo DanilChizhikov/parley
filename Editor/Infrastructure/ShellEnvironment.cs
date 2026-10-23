@@ -119,24 +119,24 @@ namespace DTech.Parley.Editor
 					return null;
 				}
 
-				process.StandardInput.Close();
-				Task<string> output = process.StandardOutput.ReadToEndAsync();
-				process.StandardError.ReadToEndAsync();
-				if (!process.WaitForExit(TimeoutMs))
+				ProcessReaper.Track(process);
+				try
 				{
-					try
+					process.StandardInput.Close();
+					Task<string> output = process.StandardOutput.ReadToEndAsync();
+					process.StandardError.ReadToEndAsync();
+					if (!process.WaitForExit(TimeoutMs))
 					{
-						process.Kill();
-					}
-					catch (Exception exception)
-					{
-						Debug.LogException(exception);
+						ProcessTree.Kill(process);
+						return null;
 					}
 
-					return null;
+					return Extract(output.Result);
 				}
-
-				return Extract(output.Result);
+				finally
+				{
+					ProcessReaper.Untrack(process);
+				}
 			}
 			catch (Exception exception)
 			{
