@@ -141,11 +141,24 @@ namespace DTech.Parley.Editor.Agents.Claude
 					return new AuthStatus { Error = "Failed to run claude auth status." };
 				}
 
-				process.StandardInput.Close();
-				Task<string> errorTask = process.StandardError.ReadToEndAsync();
-				string output = process.StandardOutput.ReadToEnd();
-				process.WaitForExit(15000);
-				return Parse(output, errorTask.Result);
+				ProcessReaper.Track(process);
+				try
+				{
+					process.StandardInput.Close();
+					Task<string> errorTask = process.StandardError.ReadToEndAsync();
+					Task<string> outputTask = process.StandardOutput.ReadToEndAsync();
+					if (!process.WaitForExit(15000))
+					{
+						ProcessTree.Kill(process);
+						return new AuthStatus { Error = "claude auth status timed out." };
+					}
+
+					return Parse(outputTask.Result, errorTask.Result);
+				}
+				finally
+				{
+					ProcessReaper.Untrack(process);
+				}
 			}
 			catch (Exception exception)
 			{
