@@ -8,5 +8,6 @@ namespace DTech.Parley.Editor.UI
         Mcp = 3,
         Skills = 4,
         Usage = 5,
+        Agents = 6,
     }
 }
