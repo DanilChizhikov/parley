@@ -25,7 +25,6 @@ namespace DTech.Parley.Editor.Agents.Codex
         private const int MaxStatusPages = 10;
         private const double ForceStopDelaySeconds = 3.0;
         private const string ClientVersion = "0.1.0";
-        private const string ClearCommand = "/clear";
         private const string CompactCommand = "/compact";
         private const string ImplementPlanMessage = "Implement the plan.";
         private const string ToolCallMethod = "item/tool/call";
@@ -148,14 +147,6 @@ namespace DTech.Parley.Editor.Agents.Codex
 
             CancelPlanRequest();
             string text = (turn.Text ?? string.Empty).Trim();
-            if (!IsBusy && text == ClearCommand)
-            {
-                await StartThreadAsync();
-                _sink.Notice(NoticeLevel.Info, "Started a new Codex thread.");
-                _sink.TurnCompleted(new TurnResult { Subtype = "success" });
-                return;
-            }
-
             if (!IsBusy && text == CompactCommand)
             {
                 await SendRequestAsync("thread/compact/start", new JObject { ["threadId"] = _threadId }, RequestTimeoutMs);
@@ -195,6 +186,18 @@ namespace DTech.Parley.Editor.Agents.Codex
 
             CancelPlanRequest();
             InterruptTurn();
+        }
+
+        public async Task ClearContextAsync(CancellationToken token)
+        {
+            if (IsRunning)
+            {
+                await StartThreadAsync();
+                return;
+            }
+
+            _threadId = null;
+            _resumeThreadId = null;
         }
 
         public void SetPermissionMode(PermissionMode mode)
@@ -475,7 +478,6 @@ namespace DTech.Parley.Editor.Agents.Codex
             BackendCapabilities capabilities = new BackendCapabilities { Account = account };
             capabilities.Modes.AddRange(CodexPermissions.Supported);
             capabilities.Commands.Add(new SlashCommandInfo { Name = "compact", Description = "Summarize the conversation to free context", IsBuiltin = true });
-            capabilities.Commands.Add(new SlashCommandInfo { Name = "clear", Description = "Start a new Codex thread", IsBuiltin = true });
             foreach (JObject model in _models)
             {
                 capabilities.Models.Add(new ModelOption

@@ -27,8 +27,10 @@ namespace DTech.Parley.Editor.Sessions
 		public event Action<TranscriptBlock> OnBlockChanged;
 		public event Action<PendingRequest> OnRequestRaised;
 		public event Action OnStateChanged;
+		public event Action OnCleared;
 
 		private const double DeltaFlushIntervalSeconds = 0.05;
+		private const string ClearCommandName = "clear";
 
 		private readonly Dictionary<string, TranscriptBlock> _blocksByKey = new ();
 		private readonly Dictionary<string, TranscriptBlock> _blocksByToolId = new ();
@@ -93,6 +95,11 @@ namespace DTech.Parley.Editor.Sessions
 			get
 			{
 				ParleyCommandRegistry.Merge(_commands, Capabilities.Commands);
+				if (!HasCommand(_commands, ClearCommandName))
+				{
+					_commands.Add(new SlashCommandInfo { Name = ClearCommandName, Description = "Clear this chat and start a fresh context", IsBuiltin = true });
+				}
+
 				return _commands;
 			}
 		}
@@ -173,6 +180,12 @@ namespace DTech.Parley.Editor.Sessions
 			OnBlockChanged = null;
 			OnRequestRaised = null;
 			OnStateChanged = null;
+			OnCleared = null;
+		}
+
+		public static bool IsClearCommand(string text)
+		{
+			return string.Equals((text ?? string.Empty).Trim(), "/" + ClearCommandName, StringComparison.OrdinalIgnoreCase);
 		}
 
 		public async Task EnsureStartedAsync()
@@ -204,6 +217,12 @@ namespace DTech.Parley.Editor.Sessions
 
 		public async Task SendAsync(string text, List<ChatAttachment> attachments)
 		{
+			if (IsClearCommand(text) && (attachments == null || attachments.Count == 0))
+			{
+				await ClearAsync();
+				return;
+			}
+
 			UserTurn turn = new UserTurn { Text = text ?? string.Empty, Attachments = attachments ?? new List<ChatAttachment>() };
 			List<SkillInvocation> autoSkills = null;
 			if (Record.PendingAutoSkills != null && Record.PendingAutoSkills.Count > 0)
@@ -247,6 +266,52 @@ namespace DTech.Parley.Editor.Sessions
 				_sending = false;
 				RaiseState();
 			}
+		}
+
+		public async Task ClearAsync()
+		{
+			if (IsBusy || IsStarting)
+			{
+				AddNotice(NoticeLevel.Warning, "Wait for the current reply to finish before clearing the chat.");
+				return;
+			}
+
+			FlushDeltas();
+			try
+			{
+				await Backend.ClearContextAsync(_lifetime.Token);
+			}
+			catch (OperationCanceledException)
+			{
+				return;
+			}
+			catch (Exception exception)
+			{
+				AddNotice(NoticeLevel.Warning, "Could not reset the agent context: " + exception.Message);
+				return;
+			}
+
+			Record.Entries.Clear();
+			Record.BackendSessionId = null;
+			Record.LocalHistory = null;
+			Record.LatestPlan = null;
+			Record.Title = SessionRecord.DefaultTitle;
+			_currentAssistant = null;
+			_blocksByKey.Clear();
+			_blocksByToolId.Clear();
+			_requestBlocks.Clear();
+			_requests.Clear();
+			_pendingTaskCreates.Clear();
+			_pendingText.Clear();
+			_pendingInput.Clear();
+			_flushedBlocks.Clear();
+			_todos.Clear();
+			_tasks.Clear();
+			ContextUsed = 0;
+			LastTurn = null;
+			Save();
+			OnCleared?.Invoke();
+			RaiseState();
 		}
 
 		public void Interrupt()
@@ -743,6 +808,19 @@ namespace DTech.Parley.Editor.Sessions
 					Record.PendingAutoSkills.Insert(0, skills[i]);
 				}
 			}
+		}
+
+		private static bool HasCommand(List<SlashCommandInfo> commands, string name)
+		{
+			foreach (SlashCommandInfo command in commands)
+			{
+				if (string.Equals(command.Name, name, StringComparison.OrdinalIgnoreCase))
+				{
+					return true;
+				}
+			}
+
+			return false;
 		}
 
 		private void ReportStartFailure(Exception exception)

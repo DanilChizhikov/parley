@@ -233,6 +233,15 @@ namespace DTech.Parley.Editor.Agents.Claude
 			}
 		}
 
+		public Task ClearContextAsync(CancellationToken token)
+		{
+			_resumeSessionId = null;
+			_restartPending = false;
+			_mapper.Reset();
+			StopProcess();
+			return Task.CompletedTask;
+		}
+
 		public void SetPermissionMode(PermissionMode mode)
 		{
 			Mode = mode;
