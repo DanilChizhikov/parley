@@ -54,7 +54,6 @@ namespace DTech.Parley.Editor.UI
             _input.AddToClassList("pl-composer__input");
             _input.textEdition.placeholder = "Ask Parley…  (@ mentions an asset, / opens commands, Shift+Enter adds a line)";
             _input.verticalScrollerVisibility = ScrollerVisibility.Auto;
-            // Unity re-focuses the field when the editor regains OS focus; select-all would then let one key wipe the draft.
             _input.textSelection.selectAllOnFocus = false;
             _input.textSelection.selectAllOnMouseUp = false;
             _input.RegisterCallback<KeyDownEvent>(KeyDownHandler, TrickleDown.TrickleDown);

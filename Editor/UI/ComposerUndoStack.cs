@@ -16,7 +16,6 @@ namespace DTech.Parley.Editor.UI
 
         public bool CanRedo => _redo.Count > 0;
 
-        // Typing in quick succession merges into one step, so undo removes a burst of text instead of single letters.
         public void Record(ComposerSnapshot before, double time, bool merge)
         {
             _redo.Clear();
