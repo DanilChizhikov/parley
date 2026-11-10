@@ -356,6 +356,9 @@ namespace DTech.Parley.Editor.Agents.Codex
             RegisterSpawn(item);
             switch ((string)item["type"])
             {
+                case "subAgentActivity":
+                    HandleAgentActivity(item, parent, false);
+                    break;
                 case "agentMessage":
                     _sink.BlockStarted(new BlockStartRequest(id, BlockKind.Text, parent, null, null));
                     break;
@@ -426,6 +429,9 @@ namespace DTech.Parley.Editor.Agents.Codex
                 case "collabAgentToolCall":
                     HandleCollabCompleted(item, parent);
                     return;
+                case "subAgentActivity":
+                    HandleAgentActivity(item, parent, true);
+                    return;
             }
 
             string toolName = ToolName(item);
@@ -448,6 +454,58 @@ namespace DTech.Parley.Editor.Agents.Codex
 
             JToken structured = type == "mcpToolCall" ? (item["result"] as JObject)?["structuredContent"] : null;
             _sink.ToolResult(new ToolResultRequest(id, output, IsFailed(item), structured));
+        }
+
+        // Newer Codex reports spawn_agent as agent activity instead of a collab call; the task message itself is encrypted.
+        private void HandleAgentActivity(JObject item, string parent, bool completed)
+        {
+            string thread = (string)item["agentThreadId"];
+            if (string.IsNullOrEmpty(thread))
+            {
+                return;
+            }
+
+            switch ((string)item["kind"])
+            {
+                case "started":
+                    string id = (string)item["id"];
+                    _spawnByThread[thread] = id;
+                    if (!completed)
+                    {
+                        _sink.BlockStarted(new BlockStartRequest(id, BlockKind.ToolUse, parent, id, AgentTool));
+                        return;
+                    }
+
+                    JObject input = new JObject { ["description"] = AgentName((string)item["agentPath"]), ["model"] = (string)item["model"] };
+                    _sink.BlockFinalized(new BlockFinalizeRequest(id, BlockKind.ToolUse, parent, null, id, AgentTool, input));
+                    break;
+                case "completed" when completed:
+                    FinishAgentOf(thread, false, null);
+                    break;
+                case "interrupted" when completed:
+                    FinishAgentOf(thread, true, "Interrupted.");
+                    break;
+            }
+        }
+
+        private static string AgentName(string path)
+        {
+            if (string.IsNullOrEmpty(path))
+            {
+                return null;
+            }
+
+            string trimmed = path.TrimEnd('/');
+            return trimmed.Substring(trimmed.LastIndexOf('/') + 1);
+        }
+
+        private void FinishAgentOf(string thread, bool failed, string message)
+        {
+            string spawnId = SpawnOf(thread);
+            if (spawnId != null)
+            {
+                FinishAgent(spawnId, failed, message);
+            }
         }
 
         private void HandleCollabCompleted(JObject item, string parent)

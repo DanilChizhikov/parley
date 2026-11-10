@@ -259,6 +259,27 @@ namespace DTech.Parley.Tests.EditorMode
             Assert.AreEqual(("spawn_1", "boom", true), sink.ToolResults[0]);
         }
 
+        [Test]
+        public void SubAgentActivityBecomesAgentToolWithReply()
+        {
+            RecordingSink sink = new RecordingSink();
+            CodexEventMapper mapper = new CodexEventMapper(sink);
+            const string started = "{\"type\":\"subAgentActivity\",\"id\":\"call_1\",\"kind\":\"started\",\"agentThreadId\":\"thr_child\",\"agentPath\":\"/root/first\",\"model\":\"gpt\"}";
+            mapper.Handle("item/started", Spawn("thr_main", started));
+            mapper.Handle("item/completed", Spawn("thr_main", started));
+            Assert.AreEqual(("call_1", "Agent"), (sink.ToolUses[0].id, sink.ToolUses[0].name));
+            Assert.AreEqual("first", (string)sink.ToolUses[0].input["description"]);
+
+            mapper.Handle("item/completed", Spawn("thr_child", "{\"type\":\"agentMessage\",\"id\":\"msg_c\",\"text\":\"Fine\"}"));
+            Assert.AreEqual("call_1", sink.Parents["msg_c"]);
+            CollectionAssert.IsEmpty(sink.ToolResults);
+
+            mapper.Handle("item/completed", Spawn("thr_main", "{\"type\":\"subAgentActivity\",\"id\":\"subagent-completed-1\",\"kind\":\"completed\",\"agentThreadId\":\"thr_child\",\"agentPath\":\"/root/first\"}"));
+            mapper.Handle("turn/completed", JObject.Parse("{\"threadId\":\"thr_child\",\"turn\":{\"status\":\"completed\"}}"));
+            Assert.AreEqual(1, sink.ToolResults.Count);
+            Assert.AreEqual(("call_1", "Fine", false), sink.ToolResults[0]);
+        }
+
         private static JObject Spawn(string threadId, string itemJson)
         {
             return new JObject { ["threadId"] = threadId, ["item"] = JObject.Parse(itemJson) };
