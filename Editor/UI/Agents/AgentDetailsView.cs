@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UIElements;
 
@@ -32,31 +33,14 @@ namespace DTech.Parley.Editor.UI
                 return;
             }
 
-            VisualElement header = new VisualElement();
-            header.AddToClassList("pl-agent-details__header");
-            Label glyph = ParleyStyles.Text(AgentGraphNode.Glyph(info.Status), "pl-agent-details__status");
-            glyph.AddToClassList("pl-agent-details__status--" + info.Status.ToString().ToLowerInvariant());
-            glyph.tooltip = info.Status.ToString();
-            header.Add(glyph);
-            Label title = ParleyStyles.Text(info.Title, "pl-agent-details__title");
-            title.selection.isSelectable = true;
-            header.Add(title);
-            Add(header);
-            if (info.IsMain)
+            Add(BuildHeader(info, subagentCount));
+            if (!info.IsMain)
             {
-                Add(ParleyStyles.Text(subagentCount == 0 ? "No subagents in this chat yet." : Plural(subagentCount, "subagent") + " in this chat.",
-                    ParleyStyles.Muted));
-            }
-            else
-            {
-                AddMarkdown("Prompt", info.Prompt);
+                AddMarkdown("Prompt", info.Prompt, null);
+                AddMarkdown("Result", info.Result, info.Status == AgentNodeStatus.Failed ? "pl-agent-section--failed" : "pl-agent-section--result");
             }
 
             AddActivity(info);
-            if (!info.IsMain)
-            {
-                AddMarkdown("Result", info.Result);
-            }
         }
 
         private static string Plural(int count, string noun)
@@ -64,17 +48,72 @@ namespace DTech.Parley.Editor.UI
             return count == 1 ? "1 " + noun : count + " " + noun + "s";
         }
 
-        private void AddMarkdown(string caption, string markdown)
+        private static VisualElement BuildHeader(AgentNodeInfo info, int subagentCount)
+        {
+            VisualElement header = new VisualElement();
+            header.AddToClassList("pl-agent-details__header");
+            VisualElement top = new VisualElement();
+            top.AddToClassList("pl-agent-details__top");
+            Label pill = ParleyStyles.Text(AgentGraphNode.Glyph(info.Status) + " " + info.Status, "pl-agent-pill");
+            pill.AddToClassList("pl-agent-pill--" + info.Status.ToString().ToLowerInvariant());
+            top.Add(pill);
+            Label title = ParleyStyles.Text(info.IsMain || string.IsNullOrEmpty(info.Description) ? info.Title : info.Description,
+                "pl-agent-details__title");
+            title.selection.isSelectable = true;
+            top.Add(title);
+            header.Add(top);
+            List<string> meta = new List<string>(3);
+            if (!string.IsNullOrEmpty(info.Type))
+            {
+                meta.Add(info.Type);
+            }
+
+            meta.Add(Plural(info.ToolCount, "tool call"));
+            if (info.IsMain)
+            {
+                meta.Add(subagentCount == 0 ? "no subagents yet" : Plural(subagentCount, "subagent"));
+            }
+
+            header.Add(ParleyStyles.Text(string.Join("  ·  ", meta), "pl-agent-details__meta"));
+            return header;
+        }
+
+        private VisualElement AddSection(string caption, string badge, string modifier)
+        {
+            VisualElement section = new VisualElement();
+            section.AddToClassList("pl-agent-section");
+            if (modifier != null)
+            {
+                section.AddToClassList(modifier);
+            }
+
+            VisualElement header = new VisualElement();
+            header.AddToClassList("pl-agent-section__header");
+            header.Add(ParleyStyles.Text(caption, "pl-agent-section__caption"));
+            if (badge != null)
+            {
+                header.Add(ParleyStyles.Spacer());
+                header.Add(ParleyStyles.Text(badge, "pl-agent-section__badge"));
+            }
+
+            section.Add(header);
+            VisualElement body = new VisualElement();
+            body.AddToClassList("pl-agent-section__body");
+            section.Add(body);
+            Add(section);
+            return body;
+        }
+
+        private void AddMarkdown(string caption, string markdown, string modifier)
         {
             if (string.IsNullOrWhiteSpace(markdown))
             {
                 return;
             }
 
-            Add(ParleyStyles.Text(caption, "pl-agent-details__caption"));
             MarkdownView view = new MarkdownView();
             view.SetMarkdown(markdown);
-            Add(view);
+            AddSection(caption, null, modifier).Add(view);
         }
 
         private void AddActivity(AgentNodeInfo info)
@@ -84,21 +123,25 @@ namespace DTech.Parley.Editor.UI
                 return;
             }
 
-            Add(ParleyStyles.Text("Activity · " + Plural(info.ToolCount, "tool call"), "pl-agent-details__caption"));
+            VisualElement body = AddSection("Activity", Plural(info.ToolCount, "tool call"), null);
             int start = info.Activity.Count > MaxActivity ? info.Activity.Count - MaxActivity : 0;
             if (start > 0)
             {
-                Add(ParleyStyles.Text(start + " earlier steps hidden", ParleyStyles.Muted));
+                body.Add(ParleyStyles.Text(start + " earlier steps hidden", "pl-agent-section__hint"));
             }
 
+            VisualElement timeline = new VisualElement();
+            timeline.AddToClassList("pl-agent-timeline");
             for (int i = start; i < info.Activity.Count; i++)
             {
                 TranscriptBlock block = info.Activity[i];
                 if (block.Kind == BlockKind.ToolUse || !string.IsNullOrWhiteSpace(block.Text))
                 {
-                    Add(BuildStep(block));
+                    timeline.Add(BuildStep(block));
                 }
             }
+
+            body.Add(timeline);
         }
 
         private static VisualElement BuildStep(TranscriptBlock block)
@@ -107,12 +150,14 @@ namespace DTech.Parley.Editor.UI
             row.AddToClassList("pl-agent-step");
             if (block.Kind != BlockKind.ToolUse)
             {
+                row.AddToClassList("pl-agent-step--text");
                 Label text = ParleyStyles.Text(ToolPresenter.Truncate(block.Text?.Trim(), MaxTextLength), "pl-agent-step__text");
                 text.selection.isSelectable = true;
                 row.Add(text);
                 return row;
             }
 
+            row.AddToClassList("pl-agent-step--tool");
             bool done = !block.IsError && block.Result != null;
             bool running = !block.IsError && block.Result == null && !block.IsFinished;
             Label status = ParleyStyles.Text(block.IsError ? "✕" : done ? "✓" : running ? "●" : "○", "pl-agent-step__status");
