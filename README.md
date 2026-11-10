@@ -73,7 +73,7 @@ project info. You can attach the selection, console errors, a Scene or Game scre
     ```
 3. Unity will automatically import the package.
 
-To pin a release, add its tag: `https://github.com/DanilChizhikov/parley.git#v0.3.1`.
+To pin a release, add its tag: `https://github.com/DanilChizhikov/parley.git#v0.4.0`.
 
 Parley depends on `com.unity.nuget.newtonsoft-json`; Unity installs it automatically.
 
@@ -88,7 +88,8 @@ Parley depends on `com.unity.nuget.newtonsoft-json`; Unity installs it automatic
 - Native function calling, or `<tool_call>` text tags for models that lack it
 - Streaming markdown with code highlighting, tables, task lists and clickable `path:line` references
 - Tool cards with unified diffs for edits and collapsible output
-- Subagent output nested under its Agent tool card
+- Subagent output nested under its Agent tool card, and a graph of the chat's subagents with each one's prompt,
+  steps and result
 - Side panel with the latest plan, todos, background tasks (with a Stop button), this chat's MCP servers and
   skills (with search), and its token usage
 - Token usage per model, agent, turn and tool result, with an XML export to hand to an agent for analysis
@@ -113,7 +114,7 @@ Use `Window/DTech/Parley/AI Chat`. The toolbar holds the profile, model, permiss
 **Skills** and **Preset** buttons, plus **New**, **History**, **Panel** and preferences. Press Enter to send and Shift+Enter for a
 new line. While the agent works, Send queues your message and **Stop** interrupts the turn.
 
-**Panel** toggles the side panel. Its tabs are **Todos**, **Plan**, **Tasks**, **MCP**, **Skills** and **Usage**.
+**Panel** toggles the side panel. Its tabs are **Todos**, **Plan**, **Tasks**, **Agents**, **MCP**, **Skills** and **Usage**.
 
 ### Profiles and Sign-in
 Profiles live in `Preferences/DTech/Parley`. Parley starts with a Claude Code profile, a Codex profile and two local
