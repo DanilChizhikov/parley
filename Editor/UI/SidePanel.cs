@@ -8,7 +8,9 @@ namespace DTech.Parley.Editor.UI
 {
     internal sealed class SidePanel : VisualElement
     {
-        private static readonly SidePanelTab[] _order = { SidePanelTab.Todos, SidePanelTab.Plan, SidePanelTab.Tasks, SidePanelTab.Mcp, SidePanelTab.Skills, SidePanelTab.Usage };
+        public event Action OnOpenAgentsWindow;
+
+        private static readonly SidePanelTab[] _order = { SidePanelTab.Todos, SidePanelTab.Plan, SidePanelTab.Tasks, SidePanelTab.Agents, SidePanelTab.Mcp, SidePanelTab.Skills, SidePanelTab.Usage };
 
         private readonly Dictionary<SidePanelTab, Button> _tabs = new ();
         private readonly ScrollView _content;
@@ -16,6 +18,7 @@ namespace DTech.Parley.Editor.UI
         private readonly McpPanel _mcp = new ();
         private readonly SkillsPanel _skills = new ();
         private readonly UsagePanel _usage = new ();
+        private readonly AgentsPanel _agents;
 
         private ChatSession _session;
         private SidePanelTab _tab = SidePanelTab.Todos;
@@ -40,6 +43,9 @@ namespace DTech.Parley.Editor.UI
             _content = new ScrollView(ScrollViewMode.Vertical);
             _content.AddToClassList("pl-side__content");
             Add(_content);
+            _agents = new AgentsPanel(true, () => OnOpenAgentsWindow?.Invoke());
+            ParleyStyles.SetVisible(_agents, false);
+            Add(_agents);
         }
 
         public void Bind(ChatSession session)
@@ -50,6 +56,7 @@ namespace DTech.Parley.Editor.UI
             _mcp.Bind(session);
             _skills.Bind(session);
             _usage.Bind(session);
+            _agents.Bind(session);
             if (session != null && !string.IsNullOrEmpty(session.Record.LatestPlan) && session.Todos.Count == 0)
             {
                 _tab = SidePanelTab.Plan;
@@ -73,6 +80,8 @@ namespace DTech.Parley.Editor.UI
                 pair.Value.EnableInClassList("pl-side__tab--active", pair.Key == _tab);
             }
 
+            ParleyStyles.SetVisible(_content, _tab != SidePanelTab.Agents);
+            ParleyStyles.SetVisible(_agents, _tab == SidePanelTab.Agents);
             if (_session == null)
             {
                 _content.Clear();
@@ -81,6 +90,7 @@ namespace DTech.Parley.Editor.UI
 
             _tabs[SidePanelTab.Todos].text = _session.Todos.Count > 0 ? "Todos " + CompletedCount() + "/" + _session.Todos.Count : "Todos";
             _tabs[SidePanelTab.Tasks].text = _session.Tasks.Count > 0 ? "Tasks " + _session.Tasks.Count : "Tasks";
+            _tabs[SidePanelTab.Agents].text = _agents.SubagentCount > 0 ? "Agents " + _agents.SubagentCount : "Agents";
             int mcpCount = McpPanel.EnabledCount(_session);
             _tabs[SidePanelTab.Mcp].text = mcpCount > 0 ? "MCP " + mcpCount : "MCP";
             int skillCount = SkillsPanel.EnabledCount(_session);
@@ -118,6 +128,9 @@ namespace DTech.Parley.Editor.UI
                 {
                     RenderUsage();
                 } break;
+
+                case SidePanelTab.Agents:
+                    break;
                 
                 default:
                     throw new ArgumentOutOfRangeException();
@@ -193,6 +206,7 @@ namespace DTech.Parley.Editor.UI
                 SidePanelTab.Tasks => "Background commands and subagents",
                 SidePanelTab.Mcp => "MCP servers available in this chat",
                 SidePanelTab.Usage => "Token usage of this chat, per API call",
+                SidePanelTab.Agents => "Subagents of this chat as a graph: click one to see its prompt and steps",
                 _ => "Skills available in this chat",
             };
         }
