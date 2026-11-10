@@ -197,6 +197,11 @@ namespace DTech.Parley.Editor.Agents.Preview
 			_turn?.Cancel();
 		}
 
+		public Task ClearContextAsync(CancellationToken token)
+		{
+			return Task.CompletedTask;
+		}
+
 		public void SetPermissionMode(PermissionMode mode)
 		{
 			Mode = mode;

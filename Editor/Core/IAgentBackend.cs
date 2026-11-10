@@ -15,6 +15,7 @@ namespace DTech.Parley.Editor
 		Task StartAsync(CancellationToken token);
 		Task SendAsync(UserTurn turn, CancellationToken token);
 		void Interrupt();
+		Task ClearContextAsync(CancellationToken token);
 		void SetPermissionMode(PermissionMode mode);
 		void SetModel(string model);
 		void SetEffort(string effort);

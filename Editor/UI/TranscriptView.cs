@@ -58,6 +58,7 @@ namespace DTech.Parley.Editor.UI
             _session.OnEntryAdded += EntryAddedHandler;
             _session.OnBlockAdded += BlockAddedHandler;
             _session.OnBlockChanged += BlockChangedHandler;
+            _session.OnCleared += ClearedHandler;
             foreach (TranscriptEntry entry in session.Record.Entries)
             {
                 AddEntry(entry);
@@ -74,6 +75,7 @@ namespace DTech.Parley.Editor.UI
                 _session.OnEntryAdded -= EntryAddedHandler;
                 _session.OnBlockAdded -= BlockAddedHandler;
                 _session.OnBlockChanged -= BlockChangedHandler;
+                _session.OnCleared -= ClearedHandler;
                 _session = null;
             }
 
@@ -309,6 +311,11 @@ namespace DTech.Parley.Editor.UI
             {
                 _dirty.Add(view);
             }
+        }
+
+        private void ClearedHandler()
+        {
+            Bind(_session);
         }
     }
 }
