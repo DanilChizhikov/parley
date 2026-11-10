@@ -20,6 +20,7 @@ namespace DTech.Parley.Editor.Agents.Preview
 		LongTurn = 14,
 		ContextFull = 15,
 		RestartHint = 16,
+		Subagents = 17,
 	}
 }
 #endif
