@@ -2,7 +2,6 @@ using System;
 using System.Diagnostics;
 using System.Text;
 using System.Threading.Tasks;
-using Debug = UnityEngine.Debug;
 
 namespace DTech.Parley.Editor.Secrets
 {
@@ -30,31 +29,31 @@ namespace DTech.Parley.Editor.Secrets
 					return new SecretProcessResult(-1, string.Empty, string.Empty);
 				}
 
-				Task<string> output = process.StandardOutput.ReadToEndAsync();
-				Task<string> error = process.StandardError.ReadToEndAsync();
-				if (!string.IsNullOrEmpty(stdin))
+				ProcessReaper.Track(process);
+				try
 				{
-					byte[] bytes = new UTF8Encoding(false).GetBytes(stdin);
-					process.StandardInput.BaseStream.Write(bytes, 0, bytes.Length);
-					process.StandardInput.BaseStream.Flush();
-				}
-
-				process.StandardInput.Close();
-				if (!process.WaitForExit(TimeoutMs))
-				{
-					try
+					Task<string> output = process.StandardOutput.ReadToEndAsync();
+					Task<string> error = process.StandardError.ReadToEndAsync();
+					if (!string.IsNullOrEmpty(stdin))
 					{
-						process.Kill();
-					}
-					catch (Exception exception)
-					{
-						Debug.LogException(exception);
+						byte[] bytes = new UTF8Encoding(false).GetBytes(stdin);
+						process.StandardInput.BaseStream.Write(bytes, 0, bytes.Length);
+						process.StandardInput.BaseStream.Flush();
 					}
 
-					return new SecretProcessResult(-1, string.Empty, string.Empty);
-				}
+					process.StandardInput.Close();
+					if (!process.WaitForExit(TimeoutMs))
+					{
+						ProcessTree.Kill(process);
+						return new SecretProcessResult(-1, string.Empty, string.Empty);
+					}
 
-				return new SecretProcessResult(process.ExitCode, output.Result, error.Result);
+					return new SecretProcessResult(process.ExitCode, output.Result, error.Result);
+				}
+				finally
+				{
+					ProcessReaper.Untrack(process);
+				}
 			}
 			catch (Exception exception)
 			{

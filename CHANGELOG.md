@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1] - 2026-10-23
+
+### Fixed
+- The editor no longer hangs on script reload or quit while Claude Code, Codex, an MCP server or a Bash command is
+  running: Parley stops its child processes before the reload. Status and version checks of the Claude Code and Codex
+  CLIs time out instead of waiting forever.
+
 ## [0.3.0] - 2026-10-23
 
 ### Added

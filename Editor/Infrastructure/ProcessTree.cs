@@ -41,7 +41,7 @@ namespace DTech.Parley.Editor
                 List<int> descendants = Descendants(Run(PsTool, PsArguments), processId);
                 if (descendants.Count > 0)
                 {
-                    Run("/bin/kill", "-TERM " + string.Join(" ", descendants));
+                    Run("/bin/kill", "-KILL " + string.Join(" ", descendants));
                 }
             }
 
@@ -134,7 +134,20 @@ namespace DTech.Parley.Editor
 
                 Task<string> output = process.StandardOutput.ReadToEndAsync();
                 process.StandardError.ReadToEndAsync();
-                return process.WaitForExit(CommandTimeoutMs) ? output.Result : null;
+                if (process.WaitForExit(CommandTimeoutMs))
+                {
+                    return output.Result;
+                }
+
+                try
+                {
+                    process.Kill();
+                }
+                catch (InvalidOperationException)
+                {
+                }
+
+                return null;
             }
             catch (Exception exception)
             {

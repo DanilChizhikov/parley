@@ -87,12 +87,25 @@ namespace DTech.Parley.Editor.Agents.Codex
                     return new CodexAuthStatus { Error = "Failed to run codex login status." };
                 }
 
-                process.StandardInput.Close();
-                Task<string> errorTask = process.StandardError.ReadToEndAsync();
-                string output = process.StandardOutput.ReadToEnd();
-                process.WaitForExit(15000);
-                string text = (output + "\n" + errorTask.Result).Trim();
-                return new CodexAuthStatus { LoggedIn = process.ExitCode == 0, Text = text };
+                ProcessReaper.Track(process);
+                try
+                {
+                    process.StandardInput.Close();
+                    Task<string> errorTask = process.StandardError.ReadToEndAsync();
+                    Task<string> outputTask = process.StandardOutput.ReadToEndAsync();
+                    if (!process.WaitForExit(15000))
+                    {
+                        ProcessTree.Kill(process);
+                        return new CodexAuthStatus { Error = "codex login status timed out." };
+                    }
+
+                    string text = (outputTask.Result + "\n" + errorTask.Result).Trim();
+                    return new CodexAuthStatus { LoggedIn = process.ExitCode == 0, Text = text };
+                }
+                finally
+                {
+                    ProcessReaper.Untrack(process);
+                }
             }
             catch (Exception exception)
             {

@@ -83,6 +83,7 @@ namespace DTech.Parley.Editor
 
 			_disposed = true;
 			Kill();
+			ProcessReaper.Untrack(_process);
 			_process?.Dispose();
 		}
 
@@ -110,6 +111,7 @@ namespace DTech.Parley.Editor
 				return false;
 			}
 
+			ProcessReaper.Track(_process);
 			ProcessId = _process.Id;
 			ProcessName = ReadProcessName(_process);
 			lock (_writeLock)

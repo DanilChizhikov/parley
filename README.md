@@ -73,7 +73,7 @@ project info. You can attach the selection, console errors, a Scene or Game scre
     ```
 3. Unity will automatically import the package.
 
-To pin a release, add its tag: `https://github.com/DanilChizhikov/parley.git#v0.3.0`.
+To pin a release, add its tag: `https://github.com/DanilChizhikov/parley.git#v0.3.1`.
 
 Parley depends on `com.unity.nuget.newtonsoft-json`; Unity installs it automatically.
 

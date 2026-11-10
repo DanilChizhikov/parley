@@ -84,46 +84,54 @@ namespace DTech.Parley.Editor.Tools.Builtin
 				return ToolResult.Error("Failed to start shell.");
 			}
 
-			using (process)
+			ProcessReaper.Track(process);
+			try
 			{
-				process.OutputDataReceived += (_, args) => Append(output, args.Data);
-				process.ErrorDataReceived += (_, args) => Append(output, args.Data);
-				process.BeginOutputReadLine();
-				process.BeginErrorReadLine();
-				process.StandardInput.Close();
-
-				Task<bool> exited = Task.Run(() => process.WaitForExit(timeout));
-				Task cancelled = Task.Delay(Timeout.Infinite, cancellationToken);
-				Task finished = await Task.WhenAny(exited, cancelled);
-				bool timedOut = finished == exited && !exited.Result;
-				if (finished != exited || timedOut)
+				using (process)
 				{
-					ProcessTree.Kill(process);
-					if (finished != exited)
+					process.OutputDataReceived += (_, args) => Append(output, args.Data);
+					process.ErrorDataReceived += (_, args) => Append(output, args.Data);
+					process.BeginOutputReadLine();
+					process.BeginErrorReadLine();
+					process.StandardInput.Close();
+
+					Task<bool> exited = Task.Run(() => process.WaitForExit(timeout));
+					Task cancelled = Task.Delay(Timeout.Infinite, cancellationToken);
+					Task finished = await Task.WhenAny(exited, cancelled);
+					bool timedOut = finished == exited && !exited.Result;
+					if (finished != exited || timedOut)
 					{
-						cancellationToken.ThrowIfCancellationRequested();
+						ProcessTree.Kill(process);
+						if (finished != exited)
+						{
+							cancellationToken.ThrowIfCancellationRequested();
+						}
 					}
-				}
-				else
-				{
-					process.WaitForExit();
-				}
+					else
+					{
+						process.WaitForExit();
+					}
 
-				string text;
-				lock (output)
-				{
-					text = Truncate(output.ToString().TrimEnd());
-				}
+					string text;
+					lock (output)
+					{
+						text = Truncate(output.ToString().TrimEnd());
+					}
 
-				if (timedOut)
-				{
-					return ToolResult.Error((text.Length > 0 ? text + "\n" : string.Empty) + "Command timed out after " + timeout + " ms.");
-				}
+					if (timedOut)
+					{
+						return ToolResult.Error((text.Length > 0 ? text + "\n" : string.Empty) + "Command timed out after " + timeout + " ms.");
+					}
 
-				int code = process.ExitCode;
-				JObject structured = new JObject { ["exitCode"] = code };
-				string body = text.Length > 0 ? text : "(no output)";
-				return code == 0 ? ToolResult.Ok(body, structured) : new ToolResult { Text = body + "\nExit code " + code, IsError = true, Structured = structured };
+					int code = process.ExitCode;
+					JObject structured = new JObject { ["exitCode"] = code };
+					string body = text.Length > 0 ? text : "(no output)";
+					return code == 0 ? ToolResult.Ok(body, structured) : new ToolResult { Text = body + "\nExit code " + code, IsError = true, Structured = structured };
+				}
+			}
+			finally
+			{
+				ProcessReaper.Untrack(process);
 			}
 		}
 

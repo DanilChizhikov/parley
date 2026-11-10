@@ -128,9 +128,23 @@ namespace DTech.Parley.Editor
 					return null;
 				}
 
-				string output = process.StandardOutput.ReadToEnd();
-				process.WaitForExit(10000);
-				return output.Trim();
+				ProcessReaper.Track(process);
+				try
+				{
+					Task<string> output = process.StandardOutput.ReadToEndAsync();
+					process.StandardError.ReadToEndAsync();
+					if (!process.WaitForExit(10000))
+					{
+						ProcessTree.Kill(process);
+						return null;
+					}
+
+					return output.Result.Trim();
+				}
+				finally
+				{
+					ProcessReaper.Untrack(process);
+				}
 			}
 			catch (Exception)
 			{
