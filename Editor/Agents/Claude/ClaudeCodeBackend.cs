@@ -60,6 +60,7 @@ namespace DTech.Parley.Editor.Agents.Claude
 		private string _effort;
 		private bool _restartPending;
 		private bool _recovering;
+		private int _modeVersion;
 		private UserTurn _lastTurn;
 		private McpConfiguration _mcp = new ();
 		private JObject _passthroughMcpServers = new ();
@@ -233,9 +234,19 @@ namespace DTech.Parley.Editor.Agents.Claude
 			}
 		}
 
+		public Task ClearContextAsync(CancellationToken token)
+		{
+			_resumeSessionId = null;
+			_restartPending = false;
+			_mapper.Reset();
+			StopProcess();
+			return Task.CompletedTask;
+		}
+
 		public void SetPermissionMode(PermissionMode mode)
 		{
 			Mode = mode;
+			_modeVersion++;
 			if (IsRunning)
 			{
 				FireControl(new JObject { ["subtype"] = "set_permission_mode", ["mode"] = PermissionModes.ToWire(mode) });
@@ -467,14 +478,15 @@ namespace DTech.Parley.Editor.Agents.Claude
 			}
 
 			bool restricted = IsRestrictedMode(_profile.ExtraArguments, Environment.GetEnvironmentVariable(RestrictedVariable));
+			string environmentPath = ShellEnvironment.Merge(Path.GetDirectoryName(executable), path);
+			await WarnIfOutdatedAsync(executable, environmentPath);
+			cancellationToken.ThrowIfCancellationRequested();
+			int launchModeVersion = _modeVersion;
 			ProcessStartInfo startInfo = new ProcessStartInfo(executable, CommandLine.Join(BuildArguments(auth, restricted)))
 			{
 				WorkingDirectory = ProjectPaths.Root,
 			};
 
-			string environmentPath = ShellEnvironment.Merge(Path.GetDirectoryName(executable), path);
-			await WarnIfOutdatedAsync(executable, environmentPath);
-			cancellationToken.ThrowIfCancellationRequested();
 			ApplyEnvironment(startInfo, auth, environmentPath);
 			_process = new ChildProcess(startInfo);
 			_process.OnStdoutLine += StdoutLineHandler;
@@ -497,7 +509,7 @@ namespace DTech.Parley.Editor.Agents.Claude
 				_reportedSkills.AddRange(ClaudeWire.ParseSkills(_commands, _skills.LibraryNames));
 				_sink.SkillsChanged(_reportedSkills);
 				string currentMode = (string)response["current_permission_mode"];
-				if (!string.IsNullOrEmpty(currentMode))
+				if (!string.IsNullOrEmpty(currentMode) && _modeVersion == launchModeVersion)
 				{
 					Mode = PermissionModes.FromWire(currentMode);
 					_sink.ModeChanged(Mode);

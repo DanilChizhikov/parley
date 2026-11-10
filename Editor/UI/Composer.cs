@@ -17,6 +17,8 @@ namespace DTech.Parley.Editor.UI
         private const int MinAssetQueryLength = 2;
         private const double NotificationSeconds = 2.0;
         private const string DropClass = "pl-composer--drop";
+        private const string UndoCommand = "Undo";
+        private const string RedoCommand = "Redo";
 
         private static readonly HashSet<string> _imageExtensions = new (StringComparer.OrdinalIgnoreCase) { ".png", ".jpg", ".jpeg", ".gif", ".webp" };
 
@@ -30,9 +32,13 @@ namespace DTech.Parley.Editor.UI
         private readonly List<ChatAttachment> _attachments = new ();
         private readonly List<(string insert, string name, string detail)> _suggestionItems = new ();
         private readonly HashSet<string> _suggestedNames = new (StringComparer.OrdinalIgnoreCase);
+        private readonly ComposerUndoStack _undo = new ();
 
         private Func<IReadOnlyList<SlashCommandInfo>> _commands = () => Array.Empty<SlashCommandInfo>();
         private int _selectedSuggestion;
+        private int _editCursor;
+        private int _editSelect;
+        private bool _mergeNextEdit = true;
 
         public Composer()
         {
@@ -48,8 +54,12 @@ namespace DTech.Parley.Editor.UI
             _input.AddToClassList("pl-composer__input");
             _input.textEdition.placeholder = "Ask Parley…  (@ mentions an asset, / opens commands, Shift+Enter adds a line)";
             _input.verticalScrollerVisibility = ScrollerVisibility.Auto;
+            _input.textSelection.selectAllOnFocus = false;
+            _input.textSelection.selectAllOnMouseUp = false;
             _input.RegisterCallback<KeyDownEvent>(KeyDownHandler, TrickleDown.TrickleDown);
             _input.RegisterValueChangedCallback(InputChangedHandler);
+            _input.RegisterCallback<ValidateCommandEvent>(ValidateCommandHandler);
+            _input.RegisterCallback<ExecuteCommandEvent>(ExecuteCommandHandler);
             Add(_input);
             VisualElement bar = new VisualElement();
             bar.AddToClassList("pl-composer__bar");
@@ -118,6 +128,7 @@ namespace DTech.Parley.Editor.UI
         {
             string current = _input.value ?? string.Empty;
             bool separated = current.Length == 0 || current.EndsWith(" ", StringComparison.Ordinal) || current.EndsWith("\n", StringComparison.Ordinal);
+            BeginDirectEdit();
             _input.value = separated ? current + text : current + " " + text;
             _input.Focus();
         }
@@ -138,7 +149,9 @@ namespace DTech.Parley.Editor.UI
             List<ChatAttachment> attachments = new List<ChatAttachment>(_attachments);
             _attachments.Clear();
             RebuildChips();
-            _input.value = string.Empty;
+            _input.SetValueWithoutNotify(string.Empty);
+            _undo.Clear();
+            UpdateSendEnabled();
             HideSuggestions();
             OnSubmit?.Invoke(text, attachments);
         }
@@ -351,10 +364,11 @@ namespace DTech.Parley.Editor.UI
             }
 
             HideSuggestions();
+            _undo.Record(new ComposerSnapshot(text, cursor, cursor), EditorApplication.timeSinceStartup, false);
             _input.SetValueWithoutNotify(before.Substring(0, start) + insert + after);
             int caret = start + insert.Length;
-            _input.SelectRange(caret, caret);
             _input.Focus();
+            _input.SelectRange(caret, caret);
         }
 
         private void MoveSelection(int delta)
@@ -390,14 +404,56 @@ namespace DTech.Parley.Editor.UI
             return false;
         }
 
+        private void RememberSelection()
+        {
+            _editCursor = _input.cursorIndex;
+            _editSelect = _input.selectIndex;
+        }
+
+        private void BeginDirectEdit()
+        {
+            RememberSelection();
+            _mergeNextEdit = false;
+        }
+
+        private void ApplyHistory(bool redo)
+        {
+            ComposerSnapshot current = new ComposerSnapshot(_input.value, _input.cursorIndex, _input.selectIndex);
+            bool moved = redo ? _undo.TryRedo(current, out ComposerSnapshot target) : _undo.TryUndo(current, out target);
+            if (!moved)
+            {
+                return;
+            }
+
+            HideSuggestions();
+            _input.SetValueWithoutNotify(target.Text);
+            _input.SelectRange(Mathf.Clamp(target.Cursor, 0, target.Text.Length), Mathf.Clamp(target.Select, 0, target.Text.Length));
+            RememberSelection();
+            UpdateSendEnabled();
+        }
+
         private void InputChangedHandler(ChangeEvent<string> evt)
         {
+            string previous = evt.previousValue ?? string.Empty;
+            _undo.Record(new ComposerSnapshot(previous, Mathf.Clamp(_editCursor, 0, previous.Length), Mathf.Clamp(_editSelect, 0, previous.Length)),
+                EditorApplication.timeSinceStartup, _mergeNextEdit);
+            _mergeNextEdit = true;
+            RememberSelection();
             UpdateSendEnabled();
             schedule.Execute(UpdateSuggestions);
         }
 
         private void KeyDownHandler(KeyDownEvent evt)
         {
+            if (evt.actionKey && (evt.keyCode == KeyCode.Z || evt.keyCode == KeyCode.Y))
+            {
+                ApplyHistory(evt.keyCode == KeyCode.Y || evt.shiftKey);
+                evt.StopImmediatePropagation();
+                _input.focusController?.IgnoreEvent(evt);
+                return;
+            }
+
+            RememberSelection();
             bool enter = evt.keyCode == KeyCode.Return || evt.keyCode == KeyCode.KeypadEnter || evt.character == '\n' || evt.character == '\r';
             if (_suggestionItems.Count > 0 && HandleSuggestionKey(evt, enter))
             {
@@ -430,6 +486,7 @@ namespace DTech.Parley.Editor.UI
             string text = _input.value ?? string.Empty;
             int start = Mathf.Clamp(Mathf.Min(_input.cursorIndex, _input.selectIndex), 0, text.Length);
             int end = Mathf.Clamp(Mathf.Max(_input.cursorIndex, _input.selectIndex), start, text.Length);
+            BeginDirectEdit();
             _input.value = text.Remove(start, end - start).Insert(start, "\n");
             _input.SelectRange(start + 1, start + 1);
         }
@@ -465,6 +522,25 @@ namespace DTech.Parley.Editor.UI
                     InsertText("`" + UnityObjectPaths.Describe(target) + "`");
                 }
             }
+        }
+
+        private void ValidateCommandHandler(ValidateCommandEvent evt)
+        {
+            if (evt.commandName == UndoCommand || evt.commandName == RedoCommand)
+            {
+                evt.StopPropagation();
+            }
+        }
+
+        private void ExecuteCommandHandler(ExecuteCommandEvent evt)
+        {
+            if (evt.commandName != UndoCommand && evt.commandName != RedoCommand)
+            {
+                return;
+            }
+
+            ApplyHistory(evt.commandName == RedoCommand);
+            evt.StopPropagation();
         }
     }
 }

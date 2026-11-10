@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.4.0] - 2026-11-10
+
+### Added
+- **Agents** tab in the side panel: the chat's subagents as a graph under the main agent, with their status. Click a
+  node to see its prompt, result and recent tool calls. **Open in window** shows the graph in its own window that
+  follows the current chat. Works for Claude Code and Codex subagents.
+- Undo and redo in the chat input (Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y and the Edit menu). Typing is grouped
+  into steps, and `/` and `@` completions can be undone too.
+
+### Fixed
+- `/clear` now works the same for Claude Code, Codex and local models: it empties the transcript, resets the title
+  and starts the agent with a fresh context. Claude Code no longer resumes the old session after `/clear`.
+- Claude Code: a permission mode picked in a new chat while the CLI was starting no longer jumps back to the launch
+  mode once the CLI is ready.
+- Returning to the editor no longer selects the whole draft in the chat input, so one key press can't wipe it.
+
 ## [0.3.1] - 2026-10-23
 
 ### Fixed

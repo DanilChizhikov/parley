@@ -19,7 +19,6 @@ namespace DTech.Parley.Editor.Agents.Local
 {
 	internal sealed class LocalAgentBackend : IAgentBackend
 	{
-		private const string ClearCommand = "/clear";
 		private const string CompactCommand = "/compact";
 		private const int McpWaitMs = 30000;
 
@@ -129,7 +128,6 @@ namespace DTech.Parley.Editor.Agents.Local
 
 			capabilities.Modes.AddRange(new[] { PermissionMode.Default, PermissionMode.AcceptEdits, PermissionMode.Plan, PermissionMode.BypassPermissions, PermissionMode.DontAsk });
 			capabilities.Commands.Add(new SlashCommandInfo { Name = "compact", Description = "Summarize the conversation to free context", IsBuiltin = true });
-			capabilities.Commands.Add(new SlashCommandInfo { Name = "clear", Description = "Forget the conversation history", IsBuiltin = true });
 			try
 			{
 				List<string> models = await _client.ListModelsAsync(token);
@@ -157,14 +155,6 @@ namespace DTech.Parley.Editor.Agents.Local
 		{
 			await StartAsync(token);
 			string text = (turn.Text ?? string.Empty).Trim();
-			if (!_running && text == ClearCommand)
-			{
-				_history.Clear();
-				_sink.Notice(NoticeLevel.Info, "Conversation history cleared.");
-				_sink.TurnCompleted(new TurnResult { Subtype = "success" });
-				return;
-			}
-
 			if (!_running && text == CompactCommand)
 			{
 				_ = RunAsync(true);
@@ -181,6 +171,12 @@ namespace DTech.Parley.Editor.Agents.Local
 		public void Interrupt()
 		{
 			_turn?.Cancel();
+		}
+
+		public Task ClearContextAsync(CancellationToken token)
+		{
+			_history.Clear();
+			return Task.CompletedTask;
 		}
 
 		public void SetPermissionMode(PermissionMode mode)

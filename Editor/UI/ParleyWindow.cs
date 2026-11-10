@@ -255,6 +255,7 @@ namespace DTech.Parley.Editor.UI
             _split.AddToClassList("pl-split");
             _transcript = new TranscriptView();
             _side = new SidePanel();
+            _side.OnOpenAgentsWindow += OpenAgentsWindow;
             _side.RegisterCallback<GeometryChangedEvent>(SideGeometryChangedHandler);
             _split.Add(_transcript);
             _split.Add(_side);
@@ -373,6 +374,7 @@ namespace DTech.Parley.Editor.UI
             ChatSession session = _session;
             _transcript.Bind(session);
             _side.Bind(session);
+            AgentsGraphWindow.Rebind(this, session);
             _authCard.Bind(session);
             _composer.SetCommandSource(() => session.Commands);
             _composer.SetLimitsSource(() => session.RateLimits, session.RefreshRateLimits);
@@ -595,6 +597,11 @@ namespace DTech.Parley.Editor.UI
 
             _sideToggle.value = true;
             _side.ShowTab(SidePanelTab.Mcp);
+        }
+
+        private void OpenAgentsWindow()
+        {
+            AgentsGraphWindow.Open(this, _session);
         }
 
         private void ShowSkillsPanel()

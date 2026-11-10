@@ -42,6 +42,7 @@ namespace DTech.Parley.Editor.Agents.Preview
 			["tools"] = PreviewScenario.Tools,
 			["edits"] = PreviewScenario.Edits,
 			["subagent"] = PreviewScenario.Subagent,
+			["subagents"] = PreviewScenario.Subagents,
 			["permission"] = PreviewScenario.Permission,
 			["question"] = PreviewScenario.Question,
 			["plan"] = PreviewScenario.Plan,
@@ -135,6 +136,7 @@ namespace DTech.Parley.Editor.Agents.Preview
 				PreviewScenario.Tools => "Read, search, shell, web, MCP and skill tool cards",
 				PreviewScenario.Edits => "Edit, multi-edit, write and patch diffs",
 				PreviewScenario.Subagent => "A subagent with nested tool calls",
+				PreviewScenario.Subagents => "Parallel, nested and failed subagents for the Agents graph",
 				PreviewScenario.Permission => "Permission requests for a command, an edit and a web fetch",
 				PreviewScenario.Question => "A question card with single and multiple choice",
 				PreviewScenario.Plan => "A plan waiting for approval",
@@ -195,6 +197,11 @@ namespace DTech.Parley.Editor.Agents.Preview
 		public void Interrupt()
 		{
 			_turn?.Cancel();
+		}
+
+		public Task ClearContextAsync(CancellationToken token)
+		{
+			return Task.CompletedTask;
 		}
 
 		public void SetPermissionMode(PermissionMode mode)
@@ -491,6 +498,7 @@ namespace DTech.Parley.Editor.Agents.Preview
 				PreviewScenario.Tools => ToolsAsync(token),
 				PreviewScenario.Edits => EditsAsync(token),
 				PreviewScenario.Subagent => SubagentAsync(token),
+				PreviewScenario.Subagents => SubagentsAsync(token),
 				PreviewScenario.Permission => PermissionAsync(token, false),
 				PreviewScenario.Question => QuestionAsync(token),
 				PreviewScenario.Plan => PlanAsync(token),
@@ -623,6 +631,34 @@ namespace DTech.Parley.Editor.Agents.Preview
 			task.Status = "completed";
 			task.Summary = "Found 3 damage sources.";
 			_sink.BackgroundTaskChanged(task);
+		}
+
+		private async Task SubagentsAsync(CancellationToken token)
+		{
+			await TextAsync("I'll split this between subagents.", token);
+			string explore = await StartToolAsync(token, "Agent", AgentInput("Map the combat code", "Explore",
+				"Find every class involved in combat and describe how they connect."), null);
+			string review = await StartToolAsync(token, "Agent", AgentInput("Review damage math", "code-reviewer",
+				"Review the damage formulas for rounding and overflow bugs."), null);
+			await ToolAsync(token, "Glob", new JObject { ["pattern"] = "Assets/Scripts/Combat/**/*.cs" },
+				"Assets/Scripts/Combat/Damage.cs\nAssets/Scripts/Combat/Health.cs\nAssets/Scripts/Combat/Projectile.cs", false, explore);
+			string trace = await StartToolAsync(token, "Agent", AgentInput("Trace projectile hits", "Explore",
+				"Follow `Projectile.OnTriggerEnter` down to the call that applies damage."), explore);
+			await ToolAsync(token, "Read", new JObject { ["file_path"] = "Assets/Scripts/Combat/Damage.cs" },
+				"return Mathf.RoundToInt(baseDamage * multiplier);", false, review);
+			await ToolAsync(token, "Grep", new JObject { ["pattern"] = "OnTriggerEnter", ["path"] = "Assets" }, PreviewSamples.GrepResult, false, trace);
+			await TextAsync("Projectiles call `Health.Apply` directly.", token, BlockKind.Text, trace);
+			FinishTool(trace, "`Projectile.OnTriggerEnter` calls `Health.Apply(damage)`.", false);
+			await Task.Delay(ToolDelayMs, token);
+			FinishTool(review, "The agent stopped: it reached its turn limit before finishing the review.", true);
+			await TextAsync("`Damage` computes hits, `Health` applies them, `Projectile` delivers ranged ones.", token, BlockKind.Text, explore);
+			FinishTool(explore, "Combat map:\n\n- `Damage` computes the final value\n- `Health` applies it\n- `Projectile` delivers ranged hits", false);
+			await TextAsync("The map is ready; the review failed, so I'll check the formulas myself.", token);
+		}
+
+		private static JObject AgentInput(string description, string type, string prompt)
+		{
+			return new JObject { ["description"] = description, ["subagent_type"] = type, ["prompt"] = prompt };
 		}
 
 		private async Task PermissionAsync(CancellationToken token, bool single)
