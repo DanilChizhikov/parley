@@ -86,7 +86,6 @@ namespace DTech.Parley.Editor.UI
             edge.Query<VisualElement>().ForEach(element => element.pickingMode = PickingMode.Ignore);
         }
 
-        // A hidden side panel tab has no size yet, so framing waits until the view is laid out.
         private void TryFrame()
         {
             if (_framed || _nodes.Count == 0 || float.IsNaN(layout.width) || layout.width <= 0f)
@@ -127,8 +126,6 @@ namespace DTech.Parley.Editor.UI
                 AddElement(edge);
             }
         }
-
-        // Leaves take the next free row; a parent sits in the middle of its children.
         private float Place(AgentNodeInfo info, ref float row)
         {
             float y;

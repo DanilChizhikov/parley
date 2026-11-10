@@ -14,7 +14,6 @@ namespace DTech.Parley.Editor.UI
 
         public AgentNodeInfo Main { get; }
 
-        // Depth-first order, main agent first: parents always come before their children.
         public IReadOnlyList<AgentNodeInfo> Nodes => _nodes;
 
         public int SubagentCount => _nodes.Count - 1;
@@ -130,7 +129,6 @@ namespace DTech.Parley.Editor.UI
             };
         }
 
-        // A background agent answers its tool call right away, so its task status is the real one.
         private static AgentNodeStatus StatusOf(TranscriptBlock block, BackgroundTaskInfo task)
         {
             if (block.IsError)

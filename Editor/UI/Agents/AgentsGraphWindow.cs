@@ -30,7 +30,6 @@ namespace DTech.Parley.Editor.UI
             window.Bind(session);
         }
 
-        // Sessions are recreated on domain reload and on chat switches, so the owning chat window pushes the current one.
         public static void Rebind(ParleyWindow owner, ChatSession session)
         {
             Find(owner)?.Bind(session);

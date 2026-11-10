@@ -48,7 +48,6 @@ namespace DTech.Parley.Editor.Agents.Codex
 
         public void Handle(string method, JObject parameters)
         {
-            // Codex streams spawned agents' threads on the same connection; their items belong under the spawn call.
             string parent = SpawnOf((string)parameters["threadId"]);
             if (parent != null)
             {
@@ -163,7 +162,6 @@ namespace DTech.Parley.Editor.Agents.Codex
             }
         }
 
-        // Codex spawns agents from a bare prompt, so its first line stands in for Claude's short description.
         private static string Describe(string prompt)
         {
             string line = prompt.Trim();
@@ -311,7 +309,6 @@ namespace DTech.Parley.Editor.Agents.Codex
             }
         }
 
-        // Spawning returns at once; the agent's answer comes with its own turn end or with a later collab call's agent states.
         private void FinishAgent(string spawnId, bool failed, string message)
         {
             if (!_finishedAgents.Add(spawnId))
@@ -456,7 +453,6 @@ namespace DTech.Parley.Editor.Agents.Codex
             _sink.ToolResult(new ToolResultRequest(id, output, IsFailed(item), structured));
         }
 
-        // Newer Codex reports spawn_agent as agent activity instead of a collab call; the task message itself is encrypted.
         private void HandleAgentActivity(JObject item, string parent, bool completed)
         {
             string thread = (string)item["agentThreadId"];
