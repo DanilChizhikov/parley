@@ -500,7 +500,6 @@ namespace DTech.Parley.Editor.Agents.Claude
 				_reportedSkills.AddRange(ClaudeWire.ParseSkills(_commands, _skills.LibraryNames));
 				_sink.SkillsChanged(_reportedSkills);
 				string currentMode = (string)response["current_permission_mode"];
-				// A mode picked while the CLI was starting is already queued as set_permission_mode; the reply still has the launch mode.
 				if (!string.IsNullOrEmpty(currentMode) && _modeVersion == launchModeVersion)
 				{
 					Mode = PermissionModes.FromWire(currentMode);
