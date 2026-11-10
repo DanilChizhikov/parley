@@ -1151,6 +1151,7 @@ namespace DTech.Parley.Editor.Agents.Codex
                     if (child)
                     {
                         _childTurns.Remove(threadId);
+                        _mapper.Handle(method, parameters);
                         return;
                     }
 

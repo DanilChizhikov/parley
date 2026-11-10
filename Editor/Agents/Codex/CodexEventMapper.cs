@@ -12,10 +12,16 @@ namespace DTech.Parley.Editor.Agents.Codex
         private const string WebSearchTool = "WebSearch";
         private const string ViewImageTool = "ViewImage";
         private const string TodoWriteTool = "TodoWrite";
+        private const string AgentTool = "Agent";
+        private const string SpawnAgent = "spawnAgent";
+        private const int AgentDescriptionLength = 60;
 
         private readonly IAgentSink _sink;
         private readonly Dictionary<string, JObject> _items = new ();
         private readonly Dictionary<string, long> _summaryParts = new ();
+        private readonly Dictionary<string, string> _spawnByThread = new ();
+        private readonly Dictionary<string, string> _agentReplies = new ();
+        private readonly HashSet<string> _finishedAgents = new ();
 
         public string PlanText { get; private set; }
         public string PlanItemId { get; private set; }
@@ -42,6 +48,14 @@ namespace DTech.Parley.Editor.Agents.Codex
 
         public void Handle(string method, JObject parameters)
         {
+            // Codex streams spawned agents' threads on the same connection; their items belong under the spawn call.
+            string parent = SpawnOf((string)parameters["threadId"]);
+            if (parent != null)
+            {
+                HandleSubagent(method, parameters, parent);
+                return;
+            }
+
             switch (method)
             {
                 case "turn/started":
@@ -49,7 +63,7 @@ namespace DTech.Parley.Editor.Agents.Codex
                     ClearPlan();
                     break;
                 case "item/started":
-                    HandleItemStarted(parameters["item"] as JObject);
+                    HandleItemStarted(parameters["item"] as JObject, null);
                     break;
                 case "item/agentMessage/delta":
                 case "item/reasoning/textDelta":
@@ -59,7 +73,7 @@ namespace DTech.Parley.Editor.Agents.Codex
                     HandleSummaryDelta(parameters);
                     break;
                 case "item/completed":
-                    HandleItemCompleted(parameters["item"] as JObject);
+                    HandleItemCompleted(parameters["item"] as JObject, null);
                     break;
                 case "turn/plan/updated":
                     HandlePlanUpdated(parameters);
@@ -94,10 +108,17 @@ namespace DTech.Parley.Editor.Agents.Codex
             }
         }
 
+        private static bool IsSpawn(JObject item)
+        {
+            return (string)item["type"] == "collabAgentToolCall" && (string)item["tool"] == SpawnAgent;
+        }
+
         private static string ToolName(JObject item)
         {
             switch ((string)item["type"])
             {
+                case "collabAgentToolCall":
+                    return IsSpawn(item) ? AgentTool : null;
                 case "commandExecution":
                     return BashTool;
                 case "fileChange":
@@ -134,9 +155,25 @@ namespace DTech.Parley.Editor.Agents.Codex
                     return new JObject { ["path"] = (string)item["path"] };
                 case "plan":
                     return new JObject { ["plan"] = (string)item["text"] };
+                case "collabAgentToolCall":
+                    string prompt = (string)item["prompt"] ?? string.Empty;
+                    return new JObject { ["description"] = Describe(prompt), ["prompt"] = prompt, ["model"] = (string)item["model"] };
                 default:
                     return new JObject();
             }
+        }
+
+        // Codex spawns agents from a bare prompt, so its first line stands in for Claude's short description.
+        private static string Describe(string prompt)
+        {
+            string line = prompt.Trim();
+            int newline = line.IndexOf('\n');
+            if (newline >= 0)
+            {
+                line = line.Substring(0, newline).Trim();
+            }
+
+            return line.Length > AgentDescriptionLength ? line.Substring(0, AgentDescriptionLength - 1) + "…" : line;
         }
 
         private static string Join(JToken lines, string separator)
@@ -232,7 +269,82 @@ namespace DTech.Parley.Editor.Agents.Codex
             return (long?)usage?[field] ?? 0;
         }
 
-        private void HandleItemStarted(JObject item)
+        private string SpawnOf(string threadId)
+        {
+            return threadId != null && _spawnByThread.TryGetValue(threadId, out string spawnId) ? spawnId : null;
+        }
+
+        private void RegisterSpawn(JObject item)
+        {
+            if (!IsSpawn(item) || item["receiverThreadIds"] is not JArray threads)
+            {
+                return;
+            }
+
+            foreach (JToken thread in threads)
+            {
+                _spawnByThread[(string)thread] = (string)item["id"];
+            }
+        }
+
+        private void HandleSubagent(string method, JObject parameters, string spawnId)
+        {
+            switch (method)
+            {
+                case "item/started":
+                    HandleItemStarted(parameters["item"] as JObject, spawnId);
+                    break;
+                case "item/agentMessage/delta":
+                case "item/reasoning/textDelta":
+                    _sink.TextDelta((string)parameters["itemId"], (string)parameters["delta"]);
+                    break;
+                case "item/reasoning/summaryTextDelta":
+                    HandleSummaryDelta(parameters);
+                    break;
+                case "item/completed":
+                    HandleItemCompleted(parameters["item"] as JObject, spawnId);
+                    break;
+                case "turn/completed":
+                    string status = (string)(parameters["turn"] as JObject)?["status"];
+                    FinishAgent(spawnId, status == "failed" || status == "interrupted", null);
+                    break;
+            }
+        }
+
+        // Spawning returns at once; the agent's answer comes with its own turn end or with a later collab call's agent states.
+        private void FinishAgent(string spawnId, bool failed, string message)
+        {
+            if (!_finishedAgents.Add(spawnId))
+            {
+                return;
+            }
+
+            _agentReplies.TryGetValue(spawnId, out string reply);
+            string text = string.IsNullOrEmpty(message) ? reply : message;
+            _sink.ToolResult(new ToolResultRequest(spawnId, text ?? string.Empty, failed, null));
+        }
+
+        private void ResolveAgentStates(JObject item)
+        {
+            if (item["agentsStates"] is not JObject states)
+            {
+                return;
+            }
+
+            foreach (JProperty state in states.Properties())
+            {
+                string spawnId = SpawnOf(state.Name);
+                string status = (string)state.Value["status"];
+                if (spawnId == null || status == "pendingInit" || status == "running")
+                {
+                    continue;
+                }
+
+                FinishAgent(spawnId, status != "completed" && status != "shutdown", (string)state.Value["message"]);
+            }
+        }
+
+        private void HandleItemStarted(JObject item, string parent)
         {
             if (item == null)
             {
@@ -241,19 +353,20 @@ namespace DTech.Parley.Editor.Agents.Codex
 
             string id = (string)item["id"];
             _items[id] = item;
+            RegisterSpawn(item);
             switch ((string)item["type"])
             {
                 case "agentMessage":
-                    _sink.BlockStarted(new BlockStartRequest(id, BlockKind.Text, null, null, null));
+                    _sink.BlockStarted(new BlockStartRequest(id, BlockKind.Text, parent, null, null));
                     break;
                 case "reasoning":
-                    _sink.BlockStarted(new BlockStartRequest(id, BlockKind.Thinking, null, null, null));
+                    _sink.BlockStarted(new BlockStartRequest(id, BlockKind.Thinking, parent, null, null));
                     break;
                 default:
                     string toolName = ToolName(item);
                     if (toolName != null)
                     {
-                        _sink.BlockStarted(new BlockStartRequest(id, BlockKind.ToolUse, null, id, toolName));
+                        _sink.BlockStarted(new BlockStartRequest(id, BlockKind.ToolUse, parent, id, toolName));
                     }
 
                     break;
@@ -273,7 +386,7 @@ namespace DTech.Parley.Editor.Agents.Codex
             _sink.TextDelta(itemId, (string)parameters["delta"]);
         }
 
-        private void HandleItemCompleted(JObject item)
+        private void HandleItemCompleted(JObject item, string parent)
         {
             if (item == null)
             {
@@ -287,12 +400,17 @@ namespace DTech.Parley.Editor.Agents.Codex
             switch (type)
             {
                 case "agentMessage":
-                    _sink.BlockFinalized(new BlockFinalizeRequest(id, BlockKind.Text, null, (string)item["text"], null, null, null));
+                    if (parent != null)
+                    {
+                        _agentReplies[parent] = (string)item["text"];
+                    }
+
+                    _sink.BlockFinalized(new BlockFinalizeRequest(id, BlockKind.Text, parent, (string)item["text"], null, null, null));
                     return;
                 case "reasoning":
                     string summary = Join(item["summary"], "\n\n");
                     string thinking = summary.Length > 0 ? summary : Join(item["content"], "\n\n");
-                    _sink.BlockFinalized(new BlockFinalizeRequest(id, BlockKind.Thinking, null, thinking, null, null, null));
+                    _sink.BlockFinalized(new BlockFinalizeRequest(id, BlockKind.Thinking, parent, thinking, null, null, null));
                     return;
                 case "contextCompaction":
                     _sink.Notice(NoticeLevel.Info, "Conversation compacted.");
@@ -305,6 +423,9 @@ namespace DTech.Parley.Editor.Agents.Codex
                     PlanText = (string)item["text"];
                     PlanItemId = id;
                     break;
+                case "collabAgentToolCall":
+                    HandleCollabCompleted(item, parent);
+                    return;
             }
 
             string toolName = ToolName(item);
@@ -313,7 +434,7 @@ namespace DTech.Parley.Editor.Agents.Codex
                 return;
             }
 
-            _sink.BlockFinalized(new BlockFinalizeRequest(id, BlockKind.ToolUse, null, null, id, toolName, ToolInput(item)));
+            _sink.BlockFinalized(new BlockFinalizeRequest(id, BlockKind.ToolUse, parent, null, id, toolName, ToolInput(item)));
             string output = type switch
             {
                 "commandExecution" => CommandOutput(item),
@@ -327,6 +448,22 @@ namespace DTech.Parley.Editor.Agents.Codex
 
             JToken structured = type == "mcpToolCall" ? (item["result"] as JObject)?["structuredContent"] : null;
             _sink.ToolResult(new ToolResultRequest(id, output, IsFailed(item), structured));
+        }
+
+        private void HandleCollabCompleted(JObject item, string parent)
+        {
+            if (IsSpawn(item))
+            {
+                RegisterSpawn(item);
+                string id = (string)item["id"];
+                _sink.BlockFinalized(new BlockFinalizeRequest(id, BlockKind.ToolUse, parent, null, id, AgentTool, ToolInput(item)));
+                if (IsFailed(item))
+                {
+                    FinishAgent(id, true, "Codex could not start the agent.");
+                }
+            }
+
+            ResolveAgentStates(item);
         }
 
         private void HandlePlanUpdated(JObject parameters)

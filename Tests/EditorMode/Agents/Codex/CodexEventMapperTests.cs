@@ -224,5 +224,44 @@ namespace DTech.Parley.Tests.EditorMode
             Assert.AreEqual(200, sink.UsageReports[0].OutputTokens);
             Assert.AreEqual(50, sink.UsageReports[0].ReasoningTokens);
         }
+
+        [Test]
+        public void SpawnedAgentBecomesAgentToolWithNestedActivity()
+        {
+            RecordingSink sink = new RecordingSink();
+            CodexEventMapper mapper = new CodexEventMapper(sink);
+            mapper.Handle("item/started", Spawn("thr_main", "{\"type\":\"collabAgentToolCall\",\"id\":\"spawn_1\",\"tool\":\"spawnAgent\",\"status\":\"inProgress\",\"senderThreadId\":\"thr_main\",\"receiverThreadIds\":[],\"prompt\":\"Answer how are you\\nBe short\",\"agentsStates\":{}}"));
+            mapper.Handle("item/completed", Spawn("thr_main", "{\"type\":\"collabAgentToolCall\",\"id\":\"spawn_1\",\"tool\":\"spawnAgent\",\"status\":\"completed\",\"senderThreadId\":\"thr_main\",\"receiverThreadIds\":[\"thr_child\"],\"prompt\":\"Answer how are you\\nBe short\",\"agentsStates\":{\"thr_child\":{\"status\":\"pendingInit\"}}}"));
+            Assert.AreEqual(("spawn_1", "Agent"), (sink.ToolUses[0].id, sink.ToolUses[0].name));
+            Assert.AreEqual("Answer how are you", (string)sink.ToolUses[0].input["description"]);
+            CollectionAssert.IsEmpty(sink.ToolResults);
+
+            mapper.Handle("item/started", Spawn("thr_child", "{\"type\":\"commandExecution\",\"id\":\"c1\",\"command\":\"ls\",\"cwd\":\"/p\",\"status\":\"inProgress\",\"commandActions\":[]}"));
+            mapper.Handle("item/completed", Spawn("thr_child", "{\"type\":\"agentMessage\",\"id\":\"msg_c\",\"text\":\"Fine\"}"));
+            Assert.AreEqual("spawn_1", sink.Parents["c1"]);
+            Assert.AreEqual("spawn_1", sink.Parents["msg_c"]);
+
+            mapper.Handle("turn/completed", JObject.Parse("{\"threadId\":\"thr_child\",\"turn\":{\"status\":\"completed\"}}"));
+            CollectionAssert.IsEmpty(sink.Turns);
+            Assert.AreEqual(("spawn_1", "Fine", false), sink.ToolResults[0]);
+        }
+
+        [Test]
+        public void WaitResolvesSpawnedAgentOnce()
+        {
+            RecordingSink sink = new RecordingSink();
+            CodexEventMapper mapper = new CodexEventMapper(sink);
+            mapper.Handle("item/completed", Spawn("thr_main", "{\"type\":\"collabAgentToolCall\",\"id\":\"spawn_1\",\"tool\":\"spawnAgent\",\"status\":\"completed\",\"senderThreadId\":\"thr_main\",\"receiverThreadIds\":[\"thr_child\"],\"prompt\":\"p\",\"agentsStates\":{}}"));
+            mapper.Handle("item/completed", Spawn("thr_main", "{\"type\":\"collabAgentToolCall\",\"id\":\"wait_1\",\"tool\":\"wait\",\"status\":\"completed\",\"senderThreadId\":\"thr_main\",\"receiverThreadIds\":[\"thr_child\"],\"agentsStates\":{\"thr_child\":{\"status\":\"errored\",\"message\":\"boom\"}}}"));
+            mapper.Handle("turn/completed", JObject.Parse("{\"threadId\":\"thr_child\",\"turn\":{\"status\":\"failed\"}}"));
+            Assert.AreEqual(1, sink.ToolUses.Count);
+            Assert.AreEqual(1, sink.ToolResults.Count);
+            Assert.AreEqual(("spawn_1", "boom", true), sink.ToolResults[0]);
+        }
+
+        private static JObject Spawn(string threadId, string itemJson)
+        {
+            return new JObject { ["threadId"] = threadId, ["item"] = JObject.Parse(itemJson) };
+        }
     }
 }

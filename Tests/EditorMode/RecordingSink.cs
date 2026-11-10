@@ -9,6 +9,7 @@ namespace DTech.Parley.Tests.EditorMode
 	{
 		public List<string> Events { get; } = new ();
 		public Dictionary<string, string> Texts { get; } = new ();
+		public Dictionary<string, string> Parents { get; } = new ();
 		public List<PendingRequest> Requests { get; } = new ();
 		public List<(string id, string text, bool error)> ToolResults { get; } = new ();
 		public List<(string id, string name, JObject input)> ToolUses { get; } = new ();
@@ -38,6 +39,7 @@ namespace DTech.Parley.Tests.EditorMode
 		public void BlockStarted(BlockStartRequest request)
 		{
 			Events.Add("start:" + request.Kind + ":" + request.Key);
+			Parents[request.Key] = request.ParentToolUseId;
 		}
 
 		public void TextDelta(string key, string delta)
@@ -54,6 +56,7 @@ namespace DTech.Parley.Tests.EditorMode
 		public void BlockFinalized(BlockFinalizeRequest request)
 		{
 			Events.Add("final:" + request.Kind + ":" + request.Key);
+			Parents[request.Key] = request.ParentToolUseId;
 			if (request.Kind == BlockKind.ToolUse)
 			{
 				ToolUses.Add((request.ToolUseId, request.ToolName, request.Input));
