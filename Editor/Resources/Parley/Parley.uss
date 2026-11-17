@@ -54,6 +54,11 @@
     white-space: nowrap;
 }
 
+.pl-chat-tab > .pl-chat-tab__select:hover,
+.pl-chat-tab > .pl-chat-tab__select:active {
+    background-color: transparent;
+}
+
 .pl-chat-tab > .pl-chat-tab__close {
     flex-shrink: 0;
     width: 20px;
@@ -1430,6 +1435,7 @@
 
 .pl-status {
     flex-direction: row;
+    flex-wrap: wrap;
     align-items: center;
     flex-shrink: 0;
     min-height: 20px;
@@ -1471,7 +1477,8 @@
 }
 
 .pl-root .pl-status__account,
-.pl-root .pl-status__usage {
+.pl-root .pl-status__usage,
+.pl-root .pl-status__context {
     flex-shrink: 1;
     font-size: 11px;
     color: var(--pl-text-muted);
@@ -1480,7 +1487,13 @@
     text-overflow: ellipsis;
 }
 
-.pl-root .pl-status__usage--warning {
+.pl-root .pl-status__context {
+    flex-shrink: 0;
+    margin-left: 8px;
+    max-width: 100%;
+}
+
+.pl-root .pl-status__context--warning {
     color: var(--pl-warning);
 }
 

@@ -14,6 +14,8 @@ using DTech.Parley.Editor.UI;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using NUnit.Framework;
+using UnityEditor;
+using UnityEngine;
 using UnityEngine.TestTools;
 using UnityEngine.UIElements;
 
@@ -45,6 +47,162 @@ namespace DTech.Parley.Tests.EditorMode
             }
 
             _managers.Clear();
+        }
+
+        [UnityTest]
+        public IEnumerator ContextAndCloseButtonFitNarrowAndWideWindowsInBothThemes()
+        {
+            if (SystemInfo.graphicsDeviceType == UnityEngine.Rendering.GraphicsDeviceType.Null)
+            {
+                Assert.Ignore("Requires a graphics device to verify editor layout.");
+            }
+            ChatSession session = _manager.Open(ParleyProfile.CreateCodex("Test", CodexAuthMethod.CliDefault));
+            session.Record.Title = new string('W', 100);
+            ((IAgentSink)session).CapabilitiesChanged(new BackendCapabilities
+            {
+                Account = "long-account-name@example.com · ChatGPT subscription",
+            });
+            ((IAgentSink)session).ContextUsage(56000, 200000);
+            ((IAgentSink)session).TurnCompleted(new TurnResult { InputTokens = 150000, OutputTokens = 10000 });
+            EditorWindow window = ScriptableObject.CreateInstance<EditorWindow>();
+            Font font = Font.CreateDynamicFontFromOSFont(new[] { "Arial", "DejaVu Sans" }, 12);
+            try
+            {
+                window.Show();
+                VisualElement root = window.rootVisualElement;
+                root.AddToClassList("pl-root");
+                root.style.unityFontDefinition = new StyleFontDefinition(font);
+                root.style.fontSize = 12;
+                root.styleSheets.Add(Resources.Load<StyleSheet>("Parley/Parley"));
+                ChatTabBar tabs = new(_manager, _ => false);
+                tabs.Refresh();
+                root.Add(tabs);
+                root.Add(new VisualElement { style = { flexGrow = 1 } });
+                StatusBar status = new();
+                status.Refresh(session);
+                root.Add(status);
+                Label context = status.Q<Label>(className: "pl-status__context");
+                Button close = tabs.Q<Button>(className: "pl-chat-tab__close");
+
+                foreach (string theme in new[] { "Dark", "Light" })
+                {
+                    StyleSheet tokens = Resources.Load<StyleSheet>("Parley/ParleyTokens" + theme);
+                    root.styleSheets.Add(tokens);
+                    foreach (int width in new[] { 360, 900 })
+                    {
+                        root.style.width = width;
+                        window.position = new Rect(0, 0, width, 320);
+                        yield return null;
+                        yield return null;
+
+                        root.panel.GetType().GetMethod("ValidateLayout",
+                            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+                            .Invoke(root.panel, null);
+
+                        Assert.Greater(context.resolvedStyle.width, 0, theme + " " + width);
+                        Assert.GreaterOrEqual(context.worldBound.xMin, root.worldBound.xMin);
+                        Assert.LessOrEqual(context.worldBound.xMax, root.worldBound.xMax + 1);
+                        Assert.GreaterOrEqual(context.resolvedStyle.width,
+                            context.MeasureTextSize(context.text, 0, VisualElement.MeasureMode.Undefined,
+                                0, VisualElement.MeasureMode.Undefined).x - 1);
+                        Assert.AreEqual(20, close.resolvedStyle.width);
+                        Assert.LessOrEqual(close.worldBound.xMax, close.parent.worldBound.xMax);
+                        Assert.AreEqual(0, close.resolvedStyle.backgroundColor.a);
+                        Assert.Greater(close.parent.resolvedStyle.backgroundColor.a, 0);
+                    }
+                    root.styleSheets.Remove(tokens);
+                }
+            }
+            finally
+            {
+                window.Close();
+                UnityEngine.Object.DestroyImmediate(font);
+            }
+        }
+
+        [TestCase(56000L, 200000L, "Context: 72% left · 144k / 200k", false)]
+        [TestCase(0L, 200000L, "Context: 100% left · 200k / 200k", false)]
+        [TestCase(200000L, 200000L, "Context: 0% left · 0 / 200k", true)]
+        [TestCase(300000L, 200000L, "Context: 0% left · 0 / 200k", true)]
+        [TestCase(-100L, 200000L, "Context: 100% left · 200k / 200k", false)]
+        [TestCase(160000L, 200000L, "Context: 20% left · 40k / 200k", true)]
+        [TestCase(159999L, 200000L, "Context: 20% left · 40k / 200k", false)]
+        [TestCase(100L, 0L, "Context: —", false)]
+        [TestCase(100L, -1L, "Context: —", false)]
+        public void ContextIndicatorShowsClampedRemainingTokens(long used, long max, string expected, bool warning)
+        {
+            ChatSession session = _manager.Open(ParleyProfile.CreateClaude("Test", ClaudeAuthMethod.CliDefault));
+            ((IAgentSink)session).ContextUsage(used, max);
+            StatusBar bar = new();
+            bar.Refresh(session);
+            Label context = bar.Q<Label>(className: "pl-status__context");
+
+            Assert.AreEqual(expected, context.text);
+            Assert.AreEqual(warning, context.ClassListContains("pl-status__context--warning"));
+            Assert.IsFalse(bar.Q<Label>(className: "pl-status__usage").text.Contains("ctx"));
+        }
+
+        [Test]
+        public void ContextIndicatorUsesOnlyTheSelectedChatsReading()
+        {
+            ParleyProfile profile = ParleyProfile.CreateCodex("Test", CodexAuthMethod.CliDefault);
+            ChatSession first = _manager.Open(profile);
+            ChatSession second = _manager.Open(profile);
+            ((IAgentSink)first).ContextUsage(56000, 200000);
+            StatusBar bar = new();
+            bar.Refresh(first);
+            Label context = bar.Q<Label>(className: "pl-status__context");
+            Assert.AreEqual("Context: 72% left · 144k / 200k", context.text);
+            StringAssert.Contains("56000 of 200000 tokens used", context.tooltip);
+            StringAssert.Contains("144000 tokens remaining", context.tooltip);
+            StringAssert.Contains("reported by this chat's backend", context.tooltip);
+
+            bar.Refresh(second);
+            Assert.AreEqual("Context: —", context.text);
+            StringAssert.Contains("Waiting for this chat's backend", context.tooltip);
+
+            ((IAgentSink)second).ContextUsage(90000, 100000);
+            bar.Refresh(second);
+            Assert.AreEqual("Context: 10% left · 10k / 100k", context.text);
+            bar.Refresh(first);
+            Assert.AreEqual("Context: 72% left · 144k / 200k", context.text);
+        }
+
+        [Test]
+        public void LocalContextIsExplicitlyEstimatedAndTextEstimateStaysInTooltip()
+        {
+            ChatSession session = _manager.Open(_profile);
+            session.Record.Entries.Add(new TranscriptEntry
+            {
+                Role = EntryRole.User,
+                Blocks = { new TranscriptBlock { Kind = BlockKind.Text, Text = "test" } },
+            });
+            ((IAgentSink)session).ContextUsage(56000, 200000);
+            StatusBar bar = new();
+            bar.Refresh(session);
+            Label context = bar.Q<Label>(className: "pl-status__context");
+
+            Assert.AreEqual("Context: ~72% left · ~144k / 200k", context.text);
+            StringAssert.Contains("estimated local context usage", context.tooltip);
+            StringAssert.Contains("Text estimate: 4 characters, ~1 tokens", context.tooltip);
+            Assert.AreEqual(string.Empty, bar.Q<Label>(className: "pl-status__usage").text);
+        }
+
+        [Test]
+        public async Task ChangingModelAndClearingChatDiscardOldContextReadings()
+        {
+            ChatSession session = _manager.Open(_profile);
+            ((IAgentSink)session).ContextUsage(56000, 200000);
+            session.SetModel("another-model");
+            Assert.AreEqual(0, session.ContextUsed);
+            Assert.AreEqual(0, session.ContextMax);
+
+            ((IAgentSink)session).ContextUsage(1000, 100000);
+            session.SetModel("another-model");
+            Assert.AreEqual(100000, session.ContextMax);
+            await session.ClearAsync();
+            Assert.AreEqual(0, session.ContextUsed);
+            Assert.AreEqual(0, session.ContextMax);
         }
 
         [Test]

@@ -430,6 +430,7 @@ namespace DTech.Parley.Editor.Sessions
 			_todos.Clear();
 			_tasks.Clear();
 			ContextUsed = 0;
+			ContextMax = 0;
 			LastTurn = null;
 			Save();
 			OnCleared?.Invoke();
@@ -477,6 +478,11 @@ namespace DTech.Parley.Editor.Sessions
 
 		public void SetModel(string model)
 		{
+			if (!string.Equals(Model, model, StringComparison.Ordinal))
+			{
+				ContextUsed = 0;
+				ContextMax = 0;
+			}
 			Model = model;
 			Backend.SetModel(model);
 			Save();
