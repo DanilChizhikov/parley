@@ -2208,3 +2208,28 @@
     white-space: normal;
     color: var(--pl-text);
 }
+
+.pl-orchestration, .pl-orchestration-approval {
+    padding: 4px 6px;
+    flex-shrink: 0;
+    border-bottom-width: 1px;
+    border-bottom-color: var(--pl-border);
+}
+
+.pl-orchestration__row {
+    flex-direction: row;
+    align-items: center;
+}
+
+.pl-orchestration__nodes {
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-width: 0;
+}
+
+.pl-orchestration__gate {
+    flex-direction: row;
+    align-items: center;
+    flex-wrap: wrap;
+    max-width: 480px;
+}

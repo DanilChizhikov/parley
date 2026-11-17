@@ -57,6 +57,7 @@ namespace DTech.Parley.Editor.UI
         private IChatTabManager _tabs;
         private ChatTabManager _previewTabs;
         private ChatTabBar _tabBar;
+        private OrchestrationBar _orchestrationBar;
         private TranscriptView _transcript;
         private SidePanel _side;
         private Composer _composer;
@@ -261,7 +262,10 @@ namespace DTech.Parley.Editor.UI
             ParleyStyles.Apply(root);
             _tabBar = new ChatTabBar(_tabs, CloseTab);
             root.Add(_tabBar);
+            _orchestrationBar = new OrchestrationBar(_tabs);
+            root.Add(_orchestrationBar);
             root.Add(BuildToolbar());
+            root.Add(_orchestrationBar.TargetApproval);
             _lineage = new Toolbar();
             _parentButton = new ToolbarButton(SelectParent);
             _resultButton = new ToolbarButton(SendResultBack) { text = "Send Result Back" };
@@ -451,6 +455,7 @@ namespace DTech.Parley.Editor.UI
             }
 
             _tabBar?.Refresh();
+            _orchestrationBar?.Refresh();
             if (!_stateDirty || _session == null)
             {
                 return;
@@ -479,7 +484,7 @@ namespace DTech.Parley.Editor.UI
             _presetButton.text = preset != null ? "Preset: " + preset.Name + " ▾" : "Preset ▾";
             RefreshUpdateButton();
             RefreshLineage();
-            _composer.SetBusy(session.IsBusy);
+            _composer.SetBusy(session.IsBusy, _tabs.Engine?.IsSessionActive(session) == true);
             _composer.RefreshLimits(profile.Kind != ProfileKind.Local);
             _statusBar.Refresh(session);
             _authCard.Refresh();

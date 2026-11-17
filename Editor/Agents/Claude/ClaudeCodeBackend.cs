@@ -16,7 +16,7 @@ using Debug = UnityEngine.Debug;
 
 namespace DTech.Parley.Editor.Agents.Claude
 {
-	internal sealed class ClaudeCodeBackend : IAgentBackend
+	internal sealed class ClaudeCodeBackend : IAgentBackend, IAgentPermissionBoundary
 	{
 		private const int InitializeTimeoutMs = 60000;
 		private const int ControlTimeoutMs = 30000;
@@ -78,6 +78,7 @@ namespace DTech.Parley.Editor.Agents.Claude
 		private bool _rateLimitsLoading;
 		private DateTime _rateLimitsFetchedAt = DateTime.MinValue;
 		private int _requestCounter;
+        private string _turnCorrelationId;
 
 		public ClaudeCodeBackend(
 			ParleyProfile profile,
@@ -101,6 +102,7 @@ namespace DTech.Parley.Editor.Agents.Claude
 			{
 				AdditionalDirectories = ParleyProjectSettings.instance.AdditionalDirectories,
 				GetMode = () => Mode,
+                TurnCorrelationId = _turnCorrelationId,
 			});
 		}
 
@@ -170,6 +172,7 @@ namespace DTech.Parley.Editor.Agents.Claude
 
 		public async Task SendAsync(UserTurn turn, CancellationToken token)
 		{
+            _turnCorrelationId = turn.CorrelationId;
 			if (_skillGate != null)
 			{
 				await _skillGate.Task;
@@ -202,6 +205,7 @@ namespace DTech.Parley.Editor.Agents.Claude
 					throw new OperationCanceledException("Auto skills were interrupted before sending the message.");
 				}
 
+                token.ThrowIfCancellationRequested();
 				if (!Write(ClaudeWire.UserMessage(turn, _mapper.SessionId)))
 				{
 					throw new InvalidOperationException("Claude Code is not accepting input.");
@@ -260,6 +264,13 @@ namespace DTech.Parley.Editor.Agents.Claude
 
 			_sink.ModeChanged(mode);
 		}
+
+        public void RestrictPermissions(PermissionMode mode)
+        {
+            _resumeSessionId = SessionId ?? _resumeSessionId;
+            StopProcess(true);
+            SetPermissionMode(mode);
+        }
 
 		public void SetModel(string model)
 		{
@@ -795,7 +806,7 @@ namespace DTech.Parley.Editor.Agents.Claude
 			return SecretStores.Default.TryGet(SecretStores.Key(_profile.Id, field), out string secret) ? secret : null;
 		}
 
-		private void StopProcess()
+		private void StopProcess(bool immediate = false)
 		{
 			ChildProcess process = _process;
 			if (process == null)
@@ -804,6 +815,7 @@ namespace DTech.Parley.Editor.Agents.Claude
 			}
 
 			Detach(process);
+			if (immediate) process.Kill();
 			process.CloseInput();
 			int processId = process.ProcessId;
 			Task.Run(() => FinishProcess(process, processId));

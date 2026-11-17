@@ -92,7 +92,7 @@ namespace DTech.Parley.Editor.Agents.Claude
 					case "tools/list":
 						return Result(id, new JObject { ["tools"] = ListTools() });
 					case "tools/call":
-						return Result(id, await CallAsync(message["params"] as JObject, cancellationToken));
+						return Result(id, await CallAsync(message["params"] as JObject, id.ToString(), cancellationToken));
 					default:
 						return Error(id, -32601, "Method not found: " + method);
 				}
@@ -139,7 +139,7 @@ namespace DTech.Parley.Editor.Agents.Claude
 			return tools;
 		}
 
-		private async Task<JObject> CallAsync(JObject parameters, CancellationToken cancellationToken)
+		private async Task<JObject> CallAsync(JObject parameters, string requestId, CancellationToken cancellationToken)
 		{
 			string name = (string)parameters?["name"];
 			if (!_catalog.TryGet(name, out IParleyTool tool))
@@ -151,7 +151,10 @@ namespace DTech.Parley.Editor.Agents.Claude
 			ToolResult result;
 			try
 			{
-				result = await tool.ExecuteAsync(arguments, _contextFactory(), cancellationToken);
+                cancellationToken.ThrowIfCancellationRequested();
+                ToolContext context = _contextFactory();
+                context.ToolUseId = requestId;
+				result = await tool.ExecuteAsync(arguments, context, cancellationToken);
 			}
 			catch (OperationCanceledException)
 			{

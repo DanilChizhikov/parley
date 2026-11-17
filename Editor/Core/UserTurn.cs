@@ -5,6 +5,7 @@ namespace DTech.Parley.Editor
     internal sealed class UserTurn
     {
         public string Text = string.Empty;
+        public string CorrelationId;
         public List<ChatAttachment> Attachments = new ();
         public List<SkillInvocation> Skills = new ();
     }

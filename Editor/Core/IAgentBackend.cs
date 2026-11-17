@@ -27,4 +27,9 @@ namespace DTech.Parley.Editor
 		void RefreshSkills();
 		void RefreshRateLimits();
 	}
+
+    internal interface IAgentPermissionBoundary
+    {
+        void RestrictPermissions(PermissionMode mode);
+    }
 }

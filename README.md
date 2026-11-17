@@ -316,8 +316,13 @@ profile matches. Provider and model are required; `current` explicitly inherits 
 Missing profiles, ambiguous providers and missing models produce an error when opening the role.
 The parser supports quoted and plain scalars, folded/literal text blocks, inline comments, and flow or block
 sequences for `allowed_targets`. Unknown frontmatter is preserved when editing library skills.
-`handoff_mode` accepts `auto` or `ask_approval` (default); handoff mode and targets are metadata for future
-orchestration. They do not run handoffs automatically. Role instructions, model, provider and metadata are
+`handoff_mode` accepts `auto` or `ask_approval` (default). Roles can delegate to their allowed targets; the
+**Orchestration Bar** below the tabs shows the chain, status and delivered results. Click a node to select its tab.
+For `ask_approval`, **Approve & Run** releases the pending handoff; click the target node to review it in a tab
+before approving. The bar and target tab share the same approval, including a separate result review before
+returning output to the parent. **Stop Chain** cancels that run's active streams and queued handoffs. After an
+editor reload, interrupted chains show their status and never replay automatically.
+Role instructions, model, provider and metadata are
 snapshotted in each session, survive reloads, and apply to Local, Claude Code and Codex without changing profiles.
 
 The **Skills** tab lists the skills of the current chat, each with a checkbox for this chat. The **All** checkbox in

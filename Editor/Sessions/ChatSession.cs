@@ -12,6 +12,7 @@ using DTech.Parley.Editor.Secrets;
 using DTech.Parley.Editor.Settings;
 using DTech.Parley.Editor.Skills;
 using DTech.Parley.Editor.Tools;
+using DTech.Parley.Editor.Orchestration;
 using Newtonsoft.Json.Linq;
 using UnityEditor;
 #if PARLEY_DEBUGG
@@ -142,6 +143,10 @@ namespace DTech.Parley.Editor.Sessions
 		private string _appliedMcpFingerprint;
 		private string _appliedSkillFingerprint;
 		private SkillConfiguration _skillConfiguration = new ();
+        internal OrchestrationEngine Orchestration { get; set; }
+        private bool _ignoreTurnCallbacks;
+        private readonly Dictionary<string, DelegationStreamParser> _delegationParsers = new();
+        private readonly HashSet<CancellationTokenSource> _pendingSends = new();
 
 		public ChatSession(ParleyProfile profile, SessionRecord record, bool preview = false,
 			Func<ParleyProfile, SessionRecord, IAgentSink, IAgentBackend> backendFactory = null)
@@ -197,12 +202,23 @@ namespace DTech.Parley.Editor.Sessions
 		{
 			return profile.Kind switch
 			{
-				ProfileKind.ClaudeCode => new ClaudeCodeBackend(profile, this, ToolCatalog.CreateForMcp(ParleyProjectSettings.instance), Record.BackendSessionId ?? Record.ForkBackendSessionId, Record.Mode, Record.ForkBackendSessionId != null),
-				ProfileKind.Codex => new CodexBackend(profile, this, ToolCatalog.CreateForMcp(ParleyProjectSettings.instance), Record.BackendSessionId ?? Record.ForkBackendSessionId, Record.Mode, Record.ForkBackendSessionId != null),
-				ProfileKind.Local => new LocalAgentBackend(profile, this, ToolCatalog.CreateForLocalAgent(ParleyProjectSettings.instance), Record.BackendSessionId, Record.LocalHistory, Record.Mode),
+				ProfileKind.ClaudeCode => new ClaudeCodeBackend(profile, this, CreateToolCatalog(false), Record.BackendSessionId ?? Record.ForkBackendSessionId, Record.Mode, Record.ForkBackendSessionId != null),
+				ProfileKind.Codex => new CodexBackend(profile, this, CreateToolCatalog(false), Record.BackendSessionId ?? Record.ForkBackendSessionId, Record.Mode, Record.ForkBackendSessionId != null),
+				ProfileKind.Local => new LocalAgentBackend(profile, this, CreateToolCatalog(true), Record.BackendSessionId, Record.LocalHistory, Record.Mode),
 				_ => throw new ArgumentOutOfRangeException(),
 			};
 		}
+
+        internal ToolCatalog CreateToolCatalog(bool local)
+        {
+            ToolCatalog catalog = local ? ToolCatalog.CreateForLocalAgent(ParleyProjectSettings.instance)
+                : ToolCatalog.CreateForMcp(ParleyProjectSettings.instance);
+            List<IParleyTool> tools = new(catalog.Tools);
+            tools.Add(new DelegateToAgentTool((request, turnId) => Orchestration == null || string.IsNullOrEmpty(turnId)
+                ? throw new InvalidOperationException("Orchestration is unavailable.")
+                : Orchestration.Submit(this, request, turnId)));
+            return new ToolCatalog(tools);
+        }
 
 		public void Dispose()
 		{
@@ -213,6 +229,7 @@ namespace DTech.Parley.Editor.Sessions
 
 			Save();
 			_disposed = true;
+            Orchestration?.CancelSession(this);
 			_lifetime.Cancel();
 			Backend.Dispose();
 			_lifetime.Dispose();
@@ -277,7 +294,16 @@ namespace DTech.Parley.Editor.Sessions
 				return;
 			}
 
-			UserTurn turn = new UserTurn { Text = text ?? string.Empty, Attachments = attachments ?? new List<ChatAttachment>() };
+            if (Orchestration != null && !Orchestration.BeginTurn(this))
+            {
+                AddNotice(NoticeLevel.Warning, "Finish or stop the active workflow before sending another message.");
+                return;
+            }
+            _ignoreTurnCallbacks = false;
+            _delegationParsers.Clear();
+
+			UserTurn turn = new UserTurn { Text = text ?? string.Empty, Attachments = attachments ?? new List<ChatAttachment>(),
+                CorrelationId = Record.OrchestrationTurnId };
 			List<SkillInvocation> autoSkills = null;
 			if (Record.PendingAutoSkills != null && Record.PendingAutoSkills.Count > 0)
 			{
@@ -311,14 +337,17 @@ namespace DTech.Parley.Editor.Sessions
 			Record.ActiveSkillId = turn.Skills.Count > 0 ? turn.Skills[0].Name : null;
 			_sending++;
 			Record.ExecutionStatus = ChatExecutionStatus.Streaming;
+            using CancellationTokenSource sendCancellation = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
+            _pendingSends.Add(sendCancellation);
 			RaiseState();
 			try
 			{
+                sendCancellation.Token.ThrowIfCancellationRequested();
 				if (deliverContext)
 				{
 					Record.ContextDelivered = true;
 				}
-				await Backend.SendAsync(turn, _lifetime.Token);
+				await Backend.SendAsync(turn, sendCancellation.Token);
 			}
 			catch (OperationCanceledException)
 			{
@@ -327,6 +356,7 @@ namespace DTech.Parley.Editor.Sessions
 					Record.ContextDelivered = false;
 				}
 				RestoreAutoSkills(autoSkills);
+                Orchestration?.CancelSession(this);
 			}
 			catch (Exception exception)
 			{
@@ -336,9 +366,11 @@ namespace DTech.Parley.Editor.Sessions
 				}
 				RestoreAutoSkills(autoSkills);
 				ReportStartFailure(exception);
+				Orchestration?.FailTurn(this, exception.Message);
 			}
 			finally
 			{
+				_pendingSends.Remove(sendCancellation);
 				_sending--;
 				RaiseState();
 			}
@@ -352,6 +384,7 @@ namespace DTech.Parley.Editor.Sessions
 				return;
 			}
 
+            Orchestration?.CancelSession(this);
 			FlushDeltas();
 			try
 			{
@@ -374,6 +407,8 @@ namespace DTech.Parley.Editor.Sessions
 			Record.LatestPlan = null;
 			Record.ContextSnapshot = null;
 			Record.ContextDelivered = false;
+            Record.OrchestrationRunId = null;
+            Record.OrchestrationTurnId = null;
 			Record.Title = SessionRecord.DefaultTitle;
 			_currentAssistant = null;
 			_blocksByKey.Clear();
@@ -395,8 +430,27 @@ namespace DTech.Parley.Editor.Sessions
 
 		public void Interrupt()
 		{
+            Orchestration?.CancelSession(this);
+            FenceTurn();
 			Backend.Interrupt();
 		}
+
+        internal void FenceTurn()
+        {
+            _ignoreTurnCallbacks = true;
+            foreach (CancellationTokenSource source in new List<CancellationTokenSource>(_pendingSends)) source.Cancel();
+            foreach (DelegationStreamParser parser in _delegationParsers.Values) parser.Cancel();
+            _delegationParsers.Clear();
+            FlushDeltas();
+            foreach (PendingRequest request in _requests.Values)
+            {
+                if (_requestBlocks.TryGetValue(request.Id, out TranscriptBlock block)) block.Resolution = "Cancelled";
+            }
+            _requests.Clear();
+            foreach (BackgroundTaskInfo task in _tasks.Values)
+                if (task.Status == "running" || task.Status == "pending") task.Status = "cancelled";
+            Record.ActiveSkillId = null;
+        }
 
 		public void RefreshExecutionState()
 		{
@@ -410,7 +464,7 @@ namespace DTech.Parley.Editor.Sessions
 
 		public void SetMode(PermissionMode mode)
 		{
-			Backend.SetPermissionMode(mode);
+			Backend.SetPermissionMode(Orchestration?.LimitMode(this, mode) ?? mode);
 		}
 
 		public void SetModel(string model)
@@ -850,6 +904,14 @@ namespace DTech.Parley.Editor.Sessions
 		{
 			SkillConfiguration configuration = new SkillConfiguration { LibraryRoot = SkillLibrary.Root, LibraryFolder = SkillLibrary.Folder };
 			configuration.RoleInstructions = Record.RoleInstructions;
+            if (Record.RoleAllowedTargets?.Count > 0)
+            {
+                configuration.RoleInstructions += "\n\n# Delegation\nAllowed targets: " +
+                    string.Join(", ", Record.RoleAllowedTargets) + ". Use delegate_to_agent with context_mode " +
+                    "summary or last_messages. If native tools are unavailable, emit a standalone " +
+                    "<parley_delegate target=\"skill:name\" mode=\"last_messages\">task</parley_delegate> tag " +
+                    "outside code fences. Finish the turn after delegation; child results arrive in a new turn.";
+            }
 			foreach (string name in SkillLibrary.Names())
 			{
 				configuration.LibraryNames.Add(name);
@@ -1226,6 +1288,7 @@ namespace DTech.Parley.Editor.Sessions
 
 		void IAgentSink.BlockStarted(BlockStartRequest request)
 		{
+            if (_disposed || _ignoreTurnCallbacks) return;
 			if (_blocksByKey.ContainsKey(request.Key))
 			{
 				return;
@@ -1250,6 +1313,7 @@ namespace DTech.Parley.Editor.Sessions
 
 		void IAgentSink.TextDelta(string key, string delta)
 		{
+            if (_disposed || _ignoreTurnCallbacks) return;
 			if (string.IsNullOrEmpty(delta))
 			{
 				return;
@@ -1263,10 +1327,18 @@ namespace DTech.Parley.Editor.Sessions
 			}
 
 			QueueDelta(_pendingText, block, delta);
+            if (Orchestration != null && Record.RoleAllowedTargets?.Count > 0 &&
+                block.Kind == BlockKind.Text && string.IsNullOrEmpty(block.ParentToolUseId))
+            {
+                if (!_delegationParsers.TryGetValue(key, out DelegationStreamParser parser))
+                    _delegationParsers[key] = parser = new DelegationStreamParser();
+                parser.Feed(delta);
+            }
 		}
 
 		void IAgentSink.ToolInputDelta(string key, string partialJson)
 		{
+            if (_disposed || _ignoreTurnCallbacks) return;
 			if (_blocksByKey.TryGetValue(key, out TranscriptBlock block) && !string.IsNullOrEmpty(partialJson))
 			{
 				QueueDelta(_pendingInput, block, partialJson);
@@ -1275,7 +1347,10 @@ namespace DTech.Parley.Editor.Sessions
 
 		void IAgentSink.BlockFinalized(BlockFinalizeRequest request)
 		{
+            if (_disposed || _ignoreTurnCallbacks) return;
 			FlushDeltas();
+			bool streamedTextMatches = _blocksByKey.TryGetValue(request.Key, out TranscriptBlock streamedBlock) &&
+                (string.IsNullOrEmpty(request.Text) || streamedBlock.Text == request.Text);
 			if (!_blocksByKey.TryGetValue(request.Key, out TranscriptBlock block))
 			{
 				block = new TranscriptBlock { Kind = request.Kind, ParentToolUseId = request.ParentToolUseId };
@@ -1311,10 +1386,30 @@ namespace DTech.Parley.Editor.Sessions
 			block.IsFinished = request.Kind != BlockKind.ToolUse;
 			_usage.BlockFinalized(request);
 			OnBlockChanged?.Invoke(block);
+            if (Orchestration != null && request.Kind == BlockKind.Text &&
+                string.IsNullOrEmpty(request.ParentToolUseId) && string.IsNullOrEmpty(block.ParentToolUseId))
+            {
+                if (!streamedTextMatches || !_delegationParsers.TryGetValue(request.Key, out DelegationStreamParser parser))
+                {
+                    parser = new DelegationStreamParser();
+                    parser.Feed(block.Text);
+                }
+                foreach (DelegationRequest parsed in parser.Complete())
+                {
+                    try
+                    {
+                        Orchestration?.Submit(this, new DelegationRequest(request.Key + ":" + parsed.RequestId,
+                            parsed.TargetSkill, parsed.TaskSummary, parsed.ContextMode));
+                    }
+                    catch (InvalidOperationException exception) { AddNotice(NoticeLevel.Warning, exception.Message); }
+                }
+                _delegationParsers.Remove(request.Key);
+            }
 		}
 
 		void IAgentSink.ToolResult(ToolResultRequest request)
 		{
+            if (_disposed || _ignoreTurnCallbacks) return;
 			_usage.ToolResult(request);
 			if (string.IsNullOrEmpty(request.ToolUseId) || !_blocksByToolId.TryGetValue(request.ToolUseId, out TranscriptBlock block))
 			{
@@ -1331,6 +1426,7 @@ namespace DTech.Parley.Editor.Sessions
 
 		void IAgentSink.RequestRaised(PendingRequest request)
 		{
+            if (_disposed || _ignoreTurnCallbacks) return;
 			_requests[request.Id] = request;
 			TranscriptBlock block = new TranscriptBlock
 			{
@@ -1375,6 +1471,7 @@ namespace DTech.Parley.Editor.Sessions
 
 		void IAgentSink.BackgroundTaskChanged(BackgroundTaskInfo task)
 		{
+            if (_disposed || _ignoreTurnCallbacks) return;
 			if (string.IsNullOrEmpty(task.TaskId))
 			{
 				return;
@@ -1398,7 +1495,15 @@ namespace DTech.Parley.Editor.Sessions
 
 		void IAgentSink.ModeChanged(PermissionMode mode)
 		{
+            PermissionMode limited = Orchestration?.LimitMode(this, mode) ?? mode;
+            if (limited != mode)
+            {
+                Backend.SetPermissionMode(limited);
+                return;
+            }
+            PermissionMode previous = Record.Mode;
 			Record.Mode = mode;
+            Orchestration?.PermissionsChanged(this, previous);
 			RaiseState();
 		}
 
@@ -1468,6 +1573,7 @@ namespace DTech.Parley.Editor.Sessions
 
 		void IAgentSink.TurnCompleted(TurnResult result)
 		{
+            if (_disposed || _ignoreTurnCallbacks) return;
 			LastTurn = result;
 			Record.ExecutionStatus = result.IsError ? ChatExecutionStatus.Error :
 				result.Subtype == "interrupted" ? ChatExecutionStatus.Interrupted : ChatExecutionStatus.Idle;
@@ -1485,6 +1591,7 @@ namespace DTech.Parley.Editor.Sessions
 			}
 			RaiseState();
 			OnTurnCompleted?.Invoke();
+            Orchestration?.TurnCompleted(this, result);
 		}
 
 		void IAgentSink.AuthRequired(string message)
@@ -1495,6 +1602,8 @@ namespace DTech.Parley.Editor.Sessions
 
 		void IAgentSink.Exited(string reason, bool unexpected)
 		{
+            if (_disposed || _ignoreTurnCallbacks) return;
+            Orchestration?.FailTurn(this, reason ?? "Agent exited.");
 			foreach (BackgroundTaskInfo task in _tasks.Values)
 			{
 				if (task.Status == "running" || task.Status == "pending")

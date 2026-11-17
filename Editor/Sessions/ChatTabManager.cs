@@ -11,6 +11,7 @@ namespace DTech.Parley.Editor.Sessions
         IReadOnlyList<ChatSession> Tabs { get; }
         ChatSession Active { get; }
         bool HasActiveWork { get; }
+        Orchestration.OrchestrationEngine Engine { get; }
         ChatSession Open(ParleyProfile profile, SessionRecord record = null);
         void Select(ChatSession session);
         void Cycle(int direction);
@@ -30,10 +31,12 @@ namespace DTech.Parley.Editor.Sessions
         private readonly List<ChatSession> _tabs = new();
         private readonly Dictionary<ChatSession, Action> _completedHandlers = new();
         private bool _disposed;
+        public Orchestration.OrchestrationEngine Engine { get; internal set; }
+        internal List<Orchestration.OrchestrationRun> Runs { get; private set; } = new();
 
         public IReadOnlyList<ChatSession> Tabs => _tabs;
         public ChatSession Active { get; private set; }
-        public bool HasActiveWork => _tabs.Exists(session => session.HasActiveWork);
+        public bool HasActiveWork => Engine?.HasActiveWork == true || _tabs.Exists(session => session.HasActiveWork);
 
         public ChatTabManager(IChatSessionFactory factory, IChatTabStore store)
         {
@@ -49,6 +52,7 @@ namespace DTech.Parley.Editor.Sessions
             }
 
             Save();
+            Engine?.Dispose();
             _disposed = true;
             foreach (ChatSession session in _tabs)
             {
@@ -66,6 +70,7 @@ namespace DTech.Parley.Editor.Sessions
             SessionRecord legacyRecord = null)
         {
             ChatTabState state = _store.Load();
+            Runs = state?.Runs ?? new List<Orchestration.OrchestrationRun>();
             if (state?.Tabs != null)
             {
                 foreach (SessionRecord record in state.Tabs)
@@ -136,6 +141,7 @@ namespace DTech.Parley.Editor.Sessions
             }
 
             Unsubscribe(session);
+            Engine?.CancelSession(session);
             _tabs.RemoveAt(index);
             session.Dispose();
             if (Active == session)
@@ -163,6 +169,8 @@ namespace DTech.Parley.Editor.Sessions
             record.BackgroundTasks.Clear();
             record.HasUnreadResponse = false;
             record.ActiveSkillId = null;
+            record.OrchestrationRunId = null;
+            record.OrchestrationTurnId = null;
             ChatSession copy = Open(session.Profile, record);
             _ = copy.EnsureStartedAsync();
             return copy;
@@ -175,7 +183,7 @@ namespace DTech.Parley.Editor.Sessions
                 return;
             }
 
-            ChatTabState state = new ChatTabState { ActiveSessionId = Active?.SessionId };
+            ChatTabState state = new ChatTabState { ActiveSessionId = Active?.SessionId, Runs = Runs };
             foreach (ChatSession session in _tabs)
             {
                 session.Save();
@@ -184,6 +192,8 @@ namespace DTech.Parley.Editor.Sessions
 
             _store.Save(state);
         }
+
+        internal void NotifyOrchestrationChanged() { OnChanged?.Invoke(); }
 
         public ChatSession OpenWithContext(ParleyProfile profile, ContextSnapshot snapshot)
         {
@@ -205,6 +215,7 @@ namespace DTech.Parley.Editor.Sessions
         {
             ChatSession session = _factory.Create(profile, record);
             _tabs.Add(session);
+            session.Orchestration = Engine;
             session.OnStateChanged += ChangedHandler;
             Action completed = () => CompletedHandler(session);
             _completedHandlers.Add(session, completed);
