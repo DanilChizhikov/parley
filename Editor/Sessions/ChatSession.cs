@@ -146,7 +146,6 @@ namespace DTech.Parley.Editor.Sessions
 		public ChatSession(ParleyProfile profile, SessionRecord record, bool preview = false,
 			Func<ParleyProfile, SessionRecord, IAgentSink, IAgentBackend> backendFactory = null)
 		{
-			// Backends may update their profile when selecting a model; every tab owns its copy.
 			Profile = UnityEngine.JsonUtility.FromJson<ParleyProfile>(UnityEngine.JsonUtility.ToJson(profile));
 			profile = Profile;
 			IsPreview = preview;

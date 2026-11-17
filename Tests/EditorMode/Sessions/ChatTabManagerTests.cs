@@ -509,7 +509,6 @@ namespace DTech.Parley.Tests.EditorMode
             Assert.IsNull(session.Backend.SessionId);
             Assert.IsNull(restored.BackendSessionId);
             Assert.AreEqual("source-thread", restored.ForkBackendSessionId);
-            // Only a result confirms a resumable fork. The source is never exposed as this tab's identity.
             receive.Invoke(session.Backend, new object[]
             {
                 "{\"type\":\"result\",\"session_id\":\"copy-thread\",\"subtype\":\"success\",\"is_error\":false,\"num_turns\":1}",
@@ -575,7 +574,6 @@ namespace DTech.Parley.Tests.EditorMode
                 Assert.IsTrue(ReloadGuard.IsLocked);
                 ReloadGuard.Release(second);
                 Assert.IsTrue(ReloadGuard.IsLocked);
-                // A chained operation reacquires before the delayed unlock can run.
                 ReloadGuard.Acquire(first);
                 yield return null;
                 Assert.IsTrue(ReloadGuard.IsLocked);
@@ -667,7 +665,6 @@ namespace DTech.Parley.Tests.EditorMode
 
             public void Complete(TurnResult result = null)
             {
-                // CLI mappers report completion before releasing their busy flag.
                 Sink.TurnCompleted(result ?? new TurnResult());
                 _sends.Dequeue().SetResult(true);
             }
