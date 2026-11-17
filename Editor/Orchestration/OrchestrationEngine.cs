@@ -222,14 +222,16 @@ namespace DTech.Parley.Editor.Orchestration
             OrchestrationStep parentStep = run.Steps.Find(item => item.TurnId == request.ParentTurnId);
             ChatSession parent = Find(parentStep.SessionId);
             SkillDocument skill = _skills().Skills.FirstOrDefault(item => item.Id == request.TargetSkill);
-            if (parent == null || skill == null || !ChatPresets.TryCreateRole(skill, _profiles(),
-                CurrentProfile(parent), StricterMode(request.PermissionCeiling, LimitMode(parent, parent.Mode)),
+            if (parent == null || skill == null) return null;
+            PermissionMode ceiling = StricterMode(request.PermissionCeiling, LimitMode(parent, parent.Mode));
+            if (!ChatPresets.TryCreateRole(skill, _profiles(), CurrentProfile(parent), ceiling,
                 out ParleyProfile profile, out SessionRecord record, out _)) return null;
             record.ParentSessionId = parent.SessionId;
             record.OrchestrationRunId = run.Id;
             request.ChildSessionId = record.Id;
             Changed();
             ChatSession child = _tabs.Open(profile, record);
+            ApplyChildPermissions(child, ceiling);
             Changed();
             return child;
         }
