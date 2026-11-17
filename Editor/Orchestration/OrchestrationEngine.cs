@@ -136,7 +136,6 @@ namespace DTech.Parley.Editor.Orchestration
             return Receipt(delegation);
         }
 
-        // Approval state is durable; the orchestration UI can bind this API without owning execution.
         public bool Approve(string runId, string delegationId, bool allow)
         {
             OrchestrationRun run = Runs.FirstOrDefault(candidate => candidate.Id == runId &&
@@ -219,8 +218,6 @@ namespace DTech.Parley.Editor.Orchestration
                 var restrictions = run.Steps.Select(step => Find(step.SessionId)).Where(session => session != null)
                     .Distinct().Select(session => (Session: session, Mode: LimitMode(session, session.Mode)))
                     .Where(item => item.Session == source || item.Mode != item.Session.Mode).ToArray();
-                // CLI sandboxes are fixed when a turn starts. Interrupt and restart their process boundary;
-                // changing a toolbar value alone cannot revoke an already running turn's authority.
                 Stop(run, RunStatus.Cancelled);
                 foreach (var restriction in restrictions)
                 {
@@ -298,7 +295,6 @@ namespace DTech.Parley.Editor.Orchestration
                 }
                 cancellationToken.ThrowIfCancellationRequested();
                 if (!Live(run, request)) return;
-                // Revalidate after asynchronous work: skills, permissions and tabs may have changed meanwhile.
                 if (Find(parent.SessionId) != parent || parent.Record.RoleAllowedTargets == null ||
                     !parent.Record.RoleAllowedTargets.Any(target => NormalizeTarget(target) == request.TargetSkill))
                     throw new InvalidOperationException("Parent no longer permits this delegation.");
@@ -318,7 +314,6 @@ namespace DTech.Parley.Editor.Orchestration
                 request.ChildSessionId = record.Id;
                 request.Status = DelegationStatus.Running;
                 run.Steps.Add(childStep);
-                // Persist intent before opening a tab or starting a backend; recovery never replays intent.
                 Changed();
                 ChatSession active = _tabs.Active;
                 ChatSession child = _tabs.Open(profile, record);
@@ -369,7 +364,6 @@ namespace DTech.Parley.Editor.Orchestration
             run.Steps.Add(resumed);
             Bind(parent, run, resumed);
             _reservedTurns.Add(resumed.TurnId);
-            // Delivery and its new turn ID are committed together, before dispatch. A crash interrupts, never retries.
             Changed();
             _ = ResumeAsync(parent, text, Token(run));
         }
@@ -434,7 +428,6 @@ namespace DTech.Parley.Editor.Orchestration
 
         internal static PermissionMode StricterMode(PermissionMode first, PermissionMode second)
         {
-            // Plan disallows changes; Don't ask denies escalation; Auto never flows across providers as bypass.
             int Rank(PermissionMode mode) => mode switch
             {
                 PermissionMode.Plan => 0, PermissionMode.DontAsk => 1, PermissionMode.Default => 2,
@@ -446,8 +439,6 @@ namespace DTech.Parley.Editor.Orchestration
 
         internal static void ApplyChildPermissions(ChatSession child, PermissionMode ceiling)
         {
-            // A prepared tab may already own a backend. Updating only its serialized record cannot
-            // revoke a CLI sandbox created before approval, so replace that process boundary too.
             child.Record.Mode = ceiling;
             if (child.Backend.Mode == ceiling) return;
             if (child.Backend is IAgentPermissionBoundary boundary) boundary.RestrictPermissions(ceiling);

@@ -448,7 +448,6 @@ namespace DTech.Parley.Tests.EditorMode
             _engine.Tick();
             ChatSession child = _tabs.Tabs[1];
             Submit(child, "grandchild");
-            // Simulate a restored/externally updated ancestor before its mode callback is reconciled.
             _parent.Record.Mode = PermissionMode.Plan;
             Complete(child, "waiting for grandchild");
             _engine.Tick();

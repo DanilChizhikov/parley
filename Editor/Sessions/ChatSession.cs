@@ -1389,7 +1389,6 @@ namespace DTech.Parley.Editor.Sessions
             if (Orchestration != null && request.Kind == BlockKind.Text &&
                 string.IsNullOrEmpty(request.ParentToolUseId) && string.IsNullOrEmpty(block.ParentToolUseId))
             {
-                // Final text is authoritative: providers may replace streamed deltas during reconciliation.
                 if (!streamedTextMatches || !_delegationParsers.TryGetValue(request.Key, out DelegationStreamParser parser))
                 {
                     parser = new DelegationStreamParser();
