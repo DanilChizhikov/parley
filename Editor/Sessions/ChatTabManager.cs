@@ -16,6 +16,7 @@ namespace DTech.Parley.Editor.Sessions
         void Cycle(int direction);
         void Close(ChatSession session);
         ChatSession Duplicate(ChatSession session);
+        ChatSession OpenWithContext(ParleyProfile profile, ContextSnapshot snapshot);
         void Save();
     }
 
@@ -182,6 +183,22 @@ namespace DTech.Parley.Editor.Sessions
             }
 
             _store.Save(state);
+        }
+
+        public ChatSession OpenWithContext(ParleyProfile profile, ContextSnapshot snapshot)
+        {
+            if (snapshot == null)
+            {
+                throw new ArgumentNullException(nameof(snapshot));
+            }
+            return Open(profile, new SessionRecord
+            {
+                ProfileId = profile.Id,
+                Kind = profile.Kind,
+                ParentSessionId = snapshot.SourceSessionId,
+                ContextSnapshot = snapshot,
+                Title = "Context handoff",
+            });
         }
 
         private ChatSession Add(ParleyProfile profile, SessionRecord record)

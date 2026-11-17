@@ -63,6 +63,111 @@ namespace DTech.Parley.Tests.EditorMode
         }
 
         [Test]
+        public async Task HandoffStartsFreshAcrossProvidersAndDeliversContextOnce()
+        {
+            ChatSession source = _manager.Open(_profile);
+            source.Record.Entries.Add(new TranscriptEntry
+            {
+                Role = EntryRole.User,
+                Blocks = { new TranscriptBlock { Kind = BlockKind.Text, Text = "original goal", IsFinished = true } },
+            });
+            source.Record.BackendSessionId = "source-thread";
+            ContextSnapshot snapshot = ContextHandoffService.Capture(source.Record, 10);
+            ParleyProfile target = ParleyProfile.CreateCodex("Target", CodexAuthMethod.CliDefault);
+            ChatSession destination = _manager.OpenWithContext(target, snapshot);
+            FakeBackend backend = (FakeBackend)destination.Backend;
+            Assert.AreSame(destination, _manager.Active);
+            Assert.AreEqual(source.SessionId, destination.ParentSessionId);
+            Assert.AreNotEqual("source-thread", destination.Record.BackendSessionId);
+            Assert.IsNull(destination.Record.ForkBackendSessionId);
+            Assert.IsNull(destination.Record.LocalHistory);
+            Assert.IsNull(backend.ResumeId);
+            Assert.IsEmpty(destination.Messages);
+            Task first = destination.SendAsync("continue", null);
+            StringAssert.Contains("original goal", backend.LastText);
+            StringAssert.Contains("continue", backend.LastText);
+            backend.Complete();
+            await first;
+            Task second = destination.SendAsync("next", null);
+            Assert.AreEqual("next", backend.LastText);
+            backend.Complete();
+            await second;
+            _manager.Save();
+            ChatTabManager restored = CreateManager(_store);
+            restored.Restore(id => id == target.Id ? target : _profile, _profile);
+            Assert.AreEqual(snapshot.Markdown, restored.Active.Record.ContextSnapshot.Markdown);
+            Assert.IsTrue(restored.Active.Record.ContextDelivered);
+            await destination.ClearAsync();
+            Assert.IsNull(destination.Record.ContextSnapshot);
+            Assert.IsFalse(destination.Record.ContextDelivered);
+        }
+
+        [Test]
+        public async Task InterruptedClaudeAutoSkillKeepsSnapshotForNextSend()
+        {
+            if (CommandLine.IsWindows)
+            {
+                Assert.Ignore("Uses /bin/cat as a CLI input sink.");
+            }
+
+            ParleyProfile profile = ParleyProfile.CreateClaude("Test", ClaudeAuthMethod.CliDefault);
+            ContextSnapshot snapshot = ContextHandoffService.Capture(new SessionRecord
+            {
+                Entries = { new TranscriptEntry
+                {
+                    Role = EntryRole.User,
+                    Blocks = { new TranscriptBlock { Kind = BlockKind.Text, Text = "source goal", IsFinished = true } },
+                } },
+            }, 10);
+            ClaudeCodeBackend backend = null;
+            using ChatSession session = new(profile, new SessionRecord
+            {
+                Kind = profile.Kind, ContextSnapshot = snapshot,
+            }, true, (selected, record, sink) => backend = new ClaudeCodeBackend(selected, sink,
+                new ToolCatalog(Array.Empty<IParleyTool>()), null, PermissionMode.Default));
+            ChildProcess process = new(new System.Diagnostics.ProcessStartInfo("/bin/cat"));
+            Assert.IsTrue(process.Start(out string error), error);
+            typeof(ClaudeCodeBackend).GetField("_process", BindingFlags.Instance | BindingFlags.NonPublic)
+                .SetValue(backend, process);
+            session.Record.PendingAutoSkills = new List<SkillInvocation> { new() { Name = "prepare" } };
+            Task interrupted = session.SendAsync("continue", null);
+            Assert.IsNotNull(typeof(ClaudeCodeBackend).GetField("_skillTurn", BindingFlags.Instance | BindingFlags.NonPublic)
+                .GetValue(backend));
+            backend.Interrupt();
+            await interrupted;
+            Assert.IsFalse(session.Record.ContextDelivered);
+            Assert.AreEqual(1, session.Record.PendingAutoSkills.Count);
+            Assert.IsNull(typeof(ClaudeCodeBackend).GetField("_lastTurn", BindingFlags.Instance | BindingFlags.NonPublic)
+                .GetValue(backend));
+            session.Record.PendingAutoSkills.Clear();
+            await session.SendAsync("try again", null);
+            UserTurn accepted = (UserTurn)typeof(ClaudeCodeBackend)
+                .GetField("_lastTurn", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(backend);
+            StringAssert.Contains("source goal", accepted.Text);
+            Assert.IsTrue(session.Record.ContextDelivered);
+        }
+
+        [Test]
+        public void ReloadedUnresolvedEditDoesNotBecomeModifiedFileContext()
+        {
+            TranscriptBlock unresolved = new()
+            {
+                Kind = BlockKind.ToolUse, ToolName = "Edit",
+                Input = new JObject { ["file_path"] = "Assets/Unconfirmed.cs" },
+            };
+            SessionRecord record = new()
+            {
+                Kind = _profile.Kind,
+                Entries = { new TranscriptEntry { Role = EntryRole.Assistant, Blocks = { unresolved } } },
+            };
+            ChatSession restored = _manager.Open(_profile, record);
+            Assert.IsTrue(unresolved.IsFinished);
+            Assert.IsFalse(unresolved.IsError);
+            StringAssert.DoesNotContain("Assets/Unconfirmed.cs",
+                ContextHandoffService.Capture(restored.Record, 10).Markdown);
+        }
+
+        [Test]
         public void BackgroundCompletionStreamsToItsOwnTranscriptAndMarksUnread()
         {
             ChatSession first = _manager.Open(_profile);
@@ -424,6 +529,7 @@ namespace DTech.Parley.Tests.EditorMode
             public IAgentSink Sink { get; }
             public string ResumeId { get; }
             public int SendCount { get; private set; }
+            public string LastText { get; private set; }
             public int StartCount { get; private set; }
             public bool Disposed { get; private set; }
             public bool IsRunning => StartCount > 0;
@@ -458,6 +564,7 @@ namespace DTech.Parley.Tests.EditorMode
             {
                 token.ThrowIfCancellationRequested();
                 SendCount++;
+                LastText = turn.Text;
                 TaskCompletionSource<bool> completion = new TaskCompletionSource<bool>();
                 _sends.Enqueue(completion);
                 return completion.Task;

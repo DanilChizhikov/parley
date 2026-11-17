@@ -299,6 +299,12 @@ namespace DTech.Parley.Editor.Sessions
 				turn.Text = expanded;
 			}
 
+			bool deliverContext = Record.ContextSnapshot != null && !Record.ContextDelivered;
+			if (deliverContext)
+			{
+				turn.Text = Record.ContextSnapshot.Markdown + "\n# New request\n\n" + turn.Text;
+			}
+
 			AuthMessage = null;
 			_hasExecutionError = false;
 			Record.ActiveSkillId = turn.Skills.Count > 0 ? turn.Skills[0].Name : null;
@@ -307,14 +313,26 @@ namespace DTech.Parley.Editor.Sessions
 			RaiseState();
 			try
 			{
+				if (deliverContext)
+				{
+					Record.ContextDelivered = true;
+				}
 				await Backend.SendAsync(turn, _lifetime.Token);
 			}
 			catch (OperationCanceledException)
 			{
+				if (deliverContext)
+				{
+					Record.ContextDelivered = false;
+				}
 				RestoreAutoSkills(autoSkills);
 			}
 			catch (Exception exception)
 			{
+				if (deliverContext)
+				{
+					Record.ContextDelivered = false;
+				}
 				RestoreAutoSkills(autoSkills);
 				ReportStartFailure(exception);
 			}
@@ -353,6 +371,8 @@ namespace DTech.Parley.Editor.Sessions
 			Record.ForkBackendSessionId = null;
 			Record.LocalHistory = null;
 			Record.LatestPlan = null;
+			Record.ContextSnapshot = null;
+			Record.ContextDelivered = false;
 			Record.Title = SessionRecord.DefaultTitle;
 			_currentAssistant = null;
 			_blocksByKey.Clear();

@@ -88,6 +88,15 @@ namespace DTech.Parley.Editor.UI
                 lines.Add("Context window: " + FormatTokens(session.ContextUsed) + " of " + FormatTokens(session.ContextMax) + " used (" + ContextPercent(session) + "%)");
             }
 
+            long characters = ContextCharacters(session);
+            lines.Add("Text estimate: " + characters + " characters, ~" + FormatTokens((characters + 3) / 4) +
+                " tokens (4 characters/token; excludes tools, images and provider instructions).");
+            if (session.Record.ContextSnapshot != null)
+            {
+                lines.Add("Handoff: " + session.Record.ContextSnapshot.Characters + " characters; " +
+                    (session.Record.ContextDelivered ? "sent to agent" : "included with your next message"));
+            }
+
             return string.Join("\n", lines);
         }
 
@@ -111,7 +120,30 @@ namespace DTech.Parley.Editor.UI
                 _usageParts.Add("ctx " + ContextPercent(session) + "%");
             }
 
+            _usageParts.Add("~" + FormatTokens((ContextCharacters(session) + 3) / 4) + " ctx tokens");
+
             return string.Join(" · ", _usageParts);
+        }
+
+        internal static long ContextCharacters(ChatSession session)
+        {
+            long characters = session.Record.ContextSnapshot?.Characters ?? 0;
+            foreach (TranscriptEntry entry in session.Messages)
+            {
+                if (entry.Role != EntryRole.User && entry.Role != EntryRole.Assistant)
+                {
+                    continue;
+                }
+                foreach (TranscriptBlock block in entry.Blocks)
+                {
+                    if (block.Kind == BlockKind.Text && string.IsNullOrEmpty(block.ParentToolUseId))
+                    {
+                        characters += block.Text?.Length ?? 0;
+                    }
+                }
+            }
+
+            return characters;
         }
     }
 }
