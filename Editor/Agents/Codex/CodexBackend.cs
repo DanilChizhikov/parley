@@ -16,7 +16,7 @@ using Debug = UnityEngine.Debug;
 
 namespace DTech.Parley.Editor.Agents.Codex
 {
-    internal sealed class CodexBackend : IAgentBackend
+    internal sealed class CodexBackend : IAgentBackend, IAgentPermissionBoundary
     {
         private const int InitializeTimeoutMs = 60000;
         private const int RequestTimeoutMs = 30000;
@@ -212,6 +212,12 @@ namespace DTech.Parley.Editor.Agents.Codex
         {
             Mode = CodexPermissions.Normalize(mode);
             _sink.ModeChanged(Mode);
+        }
+
+        public void RestrictPermissions(PermissionMode mode)
+        {
+            _ = StopProcess(true);
+            SetPermissionMode(mode);
         }
 
         public void SetModel(string model)
@@ -795,7 +801,7 @@ namespace DTech.Parley.Editor.Agents.Codex
             return SecretStores.Default.TryGet(SecretStores.Key(_profile.Id, field), out string secret) ? secret : null;
         }
 
-        private Task StopProcess()
+        private Task StopProcess(bool immediate = false)
         {
             ChildProcess process = _process;
             if (process == null)
@@ -804,6 +810,7 @@ namespace DTech.Parley.Editor.Agents.Codex
             }
 
             Detach(process);
+            if (immediate) process.Kill();
             process.CloseInput();
             int processId = process.ProcessId;
             string credentialsPath = CodexEnvironment.ManagedCredentialsPath(_profile);

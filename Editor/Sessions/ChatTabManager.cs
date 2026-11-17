@@ -193,6 +193,8 @@ namespace DTech.Parley.Editor.Sessions
             _store.Save(state);
         }
 
+        internal void NotifyOrchestrationChanged() { OnChanged?.Invoke(); }
+
         public ChatSession OpenWithContext(ParleyProfile profile, ContextSnapshot snapshot)
         {
             if (snapshot == null)

@@ -20,10 +20,13 @@ namespace DTech.Parley.Editor.Orchestration
         private readonly HashSet<string> _preparing = new();
         private bool _disposed;
         private bool _ticking;
+        private bool _updatingPermissions;
 
         public event Action OnChanged;
         public IReadOnlyList<OrchestrationRun> Runs => _tabs.Runs;
         public bool HasActiveWork => Runs.Any(run => run.Status == RunStatus.Running);
+        public bool IsSessionActive(ChatSession session) => Runs.Any(run => run.Status == RunStatus.Running &&
+            run.Steps.Any(step => step.SessionId == session.SessionId));
 
         public OrchestrationEngine(ChatTabManager tabs, ContextHandoffService context,
             Func<SkillRegistry> skills, Func<IReadOnlyList<ParleyProfile>> profiles, Func<int> maxHops)
@@ -125,7 +128,7 @@ namespace DTech.Parley.Editor.Orchestration
                 RequestId = request.RequestId, ParentTurnId = step.TurnId, TargetSkill = target,
                 TaskSummary = request.TaskSummary, ContextMode = request.ContextMode,
                 Context = ContextHandoffService.Capture(parent.Record, 10),
-                RequireApproval = approval, PermissionCeiling = parent.Mode,
+                RequireApproval = approval, PermissionCeiling = LimitMode(parent, parent.Mode),
                 Status = approval ? DelegationStatus.WaitingApproval : DelegationStatus.Queued,
             };
             run.Delegations.Add(delegation);
@@ -148,7 +151,7 @@ namespace DTech.Parley.Editor.Orchestration
             }
             else
             {
-                request.Status = DelegationStatus.Ready;
+                request.Status = allow && request.IsError ? DelegationStatus.Failed : DelegationStatus.Ready;
                 if (!allow) request.Result = "Child result withheld by the user.";
             }
             Changed();
@@ -163,7 +166,11 @@ namespace DTech.Parley.Editor.Orchestration
             if (result.Subtype == "interrupted") { Stop(run, RunStatus.Cancelled); return; }
             step.TurnFinished = true;
             step.Output = string.IsNullOrWhiteSpace(result.ResultText) ? FinalOutput(session) : result.ResultText;
-            step.Status = result.IsError ? StepStatus.Failed : StepStatus.WaitingChildren;
+            step.IsError = result.IsError || result.Errors.Count > 0 || result.Subtype == "failed" ||
+                result.Subtype?.StartsWith("error", StringComparison.Ordinal) == true;
+            step.Error = step.IsError ? result.Errors.Count > 0 ? string.Join("\n", result.Errors)
+                : result.Subtype ?? "Agent failed." : null;
+            step.Status = step.IsError ? StepStatus.Failed : StepStatus.WaitingChildren;
             Changed();
         }
 
@@ -172,7 +179,9 @@ namespace DTech.Parley.Editor.Orchestration
             OrchestrationRun run = ActiveRun(session);
             OrchestrationStep step = ActiveStep(session, run);
             if (step == null || step.TurnFinished) return;
-            step.Output = "Agent failed: " + message;
+            step.Output = FinalOutput(session);
+            step.IsError = true;
+            step.Error = message;
             step.TurnFinished = true;
             step.Status = StepStatus.Failed;
             Changed();
@@ -196,6 +205,34 @@ namespace DTech.Parley.Editor.Orchestration
             PermissionMode ceiling = parent == null ? delegation.PermissionCeiling :
                 StricterMode(delegation.PermissionCeiling, LimitMode(parent, parent.Mode));
             return StricterMode(ceiling, requested);
+        }
+
+        public void PermissionsChanged(ChatSession source, PermissionMode previous)
+        {
+            if (_disposed || _updatingPermissions || source.Mode == previous ||
+                StricterMode(previous, source.Mode) != source.Mode) return;
+            OrchestrationRun run = ActiveRun(source);
+            if (run == null) return;
+            _updatingPermissions = true;
+            try
+            {
+                var restrictions = run.Steps.Select(step => Find(step.SessionId)).Where(session => session != null)
+                    .Distinct().Select(session => (Session: session, Mode: LimitMode(session, session.Mode)))
+                    .Where(item => item.Session == source || item.Mode != item.Session.Mode).ToArray();
+                // CLI sandboxes are fixed when a turn starts. Interrupt and restart their process boundary;
+                // changing a toolbar value alone cannot revoke an already running turn's authority.
+                Stop(run, RunStatus.Cancelled);
+                foreach (var restriction in restrictions)
+                {
+                    if (restriction.Session.Backend is IAgentPermissionBoundary boundary)
+                        boundary.RestrictPermissions(restriction.Mode);
+                    else restriction.Session.Backend.SetPermissionMode(restriction.Mode);
+                }
+                ((IAgentSink)source).Notice(NoticeLevel.Warning,
+                    "Workflow stopped because permissions were tightened. Start a new turn to continue.");
+                Changed();
+            }
+            finally { _updatingPermissions = false; }
         }
 
         public void Tick()
@@ -267,7 +304,7 @@ namespace DTech.Parley.Editor.Orchestration
                     throw new InvalidOperationException("Parent no longer permits this delegation.");
                 SkillDocument skill = _skills().Skills.FirstOrDefault(candidate => candidate.Id == request.TargetSkill);
                 if (skill == null) throw new InvalidOperationException("Target skill was removed.");
-                PermissionMode ceiling = StricterMode(request.PermissionCeiling, parent.Mode);
+                PermissionMode ceiling = StricterMode(request.PermissionCeiling, LimitMode(parent, parent.Mode));
                 if (!ChatPresets.TryCreateRole(skill, _profiles(), CurrentProfile(parent), ceiling,
                     out ParleyProfile profile, out SessionRecord record, out string error))
                     throw new InvalidOperationException(error);
@@ -287,6 +324,7 @@ namespace DTech.Parley.Editor.Orchestration
                 ChatSession child = _tabs.Open(profile, record);
                 if (active != null) _tabs.Select(active);
                 Bind(child, run, childStep);
+                ApplyChildPermissions(child, ceiling);
                 _reservedTurns.Add(childStep.TurnId);
                 Changed();
                 await child.SendAsync(request.TaskSummary, null);
@@ -298,6 +336,8 @@ namespace DTech.Parley.Editor.Orchestration
                 if (!_disposed && run.Status == RunStatus.Running && !Terminal(request.Status))
                 {
                     request.Result = "Delegation failed: " + exception.Message;
+                    request.IsError = true;
+                    request.Error = exception.Message;
                     request.Status = DelegationStatus.Failed;
                     foreach (OrchestrationStep childStep in run.Steps.Where(step => step.ParentDelegationId == request.Id))
                     {
@@ -357,8 +397,14 @@ namespace DTech.Parley.Editor.Orchestration
             else
             {
                 DelegationRecord request = run.Delegations.Find(item => item.Id == step.ParentDelegationId);
-                request.Result = step.Output;
-                request.Status = request.RequireApproval ? DelegationStatus.WaitingResultApproval : DelegationStatus.Ready;
+                request.IsError = step.IsError;
+                request.Error = step.Error;
+                request.PartialOutput = step.IsError ? step.Output : null;
+                request.Result = step.IsError ? "# Delegation failed\n\n" + step.Error +
+                    (string.IsNullOrWhiteSpace(step.Output) ? string.Empty :
+                        "\n\n## Partial output (incomplete)\n\n" + step.Output) : step.Output;
+                request.Status = request.RequireApproval ? DelegationStatus.WaitingResultApproval :
+                    step.IsError ? DelegationStatus.Failed : DelegationStatus.Ready;
             }
             Changed();
         }
@@ -398,11 +444,22 @@ namespace DTech.Parley.Editor.Orchestration
             return selected == PermissionMode.Auto ? PermissionMode.Default : selected;
         }
 
+        internal static void ApplyChildPermissions(ChatSession child, PermissionMode ceiling)
+        {
+            // A prepared tab may already own a backend. Updating only its serialized record cannot
+            // revoke a CLI sandbox created before approval, so replace that process boundary too.
+            child.Record.Mode = ceiling;
+            if (child.Backend.Mode == ceiling) return;
+            if (child.Backend is IAgentPermissionBoundary boundary) boundary.RestrictPermissions(ceiling);
+            else child.Backend.SetPermissionMode(ceiling);
+        }
+
         private void Changed()
         {
             if (HasActiveWork && !_disposed) ReloadGuard.Acquire(this);
             else ReloadGuard.Release(this);
             _tabs.Save();
+            _tabs.NotifyOrchestrationChanged();
             OnChanged?.Invoke();
         }
 

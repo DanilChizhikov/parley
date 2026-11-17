@@ -416,6 +416,102 @@ namespace DTech.Parley.Tests.EditorMode
             Assert.IsFalse(_tabs.HasActiveWork);
         }
 
+        [Test]
+        public async Task RootDowngradeStopsLiveDescendantsAndCancelsQueuedGrandchild()
+        {
+            _parent.SetMode(PermissionMode.BypassPermissions);
+            await _parent.SendAsync("task", null);
+            Submit(_parent, "one");
+            Complete(_parent, "waiting");
+            _engine.Tick();
+            ChatSession child = _tabs.Tabs[1];
+            Assert.AreEqual(PermissionMode.BypassPermissions, child.Mode);
+            Submit(child, "grandchild");
+            _parent.SetMode(PermissionMode.Plan);
+            _engine.Tick();
+            Assert.AreEqual(PermissionMode.Plan, child.Mode);
+            Assert.AreEqual(PermissionMode.Plan, child.Backend.Mode);
+            Assert.IsTrue(Backend(child).Restricted);
+            Assert.AreEqual(RunStatus.Cancelled, _engine.Runs[0].Status);
+            Assert.AreEqual(2, _tabs.Tabs.Count);
+            Assert.IsFalse(_tabs.HasActiveWork);
+            Assert.Throws<InvalidOperationException>(() => Submit(child, "late-grandchild"));
+        }
+
+        [Test]
+        public async Task SpawnUsesEffectiveAncestorCeilingEvenIfIntermediateModeIsStale()
+        {
+            _parent.SetMode(PermissionMode.BypassPermissions);
+            await _parent.SendAsync("task", null);
+            Submit(_parent, "one");
+            Complete(_parent, "waiting");
+            _engine.Tick();
+            ChatSession child = _tabs.Tabs[1];
+            Submit(child, "grandchild");
+            // Simulate a restored/externally updated ancestor before its mode callback is reconciled.
+            _parent.Record.Mode = PermissionMode.Plan;
+            Complete(child, "waiting for grandchild");
+            _engine.Tick();
+            Assert.AreEqual(PermissionMode.Plan, _tabs.Tabs[2].Mode);
+            Assert.AreEqual(PermissionMode.Plan, _tabs.Tabs[2].Backend.Mode);
+        }
+
+        [Test]
+        public void PreparedTabSynchronizesItsBackendAfterRecordPermissionsWereNarrowed()
+        {
+            using ChatSession preview = new(_profile, new SessionRecord
+            {
+                Kind = _profile.Kind, Mode = PermissionMode.BypassPermissions,
+            }, true, (_, saved, sink) => new FakeBackend(sink, saved.Mode));
+            preview.Record.Mode = PermissionMode.Plan;
+            Assert.AreEqual(PermissionMode.BypassPermissions, preview.Backend.Mode);
+            OrchestrationEngine.ApplyChildPermissions(preview, PermissionMode.Plan);
+            Assert.AreEqual(PermissionMode.Plan, preview.Record.Mode);
+            Assert.AreEqual(PermissionMode.Plan, preview.Backend.Mode);
+            Assert.IsTrue(Backend(preview).Restricted);
+            Assert.AreEqual(0, Backend(preview).Sends);
+        }
+
+        [TestCase(false, false)]
+        [TestCase(false, true)]
+        [TestCase(true, false)]
+        [TestCase(true, true)]
+        public async Task ChildFailureIsPersistedAndDeliveredAsAnError(bool approval, bool partial)
+        {
+            _parent.Record.RoleHandoffMode = approval ? "ask_approval" : "auto";
+            await _parent.SendAsync("task", null);
+            Submit(_parent, "one");
+            Complete(_parent, "waiting");
+            OrchestrationRun run = _engine.Runs[0];
+            DelegationRecord request = run.Delegations[0];
+            if (approval) _engine.Approve(run.Id, request.Id, true);
+            _engine.Tick();
+            Backend(_tabs.Tabs[1]).Complete(new TurnResult
+            {
+                IsError = true, Subtype = "error", Errors = { "Codex provider failed" },
+                ResultText = partial ? "unfinished analysis" : null,
+            });
+            _engine.Tick();
+            Assert.IsTrue(request.IsError);
+            Assert.AreEqual("Codex provider failed", request.Error);
+            if (approval)
+            {
+                Assert.AreEqual(DelegationStatus.WaitingResultApproval, request.Status);
+                Assert.AreEqual(1, Backend(_parent).Sends);
+                _engine.Approve(run.Id, request.Id, true);
+                _engine.Tick();
+            }
+            Assert.AreEqual(DelegationStatus.Delivered, request.Status);
+            StringAssert.Contains("Delegation failed", Backend(_parent).LastText);
+            StringAssert.Contains("Codex provider failed", Backend(_parent).LastText);
+            if (partial)
+            {
+                StringAssert.Contains("Partial output (incomplete)", Backend(_parent).LastText);
+                Assert.AreEqual("unfinished analysis", request.PartialOutput);
+            }
+            Assert.IsTrue(_store.Load().Runs[0].Delegations[0].IsError);
+        }
+
         private OrchestrationEngine Engine(ChatTabManager tabs) => new(tabs,
             new ContextHandoffService(_summary), () => _registry, () => new[] { _profile }, () => _maxHops);
         private string Submit(ChatSession session, string id) => _engine.Submit(session,
@@ -449,12 +545,13 @@ namespace DTech.Parley.Tests.EditorMode
                 (_, saved, sink) => new FakeBackend(sink, saved.Mode));
         }
 
-        private sealed class FakeBackend : IAgentBackend
+        private sealed class FakeBackend : IAgentBackend, IAgentPermissionBoundary
         {
             public IAgentSink Sink { get; }
             public int Sends;
             public string LastText;
             public TaskCompletionSource<bool> Starting;
+            public bool Restricted;
             public bool IsRunning => true;
             public bool IsBusy { get; private set; }
             public string SessionId => null;
@@ -473,8 +570,18 @@ namespace DTech.Parley.Tests.EditorMode
             }
             public void Complete(string output, bool error = false)
             {
+                Complete(new TurnResult { ResultText = output, IsError = error });
+            }
+            public void Complete(TurnResult result)
+            {
                 IsBusy = false;
-                Sink.TurnCompleted(new TurnResult { ResultText = output, IsError = error });
+                Sink.TurnCompleted(result);
+            }
+            public void RestrictPermissions(PermissionMode mode)
+            {
+                Restricted = true;
+                Interrupt();
+                SetPermissionMode(mode);
             }
             public void Interrupt() { IsBusy = false; }
             public Task ClearContextAsync(CancellationToken token) => Task.CompletedTask;

@@ -16,7 +16,7 @@ using Debug = UnityEngine.Debug;
 
 namespace DTech.Parley.Editor.Agents.Claude
 {
-	internal sealed class ClaudeCodeBackend : IAgentBackend
+	internal sealed class ClaudeCodeBackend : IAgentBackend, IAgentPermissionBoundary
 	{
 		private const int InitializeTimeoutMs = 60000;
 		private const int ControlTimeoutMs = 30000;
@@ -264,6 +264,13 @@ namespace DTech.Parley.Editor.Agents.Claude
 
 			_sink.ModeChanged(mode);
 		}
+
+        public void RestrictPermissions(PermissionMode mode)
+        {
+            _resumeSessionId = SessionId ?? _resumeSessionId;
+            StopProcess(true);
+            SetPermissionMode(mode);
+        }
 
 		public void SetModel(string model)
 		{
@@ -799,7 +806,7 @@ namespace DTech.Parley.Editor.Agents.Claude
 			return SecretStores.Default.TryGet(SecretStores.Key(_profile.Id, field), out string secret) ? secret : null;
 		}
 
-		private void StopProcess()
+		private void StopProcess(bool immediate = false)
 		{
 			ChildProcess process = _process;
 			if (process == null)
@@ -808,6 +815,7 @@ namespace DTech.Parley.Editor.Agents.Claude
 			}
 
 			Detach(process);
+			if (immediate) process.Kill();
 			process.CloseInput();
 			int processId = process.ProcessId;
 			Task.Run(() => FinishProcess(process, processId));

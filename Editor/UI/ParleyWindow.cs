@@ -464,7 +464,7 @@ namespace DTech.Parley.Editor.UI
             ChatPreset preset = ChatPresets.FindMatch(session.Record, ParleyUserSettings.instance.Presets);
             _presetButton.text = preset != null ? "Preset: " + preset.Name + " ▾" : "Preset ▾";
             RefreshUpdateButton();
-            _composer.SetBusy(session.IsBusy);
+            _composer.SetBusy(session.IsBusy, _tabs.Engine?.IsSessionActive(session) == true);
             _composer.RefreshLimits(profile.Kind != ProfileKind.Local);
             _statusBar.Refresh(session);
             _authCard.Refresh();
