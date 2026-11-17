@@ -8,6 +8,29 @@
     color: var(--pl-text);
 }
 
+.pl-chat-tabs {
+    flex-shrink: 0;
+    max-height: 52px;
+    background-color: var(--pl-surface);
+}
+
+.pl-chat-tab {
+    flex-direction: row;
+    flex-shrink: 0;
+}
+
+.pl-chat-tab__select {
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pl-chat-tab--active {
+    border-bottom-color: var(--pl-accent);
+    border-bottom-width: 2px;
+}
+
 .pl-text {
     white-space: normal;
 }

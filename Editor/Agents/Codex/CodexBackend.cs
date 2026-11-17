@@ -45,7 +45,7 @@ namespace DTech.Parley.Editor.Agents.Codex
 
         public bool IsBusy { get; private set; }
 
-        public string SessionId => _threadId ?? _resumeThreadId;
+        public string SessionId => _threadId ?? (_forkPending ? null : _resumeThreadId);
 
         public PermissionMode Mode { get; private set; }
 
@@ -55,6 +55,7 @@ namespace DTech.Parley.Editor.Agents.Codex
         private Task _starting;
         private PendingRequest _planRequest;
         private string _resumeThreadId;
+        private bool _forkPending;
         private string _threadId;
         private string _turnId;
         private string _model;
@@ -80,11 +81,13 @@ namespace DTech.Parley.Editor.Agents.Codex
             IAgentSink sink,
             ToolCatalog unityTools,
             string resumeThreadId,
-            PermissionMode mode)
+            PermissionMode mode,
+            bool forkSession = false)
         {
             _profile = profile;
             _sink = sink;
             _resumeThreadId = resumeThreadId;
+            _forkPending = forkSession;
             _model = string.IsNullOrEmpty(profile.Model) ? null : profile.Model;
             _effort = string.IsNullOrEmpty(profile.Effort) ? null : profile.Effort;
             Mode = CodexPermissions.Normalize(mode);
@@ -198,6 +201,7 @@ namespace DTech.Parley.Editor.Agents.Codex
 
             _threadId = null;
             _resumeThreadId = null;
+            _forkPending = false;
         }
 
         public void SetPermissionMode(PermissionMode mode)
@@ -516,7 +520,8 @@ namespace DTech.Parley.Editor.Agents.Codex
             JToken response;
             try
             {
-                response = await SendRequestAsync("thread/resume", ThreadParameters(true), InitializeTimeoutMs);
+                response = await SendRequestAsync(_forkPending ? "thread/fork" : "thread/resume",
+                    ThreadParameters(true), InitializeTimeoutMs);
             }
             catch (InvalidOperationException exception)
             {
@@ -532,6 +537,7 @@ namespace DTech.Parley.Editor.Agents.Codex
         private async Task StartThreadAsync()
         {
             _resumeThreadId = null;
+            _forkPending = false;
             JToken response = await SendRequestAsync("thread/start", ThreadParameters(false), InitializeTimeoutMs);
             ApplyThread(response);
         }
@@ -580,6 +586,7 @@ namespace DTech.Parley.Editor.Agents.Codex
             }
 
             _threadId = threadId;
+            _forkPending = false;
             _resumeThreadId = threadId;
             _activeModel = (string)response["model"] ?? _activeModel;
             WarnIfModelUnavailable();

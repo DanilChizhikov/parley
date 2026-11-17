@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using DTech.Parley.Editor.Sessions;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.UIElements;
@@ -111,6 +112,39 @@ namespace DTech.Parley.Editor.UI
         public void FocusInput()
         {
             _input.Focus();
+        }
+
+        public void SaveDraft(SessionRecord record)
+        {
+            bool unchanged = record.Draft == _input.value && record.DraftAttachments != null &&
+                record.DraftAttachments.Count == _attachments.Count;
+            for (int i = 0; unchanged && i < _attachments.Count; i++)
+            {
+                unchanged = ReferenceEquals(record.DraftAttachments[i], _attachments[i]);
+            }
+
+            if (unchanged)
+            {
+                return;
+            }
+
+            record.Draft = _input.value;
+            record.DraftAttachments = new List<ChatAttachment>(_attachments);
+        }
+
+        public void RestoreDraft(SessionRecord record)
+        {
+            _input.SetValueWithoutNotify(record.Draft ?? string.Empty);
+            _attachments.Clear();
+            if (record.DraftAttachments != null)
+            {
+                _attachments.AddRange(record.DraftAttachments);
+            }
+
+            _undo.Clear();
+            HideSuggestions();
+            RebuildChips();
+            UpdateSendEnabled();
         }
 
         public void AddAttachment(ChatAttachment attachment)

@@ -18,11 +18,50 @@ namespace DTech.Parley.Editor.Sessions
 		[JsonProperty("profileId")]
 		public string ProfileId { get; set; }
 
+		[JsonProperty("model")]
+		public string Model { get; set; }
+
+		[JsonProperty("effort")]
+		public string Effort { get; set; }
+
+		[JsonProperty("hasModelSelection")]
+		public bool HasModelSelection { get; set; }
+
+		[JsonProperty("status")]
+		public ChatExecutionStatus ExecutionStatus { get; set; }
+
+		[JsonProperty("parentSessionId")]
+		public string ParentSessionId { get; set; }
+
+		[JsonProperty("contextSnapshot")]
+		public ContextSnapshot ContextSnapshot { get; set; }
+
+		[JsonProperty("contextDelivered")]
+		public bool ContextDelivered { get; set; }
+
+		[JsonProperty("activeSkillId")]
+		public string ActiveSkillId { get; set; }
+
+		[JsonProperty("backgroundTasks")]
+		public List<BackgroundTaskInfo> BackgroundTasks { get; set; } = new();
+
+		[JsonProperty("unread")]
+		public bool HasUnreadResponse { get; set; }
+
+		[JsonProperty("draft")]
+		public string Draft { get; set; }
+
+		[JsonProperty("draftAttachments")]
+		public List<ChatAttachment> DraftAttachments { get; set; } = new();
+
 		[JsonProperty("kind")]
 		public ProfileKind Kind { get; set; }
 
 		[JsonProperty("backendSessionId")]
 		public string BackendSessionId { get; set; }
+
+		[JsonProperty("forkBackendSessionId")]
+		public string ForkBackendSessionId { get; set; }
 
 		[JsonProperty("created")]
 		public DateTime CreatedUtc { get; set; } = DateTime.UtcNow;
