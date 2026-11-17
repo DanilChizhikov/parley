@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using DTech.Parley.Editor.Skills;
 using UnityEditor;
 using UnityEngine.UIElements;
@@ -29,6 +30,10 @@ namespace DTech.Parley.Editor.UI
                 ArgumentHint = original?.ArgumentHint ?? string.Empty,
                 Body = original?.Body ?? string.Empty,
                 ExtraFrontmatter = original?.ExtraFrontmatter ?? string.Empty,
+                PreferredProvider = original?.PreferredProvider ?? string.Empty,
+                Model = original?.Model ?? string.Empty,
+                HandoffMode = original?.HandoffMode ?? "ask_approval",
+                AllowedTargets = original == null ? new List<string>() : new List<string>(original.AllowedTargets),
             };
 
             _onSave = onSave;

@@ -7,6 +7,7 @@ using DTech.Parley.Editor.Agents.Codex;
 using DTech.Parley.Editor.Agents.Local;
 using DTech.Parley.Editor.Skills;
 using DTech.Parley.Editor.Tools;
+using DTech.Parley.Editor.UI;
 using DTech.Parley.Tests.EditorMode;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -153,6 +154,26 @@ namespace DTech.Parley.Editor.Sessions
             string instructions = kind == ProfileKind.Local
                 ? (string)((JObject)request)["messages"][0]["content"] : (string)request;
             Assert.That(instructions, Does.Contain("Unique session role instructions"));
+        }
+
+        [Test]
+        public void EditingLibrarySkillPreservesRoleMetadata()
+        {
+            SkillDocument original = new()
+            {
+                Name = "reviewer", Description = "Review code", Body = "Instructions",
+                PreferredProvider = "codex", Model = "role-model", HandoffMode = "auto",
+                AllowedTargets = new List<string> { "developer" },
+            };
+            SkillDocument saved = null;
+            SkillForm form = new(original, (draft, _, _) => saved = draft, () => { });
+            typeof(SkillForm).GetMethod("Save", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(form, null);
+            Assert.That(saved, Is.Not.Null);
+            SkillDocument reparsed = SkillMarkdown.Parse(SkillMarkdown.Format(saved));
+            Assert.That(reparsed.PreferredProvider, Is.EqualTo("codex"));
+            Assert.That(reparsed.Model, Is.EqualTo("role-model"));
+            Assert.That(reparsed.HandoffMode, Is.EqualTo("auto"));
+            Assert.That(reparsed.AllowedTargets, Is.EqualTo(new[] { "developer" }));
         }
 
         [TestCase("", "model")]
