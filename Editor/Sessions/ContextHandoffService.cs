@@ -49,7 +49,9 @@ namespace DTech.Parley.Editor.Sessions
                         text.AppendLine(block.Text);
                     }
 
+                    // Reload recovery also finishes abandoned blocks; a result is required to confirm a change.
                     if (block.Kind == BlockKind.ToolUse && block.IsFinished && !block.IsError &&
+                        (block.Result != null || block.StructuredResult != null) &&
                         string.IsNullOrEmpty(block.ParentToolUseId))
                     {
                         if (block.ToolName == "Write" || block.ToolName == "Edit" || block.ToolName == "MultiEdit")

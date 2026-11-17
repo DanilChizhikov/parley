@@ -60,17 +60,17 @@ namespace DTech.Parley.Tests.EditorMode
             TranscriptEntry entry = new() { Role = EntryRole.Assistant };
             entry.Blocks.Add(new TranscriptBlock
             {
-                Kind = BlockKind.ToolUse, ToolName = "Edit", IsFinished = true,
+                Kind = BlockKind.ToolUse, ToolName = "Edit", IsFinished = true, Result = "edited",
                 Input = new JObject { ["file_path"] = "Assets/Changed.cs", ["new_string"] = "private payload" },
             });
             entry.Blocks.Add(new TranscriptBlock
             {
-                Kind = BlockKind.ToolUse, ToolName = "ApplyPatch", IsFinished = true,
+                Kind = BlockKind.ToolUse, ToolName = "ApplyPatch", IsFinished = true, Result = "applied",
                 Input = new JObject { ["changes"] = new JArray(new JObject { ["path"] = "Assets/Codex.cs" }) },
             });
             entry.Blocks.Add(new TranscriptBlock
             {
-                Kind = BlockKind.ToolUse, ToolName = "Write", IsFinished = true, IsError = true,
+                Kind = BlockKind.ToolUse, ToolName = "Write", IsFinished = true, IsError = true, Result = "failed",
                 Input = new JObject { ["file_path"] = "Assets/Failed.cs" },
             });
             source.Entries.Add(entry);

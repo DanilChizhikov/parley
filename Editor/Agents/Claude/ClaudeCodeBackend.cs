@@ -199,7 +199,7 @@ namespace DTech.Parley.Editor.Agents.Claude
 				if (gate != null && !await RunSkillTurnsAsync(turn.Skills, token))
 				{
 					_sink.Notice(NoticeLevel.Warning, "Auto skills were interrupted, so your message was not sent.");
-					return;
+					throw new OperationCanceledException("Auto skills were interrupted before sending the message.");
 				}
 
 				if (!Write(ClaudeWire.UserMessage(turn, _mapper.SessionId)))
