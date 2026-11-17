@@ -48,6 +48,65 @@ namespace DTech.Parley.Tests.EditorMode
         }
 
         [Test]
+        public async Task InitializationRunsOnceWithoutSendingDraftOrAutoSkills()
+        {
+            ChatSession session = _manager.Open(_profile);
+            FakeBackend backend = (FakeBackend)session.Backend;
+            backend.Startup = new TaskCompletionSource<bool>();
+            session.Record.Draft = "unsent draft";
+            session.Record.PendingAutoSkills = new List<SkillInvocation> { new() { Name = "review" } };
+
+            Task startup = session.EnsureStartedAsync();
+            await session.EnsureStartedAsync();
+
+            Assert.IsTrue(session.IsStarting);
+            Assert.AreEqual(1, backend.StartCount);
+            Assert.AreEqual(0, backend.SendCount);
+            Assert.IsEmpty(session.Messages);
+            Assert.AreEqual("unsent draft", session.Record.Draft);
+            Assert.AreEqual(1, session.Record.PendingAutoSkills.Count);
+            backend.Startup.SetResult(true);
+            await startup;
+            await session.EnsureStartedAsync();
+            Assert.IsFalse(session.IsStarting);
+            Assert.AreEqual(1, backend.StartCount);
+        }
+
+        [Test]
+        public async Task ClosingDuringInitializationCancelsStartupWithoutAnError()
+        {
+            ChatSession session = _manager.Open(_profile);
+            FakeBackend backend = (FakeBackend)session.Backend;
+            backend.Startup = new TaskCompletionSource<bool>();
+            Task startup = session.EnsureStartedAsync();
+
+            _manager.Close(session);
+            await startup;
+            await session.EnsureStartedAsync();
+
+            Assert.IsTrue(backend.Disposed);
+            Assert.IsFalse(session.IsStarting);
+            Assert.AreEqual(1, backend.StartCount);
+            Assert.IsEmpty(session.Messages);
+        }
+
+        [Test]
+        public async Task InitializationFailureShowsTheProfileErrorWithoutSending()
+        {
+            ChatSession session = _manager.Open(_profile);
+            FakeBackend backend = (FakeBackend)session.Backend;
+            backend.Startup = new TaskCompletionSource<bool>();
+            Task startup = session.EnsureStartedAsync();
+            backend.Startup.SetException(new AgentSetupException("Sign in required"));
+            await startup;
+
+            Assert.AreEqual("Sign in required", session.AuthMessage);
+            Assert.AreEqual(ChatExecutionStatus.Error, session.ExecutionStatus);
+            Assert.IsFalse(session.IsStarting);
+            Assert.AreEqual(0, backend.SendCount);
+        }
+
+        [Test]
         public void TabSelectionHighlightsTheWholeTab()
         {
             ChatSession first = _manager.Open(_profile);
@@ -687,6 +746,7 @@ namespace DTech.Parley.Tests.EditorMode
             public int SendCount { get; private set; }
             public string LastText { get; private set; }
             public int StartCount { get; private set; }
+            public TaskCompletionSource<bool> Startup { get; set; }
             public bool Disposed { get; private set; }
             public bool IsRunning => StartCount > 0;
             public bool IsBusy => _sends.Count > 0;
@@ -703,6 +763,7 @@ namespace DTech.Parley.Tests.EditorMode
             public void Dispose()
             {
                 Disposed = true;
+                Startup?.TrySetCanceled();
                 while (_sends.Count > 0)
                 {
                     _sends.Dequeue().TrySetCanceled();
@@ -713,7 +774,7 @@ namespace DTech.Parley.Tests.EditorMode
             {
                 token.ThrowIfCancellationRequested();
                 StartCount++;
-                return Task.CompletedTask;
+                return Startup?.Task ?? Task.CompletedTask;
             }
 
             public Task SendAsync(UserTurn turn, CancellationToken token)

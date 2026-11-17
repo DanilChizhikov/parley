@@ -249,6 +249,11 @@ namespace DTech.Parley.Editor.Sessions
 
 		public async Task EnsureStartedAsync()
 		{
+			if (_disposed)
+			{
+				return;
+			}
+
 			if (!IsPreview && EditorApplication.isPlayingOrWillChangePlaymode)
 			{
 				AddNotice(NoticeLevel.Warning, "Return to Edit Mode before starting an agent.");
@@ -271,7 +276,10 @@ namespace DTech.Parley.Editor.Sessions
 			}
 			catch (Exception exception)
 			{
-				ReportStartFailure(exception);
+				if (!_disposed)
+				{
+					ReportStartFailure(exception);
+				}
 			}
 			finally
 			{

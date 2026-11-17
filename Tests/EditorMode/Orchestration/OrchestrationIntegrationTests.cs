@@ -1,6 +1,8 @@
 using System;
 using System.Diagnostics;
 using System.Reflection;
+using System.Threading;
+using System.Threading.Tasks;
 using DTech.Parley.Editor;
 using DTech.Parley.Editor.Agents.Claude;
 using DTech.Parley.Editor.Agents.Codex;
@@ -13,6 +15,59 @@ namespace DTech.Parley.Tests.EditorMode
 {
     public sealed class OrchestrationIntegrationTests
     {
+        [TestCase(true)]
+        [TestCase(false)]
+        public async Task RunningProcessStillWaitsForInitializationBeforeStartingOrSending(bool claude)
+        {
+            if (CommandLine.IsWindows) Assert.Ignore("Uses /bin/cat as a CLI process.");
+            ParleyProfile profile = claude
+                ? ParleyProfile.CreateClaude("Test", ClaudeAuthMethod.CliDefault)
+                : ParleyProfile.CreateCodex("Test", CodexAuthMethod.CliDefault);
+            ToolCatalog tools = new(Array.Empty<IParleyTool>());
+            using IAgentBackend backend = claude
+                ? new ClaudeCodeBackend(profile, new RecordingSink(), tools, null, PermissionMode.Default)
+                : new CodexBackend(profile, new RecordingSink(), tools, null, PermissionMode.Default);
+            ChildProcess process = new(new ProcessStartInfo("/bin/cat"));
+            Assert.IsTrue(process.Start(out string error), error);
+            Type type = backend.GetType();
+            type.GetField("_process", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(backend, process);
+            if (!claude)
+            {
+                type.GetField("_threadId", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(backend, "thread");
+            }
+            TaskCompletionSource<bool> initialized = new();
+            type.GetField("_starting", BindingFlags.Instance | BindingFlags.NonPublic)
+                .SetValue(backend, initialized.Task);
+
+            Task start = backend.StartAsync(CancellationToken.None);
+            Task send = backend.SendAsync(new UserTurn { Text = "first message" }, CancellationToken.None);
+            bool startWaited = !start.IsCompleted;
+            bool sendWaited = !send.IsCompleted;
+            initialized.SetException(new InvalidOperationException("Initialization failed"));
+            try
+            {
+                await start;
+                Assert.Fail("Startup failure was ignored.");
+            }
+            catch (InvalidOperationException exception)
+            {
+                Assert.AreEqual("Initialization failed", exception.Message);
+            }
+            try
+            {
+                await send;
+                Assert.Fail("A message was sent before initialization completed.");
+            }
+            catch (InvalidOperationException exception)
+            {
+                Assert.AreEqual("Initialization failed", exception.Message);
+            }
+
+            Assert.IsTrue(startWaited);
+            Assert.IsTrue(sendWaited);
+            Assert.IsFalse(backend.IsBusy);
+        }
+
         [TestCase(true)]
         [TestCase(false)]
         public void PermissionRestrictionDetachesAndKillsTheOldCliProcess(bool claude)
