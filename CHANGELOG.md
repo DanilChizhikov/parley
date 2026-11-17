@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.5.0] - 2026-11-17
+
+### Added
+- Independent chat tabs with their own profile, model, effort and draft. Inactive tabs keep streaming, and closing
+  the window keeps background chats alive. Tabs show activity, pending input and unread replies, support keyboard
+  shortcuts, and restore their order and active selection after a script reload or editor restart.
+- **Duplicate Tab** forks an idle conversation independently: local history is copied, while Claude Code and Codex
+  fork their native conversations.
+- Context handoffs between chats: send the last 10, 25 or 50 messages to a new tab, or summarize with a Local or
+  Claude model first. Message actions also let you preview context, prepare a draft in another tab and send a child
+  tab's result back to its parent. Handoffs carry completed text and changed file paths, never pending approvals,
+  tool protocol or backend session IDs.
+- Role presets in **+ ▾** and **New ▾**, from the packaged reviewer, your skill library and a custom skills
+  directory. Roles select a profile and model, preserve their instructions in the session, and can declare allowed
+  delegation targets. **Reload skills** refreshes the registry and reports invalid files and name overrides.
+- Delegated orchestration across role tabs for Claude Code, Codex and local models. The **Orchestration Bar** shows
+  the chain and results, opens each role's tab, supports handoff and result approvals, and provides **Stop Chain**.
+- Remaining context in the status bar for each chat: percentage, tokens and a tooltip with the source of the
+  reading. Local-model values are marked as estimates.
+
+### Fixed
+- The first message waits for chat startup to finish instead of racing backend initialization.
+- Account details, model lists and plan limits load when a chat opens or is selected, before its first message.
+- Duplicated chats no longer share the source's native conversation, and failed forks report an error.
+- Context handoffs and delegated runs enforce the target chat's permission boundaries and handle closed tabs,
+  failures and cancellation. Interrupted work and expired approvals are never replayed automatically after a reload.
+- Script reloads and asset refreshes wait for all active chats to finish; entering Play Mode is blocked while chats
+  are working.
+
 ## [0.4.0] - 2026-11-10
 
 ### Added
