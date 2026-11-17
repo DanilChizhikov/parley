@@ -1,7 +1,7 @@
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using DTech.Parley.Editor.Sessions;
-using UnityEngine;
 using UnityEngine.UIElements;
 
 namespace DTech.Parley.Editor.UI
@@ -14,6 +14,7 @@ namespace DTech.Parley.Editor.UI
         private readonly Label _text;
         private readonly Label _account;
         private readonly Label _usage;
+        private readonly Label _context;
         private readonly List<string> _usageParts = new ();
 
         public StatusBar()
@@ -29,6 +30,8 @@ namespace DTech.Parley.Editor.UI
             Add(ParleyStyles.Spacer());
             _usage = ParleyStyles.Text(string.Empty, "pl-status__usage");
             Add(_usage);
+            _context = ParleyStyles.Text("Context: —", "pl-status__context");
+            Add(_context);
         }
 
         public void Refresh(ChatSession session)
@@ -45,7 +48,11 @@ namespace DTech.Parley.Editor.UI
             _account.tooltip = _account.text;
             _usage.text = Usage(session);
             _usage.tooltip = UsageTooltip(session);
-            _usage.EnableInClassList("pl-status__usage--warning", ContextPercent(session) >= ContextWarningPercent);
+            ParleyStyles.SetVisible(_usage, _usage.text.Length > 0);
+            _context.text = ContextText(session);
+            _context.tooltip = _usage.tooltip;
+            _context.EnableInClassList("pl-status__context--warning", session.ContextMax > 0 &&
+                100.0 * ContextUsed(session) / session.ContextMax >= ContextWarningPercent);
         }
 
         internal static string FormatTokens(long tokens)
@@ -65,7 +72,26 @@ namespace DTech.Parley.Editor.UI
 
         private static int ContextPercent(ChatSession session)
         {
-            return session.ContextMax > 0 ? Mathf.RoundToInt(100.0f * session.ContextUsed / session.ContextMax) : 0;
+            return session.ContextMax > 0 ? (int)Math.Round(100.0 * ContextUsed(session) / session.ContextMax) : 0;
+        }
+
+        private static long ContextUsed(ChatSession session)
+        {
+            return Math.Max(0, Math.Min(session.ContextUsed, session.ContextMax));
+        }
+
+        private static string ContextText(ChatSession session)
+        {
+            if (session.ContextMax <= 0)
+            {
+                return "Context: —";
+            }
+
+            long remaining = session.ContextMax - ContextUsed(session);
+            int percent = (int)Math.Floor(100.0 * remaining / session.ContextMax);
+            string estimate = session.Provider == ProfileKind.Local ? "~" : string.Empty;
+            return "Context: " + estimate + percent + "% left · " + estimate + FormatTokens(remaining) +
+                " / " + FormatTokens(session.ContextMax);
         }
 
         private static string UsageTooltip(ChatSession session)
@@ -85,7 +111,18 @@ namespace DTech.Parley.Editor.UI
 
             if (session.ContextMax > 0)
             {
-                lines.Add("Context window: " + FormatTokens(session.ContextUsed) + " of " + FormatTokens(session.ContextMax) + " used (" + ContextPercent(session) + "%)");
+                long used = ContextUsed(session);
+                lines.Add("Context window: " + used.ToString(CultureInfo.InvariantCulture) + " of " +
+                    session.ContextMax.ToString(CultureInfo.InvariantCulture) + " tokens used (" +
+                    ContextPercent(session) + "%). " +
+                    (session.ContextMax - used).ToString(CultureInfo.InvariantCulture) + " tokens remaining.");
+                lines.Add(session.Provider == ProfileKind.Local
+                    ? "Source: estimated local context usage and the configured context window."
+                    : "Source: latest context usage reported by this chat's backend.");
+            }
+            else
+            {
+                lines.Add("Context usage is not available yet. Waiting for this chat's backend to report it.");
             }
 
             long characters = ContextCharacters(session);
@@ -114,13 +151,6 @@ namespace DTech.Parley.Editor.UI
             {
                 _usageParts.Add("$" + session.Record.CostUsd.ToString("0.000", CultureInfo.InvariantCulture));
             }
-
-            if (session.ContextMax > 0)
-            {
-                _usageParts.Add("ctx " + ContextPercent(session) + "%");
-            }
-
-            _usageParts.Add("~" + FormatTokens((ContextCharacters(session) + 3) / 4) + " ctx tokens");
 
             return string.Join(" · ", _usageParts);
         }

@@ -390,6 +390,7 @@ namespace DTech.Parley.Editor.UI
             _session.OnStateChanged += MarkDirty;
             _session.OnRequestRaised += RequestRaisedHandler;
             BindViews();
+            _ = _session.EnsureStartedAsync();
         }
 
         private void EndSession()

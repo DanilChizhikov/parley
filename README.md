@@ -406,8 +406,14 @@ prompt cache and the whole context is written again, the tab says so. **Copy XML
 so you can paste it into a chat and ask the agent where the tokens went. Usage is recorded for Claude Code, Codex and
 local models.
 
+The status bar shows the active chat's remaining context as a percentage and tokens, for example
+`Context: 72% left · 144k / 200k`. Hover for used and remaining tokens and the source of the reading. Local-model
+readings are estimates marked with `~`. Until the backend reports context usage, the indicator shows `Context: —`.
+The separate text-only estimate is available in the tooltip.
+
 With a Claude Code or Codex subscription, a circle next to **Send** shows what is left of your plan: the 5-hour session
 on the left half and the weekly limit on the right. Click it for the percentages, a countdown and the reset time.
+Account details, model lists and plan limits load automatically when you open or select a chat, before you send a message.
 
 ### Debug Preview
 The preview is for working on Parley itself. Add `PARLEY_DEBUGG` to **Project Settings > Player > Scripting Define

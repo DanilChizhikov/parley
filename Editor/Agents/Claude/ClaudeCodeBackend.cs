@@ -148,14 +148,20 @@ namespace DTech.Parley.Editor.Agents.Claude
 
 		public async Task StartAsync(CancellationToken token)
 		{
-			if (IsRunning)
-			{
-				return;
-			}
-
 			if (_starting != null)
 			{
 				await _starting;
+				return;
+			}
+
+			token.ThrowIfCancellationRequested();
+			if (_disposed)
+			{
+				throw new ObjectDisposedException(nameof(ClaudeCodeBackend));
+			}
+
+			if (IsRunning)
+			{
 				return;
 			}
 
@@ -173,6 +179,11 @@ namespace DTech.Parley.Editor.Agents.Claude
 		public async Task SendAsync(UserTurn turn, CancellationToken token)
 		{
             _turnCorrelationId = turn.CorrelationId;
+			if (_starting != null)
+			{
+				await _starting;
+			}
+
 			if (_skillGate != null)
 			{
 				await _skillGate.Task;
@@ -194,10 +205,7 @@ namespace DTech.Parley.Editor.Agents.Claude
 					_restartPending = false;
 				}
 
-				if (!IsRunning)
-				{
-					await StartAsync(token);
-				}
+				await StartAsync(token);
 
 				if (gate != null && !await RunSkillTurnsAsync(turn.Skills, token))
 				{

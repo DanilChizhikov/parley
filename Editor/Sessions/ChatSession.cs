@@ -49,6 +49,7 @@ namespace DTech.Parley.Editor.Sessions
 		private readonly List<SlashCommandInfo> _commands = new ();
 		private readonly CancellationTokenSource _lifetime = new ();
 		private readonly UsageTracker _usage = new (ProjectPaths.Root);
+		private Task _startup;
 
 		public ParleyProfile Profile { get; }
 
@@ -249,6 +250,11 @@ namespace DTech.Parley.Editor.Sessions
 
 		public async Task EnsureStartedAsync()
 		{
+			if (_disposed)
+			{
+				return;
+			}
+
 			if (!IsPreview && EditorApplication.isPlayingOrWillChangePlaymode)
 			{
 				AddNotice(NoticeLevel.Warning, "Return to Edit Mode before starting an agent.");
@@ -264,17 +270,22 @@ namespace DTech.Parley.Editor.Sessions
 			RaiseState();
 			try
 			{
-				await Backend.StartAsync(_lifetime.Token);
+				_startup = Backend.StartAsync(_lifetime.Token);
+				await _startup;
 			}
 			catch (OperationCanceledException)
 			{
 			}
 			catch (Exception exception)
 			{
-				ReportStartFailure(exception);
+				if (!_disposed)
+				{
+					ReportStartFailure(exception);
+				}
 			}
 			finally
 			{
+				_startup = null;
 				IsStarting = false;
 				RaiseState();
 			}
@@ -342,6 +353,11 @@ namespace DTech.Parley.Editor.Sessions
 			RaiseState();
 			try
 			{
+                Task startup = _startup;
+                if (startup != null)
+                {
+                    await startup;
+                }
                 sendCancellation.Token.ThrowIfCancellationRequested();
 				if (deliverContext)
 				{
@@ -422,6 +438,7 @@ namespace DTech.Parley.Editor.Sessions
 			_todos.Clear();
 			_tasks.Clear();
 			ContextUsed = 0;
+			ContextMax = 0;
 			LastTurn = null;
 			Save();
 			OnCleared?.Invoke();
@@ -469,6 +486,11 @@ namespace DTech.Parley.Editor.Sessions
 
 		public void SetModel(string model)
 		{
+			if (!string.Equals(Model, model, StringComparison.Ordinal))
+			{
+				ContextUsed = 0;
+				ContextMax = 0;
+			}
 			Model = model;
 			Backend.SetModel(model);
 			Save();

@@ -115,14 +115,20 @@ namespace DTech.Parley.Editor.Agents.Codex
 
         public async Task StartAsync(CancellationToken token)
         {
-            if (IsRunning)
-            {
-                return;
-            }
-
             if (_starting != null)
             {
                 await _starting;
+                return;
+            }
+
+            token.ThrowIfCancellationRequested();
+            if (_disposed)
+            {
+                throw new ObjectDisposedException(nameof(CodexBackend));
+            }
+
+            if (IsRunning)
+            {
                 return;
             }
 
@@ -140,16 +146,18 @@ namespace DTech.Parley.Editor.Agents.Codex
         public async Task SendAsync(UserTurn turn, CancellationToken token)
         {
             _turnCorrelationId = turn.CorrelationId;
+            if (_starting != null)
+            {
+                await _starting;
+            }
+
             if (_restartPending && !IsBusy && _process != null)
             {
                 _restartPending = false;
                 await StopProcess();
             }
 
-            if (!IsRunning)
-            {
-                await StartAsync(token);
-            }
+            await StartAsync(token);
 
             CancelPlanRequest();
             string text = (turn.Text ?? string.Empty).Trim();

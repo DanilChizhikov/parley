@@ -7,7 +7,7 @@ namespace DTech.Parley.Editor.UI
     {
         public const string SessionTitle = "5-hour session";
         public const string WeeklyTitle = "Weekly";
-        public const string NotLoadedText = "Limits load when the chat starts.";
+        public const string NotLoadedText = "Loading plan limits… If unavailable, click to retry.";
         public const string UnavailableText = "Plan limits are not available for this sign-in (API key or cloud provider).";
 
         private const int DaysForWeekday = 6;

@@ -50,13 +50,17 @@ namespace DTech.Parley.Editor.UI
                     select.AddToClassList("pl-chat-tab__select");
                     tab.Add(select);
                     _buttons.Add(session, select);
-                    tab.Add(new Button(() => _close(session)) { text = "×", tooltip = "Close tab" });
+                    Button close = new Button(() => _close(session)) { text = "×", tooltip = "Close tab" };
+                    close.AddToClassList("pl-chat-tab__close");
+                    tab.Add(close);
                     tab.AddManipulator(new ContextualMenuManipulator(evt => PopulateMenu(evt, session)));
                     contentContainer.Add(tab);
                 }
 
-                contentContainer.Add(new Button(ShowNewTabMenu)
-                    { text = "+ ▾", tooltip = "New blank tab or role preset (Ctrl/Cmd+T for blank)" });
+                Button add = new Button(ShowNewTabMenu)
+                    { text = "+ ▾", tooltip = "New blank tab or role preset (Ctrl/Cmd+T for blank)" };
+                add.AddToClassList("pl-chat-tabs__add");
+                contentContainer.Add(add);
             }
 
             foreach (KeyValuePair<ChatSession, Button> pair in _buttons)
@@ -69,7 +73,7 @@ namespace DTech.Parley.Editor.UI
                 pair.Value.text = status + session.Title + (session.Record.HasUnreadResponse ? " ●" : string.Empty);
                 pair.Value.tooltip = session.Profile.Name + " · " + session.ExecutionStatus +
                     (session.Record.HasUnreadResponse ? " · Unread reply" : string.Empty);
-                pair.Value.EnableInClassList("pl-chat-tab--active", session == _manager.Active);
+                pair.Value.parent.EnableInClassList("pl-chat-tab--active", session == _manager.Active);
             }
         }
 
