@@ -12,23 +12,76 @@
     flex-shrink: 0;
     max-height: 52px;
     background-color: var(--pl-surface);
+    padding: 4px 4px 0 4px;
 }
 
 .pl-chat-tab {
     flex-direction: row;
     flex-shrink: 0;
+    align-items: center;
+    max-width: 250px;
+    height: 28px;
+    margin-right: 4px;
+    border-radius: 5px 5px 0 0;
+    border-bottom-width: 2px;
+    border-bottom-color: transparent;
 }
 
-.pl-chat-tab__select {
+.pl-chat-tab:hover {
+    background-color: var(--pl-surface-3);
+}
+
+.pl-chat-tab > Button,
+.pl-chat-tabs .pl-chat-tabs__add {
+    margin: 0;
+    border-width: 0;
+    border-radius: 3px;
+    background-color: transparent;
+    color: var(--pl-text-muted);
+    -unity-font-style: normal;
+}
+
+.pl-chat-tab > .pl-chat-tab__select {
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-width: 0;
     max-width: 220px;
+    height: 26px;
+    padding: 0 8px;
+    -unity-text-align: middle-left;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
+.pl-chat-tab > .pl-chat-tab__close {
+    flex-shrink: 0;
+    width: 20px;
+    height: 20px;
+    margin-right: 3px;
+    padding: 0;
+    font-size: 15px;
+}
+
+.pl-chat-tab > .pl-chat-tab__close:hover,
+.pl-chat-tabs .pl-chat-tabs__add:hover {
+    background-color: var(--pl-border);
+    color: var(--pl-text);
+}
+
 .pl-chat-tab--active {
+    background-color: var(--pl-bg);
     border-bottom-color: var(--pl-accent);
-    border-bottom-width: 2px;
+}
+
+.pl-chat-tab--active > Button {
+    color: var(--pl-text);
+}
+
+.pl-chat-tabs .pl-chat-tabs__add {
+    flex-shrink: 0;
+    height: 26px;
+    padding: 0 8px;
 }
 
 .pl-text {

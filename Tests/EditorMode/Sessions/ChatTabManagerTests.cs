@@ -10,10 +10,12 @@ using DTech.Parley.Editor.Sessions;
 using DTech.Parley.Editor.Agents.Claude;
 using DTech.Parley.Editor.Agents.Codex;
 using DTech.Parley.Editor.Tools;
+using DTech.Parley.Editor.UI;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using NUnit.Framework;
 using UnityEngine.TestTools;
+using UnityEngine.UIElements;
 
 namespace DTech.Parley.Tests.EditorMode
 {
@@ -43,6 +45,61 @@ namespace DTech.Parley.Tests.EditorMode
             }
 
             _managers.Clear();
+        }
+
+        [Test]
+        public void TabSelectionHighlightsTheWholeTab()
+        {
+            ChatSession first = _manager.Open(_profile);
+            ChatSession second = _manager.Open(_profile);
+            ChatTabBar bar = new ChatTabBar(_manager, _ => true);
+            bar.Refresh();
+
+            Button select = bar.Query<Button>(className: "pl-chat-tab__select").First();
+            Click(select);
+            bar.Refresh();
+
+            Assert.AreSame(first, _manager.Active);
+            Assert.IsTrue(select.parent.ClassListContains("pl-chat-tab--active"));
+            Assert.IsNotNull(select.parent.Q<Button>(className: "pl-chat-tab__close"));
+            Assert.IsFalse(bar.Query<Button>(className: "pl-chat-tab__select").ToList()[1]
+                .parent.ClassListContains("pl-chat-tab--active"));
+        }
+
+        [Test]
+        public void ClosingInactiveTabDoesNotSelectIt()
+        {
+            ChatSession first = _manager.Open(_profile);
+            ChatSession second = _manager.Open(_profile);
+            ChatSession activeWhenClosing = null;
+            ChatTabBar bar = new ChatTabBar(_manager, session =>
+            {
+                activeWhenClosing = _manager.Active;
+                _manager.Close(session);
+                return true;
+            });
+            bar.Refresh();
+
+            Click(bar.Query<Button>(className: "pl-chat-tab__close").First());
+            bar.Refresh();
+
+            Assert.AreSame(second, activeWhenClosing);
+            Assert.AreSame(second, _manager.Active);
+            Assert.AreEqual(1, bar.Query<Button>(className: "pl-chat-tab__close").ToList().Count);
+        }
+
+        [Test]
+        public void RejectedTabClosePreservesSelectionAndTabs()
+        {
+            _manager.Open(_profile);
+            ChatSession active = _manager.Open(_profile);
+            ChatTabBar bar = new ChatTabBar(_manager, _ => false);
+            bar.Refresh();
+
+            Click(bar.Query<Button>(className: "pl-chat-tab__close").First());
+
+            Assert.AreSame(active, _manager.Active);
+            Assert.AreEqual(2, _manager.Tabs.Count);
         }
 
         [Test]
@@ -598,6 +655,12 @@ namespace DTech.Parley.Tests.EditorMode
             ChatTabManager manager = new ChatTabManager(_factory, store);
             _managers.Add(manager);
             return manager;
+        }
+
+        private static void Click(Button button)
+        {
+            typeof(Clickable).GetMethod("SimulateSingleClick", BindingFlags.Instance | BindingFlags.NonPublic)
+                .Invoke(button.clickable, new object[] { null, 0 });
         }
 
         private sealed class MemoryStore : IChatTabStore
