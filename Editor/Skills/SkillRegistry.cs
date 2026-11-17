@@ -27,7 +27,6 @@ namespace DTech.Parley.Editor.Skills
         public static void Reload()
         {
             SkillRegistry registry = new();
-            // Resolve through the asset database so embedded packages and Assets installs both work.
             foreach (string guid in AssetDatabase.FindAssets("SkillRegistry t:MonoScript"))
             {
                 string script = AssetDatabase.GUIDToAssetPath(guid);
