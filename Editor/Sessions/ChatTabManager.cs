@@ -157,7 +157,6 @@ namespace DTech.Parley.Editor.Sessions
             record.Id = Guid.NewGuid().ToString("N");
             record.ParentSessionId = session.SessionId;
             record.Title += " copy";
-            // Fork lazily on the next explicit send; never attach two backends to one live CLI thread.
             record.ForkBackendSessionId = record.BackendSessionId ?? record.ForkBackendSessionId;
             record.BackendSessionId = null;
             record.ExecutionStatus = ChatExecutionStatus.Idle;

@@ -121,7 +121,6 @@ namespace DTech.Parley.Editor.UI
             {
                 return;
             }
-            // Freeze before awaiting: later source messages cannot enter the summary request.
             ContextSnapshot captured = ContextHandoffService.Capture(source.Record, int.MaxValue);
             ParleyProfile model = UnityEngine.JsonUtility.FromJson<ParleyProfile>(
                 UnityEngine.JsonUtility.ToJson(summarizer));
