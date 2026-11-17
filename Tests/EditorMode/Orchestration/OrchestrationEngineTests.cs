@@ -11,9 +11,11 @@ using DTech.Parley.Editor.Orchestration;
 using DTech.Parley.Editor.Sessions;
 using DTech.Parley.Editor.Skills;
 using DTech.Parley.Editor.Tools;
+using DTech.Parley.Editor.UI;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using NUnit.Framework;
+using UnityEngine.UIElements;
 
 namespace DTech.Parley.Tests.EditorMode
 {
@@ -120,6 +122,118 @@ namespace DTech.Parley.Tests.EditorMode
             StringAssert.Contains("withheld", Backend(_parent).LastText);
             StringAssert.DoesNotContain("review me", Backend(_parent).LastText);
         }
+
+        [Test]
+        public async Task BarAndTargetShareApprovalWithoutStartingBeforeConsent()
+        {
+            _parent.Record.RoleHandoffMode = "ask_approval";
+            OrchestrationBar bar = new(_tabs);
+            Assert.AreEqual(DisplayStyle.None, bar.style.display.value);
+            await _parent.SendAsync("task", null);
+            bar.Refresh();
+            Assert.AreEqual(DisplayStyle.None, bar.style.display.value, "A role turn alone is not a chain.");
+            Submit(_parent, "gate");
+            OrchestrationRun run = _engine.Runs[0];
+            DelegationRecord request = run.Delegations[0];
+            bar.Refresh();
+            Assert.AreEqual(1, Buttons(bar, "Approve & Run"));
+            ChatSession target = _engine.OpenApprovalTarget(run.Id, request.Id);
+            Assert.AreSame(target, _engine.OpenApprovalTarget(run.Id, request.Id));
+            Assert.AreEqual(2, _tabs.Tabs.Count);
+            _tabs.Select(target);
+            bar.Refresh();
+            Assert.AreEqual(1, Buttons(bar.TargetApproval, "Approve & Run"));
+            await target.SendAsync("cannot bypass gate", null);
+            Assert.AreEqual(0, Backend(target).Sends);
+            target.SetMode(PermissionMode.BypassPermissions);
+            Assert.AreEqual(PermissionMode.Plan, target.Mode, "Preview inherits the parent permission ceiling.");
+            Complete(_parent, "waiting");
+            _engine.Tick();
+            Assert.AreEqual(0, Backend(target).Sends);
+            Assert.IsTrue(_engine.Approve(run.Id, request.Id, true));
+            Assert.IsFalse(_engine.Approve(run.Id, request.Id, true));
+            bar.Refresh();
+            Assert.AreEqual(0, Buttons(bar, "Approve & Run"));
+            Assert.AreEqual(DisplayStyle.None, bar.TargetApproval.style.display.value);
+            _engine.Tick();
+            Assert.AreEqual(2, _tabs.Tabs.Count, "Execution reuses the preview tab.");
+            Assert.AreEqual(1, Backend(target).Sends);
+            Assert.AreEqual(PermissionMode.Plan, Backend(target).Mode);
+            bar.Refresh();
+            Assert.IsTrue(bar.Query<Button>().ToList().Any(button => button.text.Contains("Working")));
+            Complete(target, "result");
+            _engine.Tick();
+            bar.Refresh();
+            Assert.AreEqual(1, Buttons(bar, "Approve Result"));
+            Assert.AreEqual(1, Buttons(bar.TargetApproval, "Approve Result"));
+            Assert.IsFalse(_engine.Approve(run.Id, request.Id, true, DelegationStatus.WaitingApproval),
+                "A stale launch button must not approve a later result gate.");
+            _engine.Approve(run.Id, request.Id, true);
+            _engine.Tick();
+            Complete(_parent, "done");
+            _engine.Tick();
+            bar.Refresh();
+            Assert.AreEqual(DisplayStyle.None, bar.style.display.value);
+        }
+
+        [Test]
+        public async Task StopChainFencesAllWorkBeforeInterruptCallbacksAndLeavesOtherRunsAlone()
+        {
+            await _parent.SendAsync("task", null);
+            Submit(_parent, "running");
+            _engine.Submit(_parent, new DelegationRequest("queued", "worker", "second", "summary"));
+            Complete(_parent, "waiting");
+            _summary.Pending = new TaskCompletionSource<string>();
+            _engine.Tick();
+            OrchestrationRun run = _engine.Runs[0];
+            ChatSession child = _tabs.Tabs[1];
+            ChatSession unrelated = _tabs.Open(_profile, new SessionRecord
+            {
+                Kind = _profile.Kind, RoleSkillId = "skill:other",
+            });
+            await unrelated.SendAsync("independent", null);
+            Backend(child).Interrupting = () =>
+            {
+                Assert.AreEqual(RunStatus.Cancelled, run.Status);
+                Assert.IsTrue(run.Delegations.All(item => item.Status == DelegationStatus.Cancelled));
+                Backend(child).Complete("late result");
+                _engine.Tick();
+            };
+            Assert.IsTrue(_engine.StopChain(run.Id));
+            Assert.IsFalse(_engine.StopChain(run.Id));
+            _summary.Pending.SetResult("late summary");
+            await Task.Yield();
+            _engine.Tick();
+            Assert.AreEqual(3, _tabs.Tabs.Count);
+            Assert.AreEqual(1, Backend(_parent).Sends);
+            Assert.AreEqual(RunStatus.Running, _engine.Runs[1].Status);
+            Assert.IsTrue(Backend(unrelated).IsBusy);
+        }
+
+        [Test]
+        public async Task ReloadBindsInterruptedPreviewWithoutApprovalOrReplay()
+        {
+            _parent.Record.RoleHandoffMode = "ask_approval";
+            await _parent.SendAsync("task", null);
+            Submit(_parent, "gate");
+            OrchestrationRun run = _engine.Runs[0];
+            ChatSession target = _engine.OpenApprovalTarget(run.Id, run.Delegations[0].Id);
+            _tabs.Select(target);
+            using ChatTabManager restored = new(new Factory(), _store);
+            restored.Restore(_ => _profile, _profile);
+            using OrchestrationEngine engine = Engine(restored);
+            OrchestrationBar bar = new(restored);
+            Assert.AreEqual(DisplayStyle.Flex, bar.style.display.value);
+            Assert.AreEqual(0, Buttons(bar, "Approve & Run"));
+            Assert.AreEqual(0, Buttons(bar, "Stop Chain"));
+            Assert.AreEqual(DisplayStyle.None, bar.TargetApproval.style.display.value);
+            Assert.IsTrue(bar.Query<Label>().ToList().Any(label => label.text.Contains("nothing replayed")));
+            engine.Tick();
+            Assert.IsTrue(restored.Tabs.All(session => Backend(session).Sends == 0));
+        }
+
+        private static int Buttons(VisualElement root, string text) =>
+            root.Query<Button>().ToList().Count(button => button.text == text);
 
         [Test]
         public async Task RejectsEmptyTargetsUnknownSkillsAndConflictingIds()
@@ -552,6 +666,7 @@ namespace DTech.Parley.Tests.EditorMode
             public string LastText;
             public TaskCompletionSource<bool> Starting;
             public bool Restricted;
+            public Action Interrupting;
             public bool IsRunning => true;
             public bool IsBusy { get; private set; }
             public string SessionId => null;
@@ -583,7 +698,7 @@ namespace DTech.Parley.Tests.EditorMode
                 Interrupt();
                 SetPermissionMode(mode);
             }
-            public void Interrupt() { IsBusy = false; }
+            public void Interrupt() { IsBusy = false; Interrupting?.Invoke(); }
             public Task ClearContextAsync(CancellationToken token) => Task.CompletedTask;
             public void SetPermissionMode(PermissionMode mode) { Mode = mode; Sink.ModeChanged(mode); }
             public void SetModel(string model) { }

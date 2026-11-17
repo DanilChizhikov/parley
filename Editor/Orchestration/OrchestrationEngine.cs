@@ -52,7 +52,11 @@ namespace DTech.Parley.Editor.Orchestration
                     }
                 }
                 foreach (DelegationRecord request in run.Delegations.Where(request => !Terminal(request.Status)))
+                {
                     request.Status = DelegationStatus.Interrupted;
+                    ChatSession target = Find(request.ChildSessionId);
+                    if (target != null) target.Record.ExecutionStatus = ChatExecutionStatus.Interrupted;
+                }
             }
             Changed();
         }
@@ -73,6 +77,9 @@ namespace DTech.Parley.Editor.Orchestration
         {
             if (_disposed) return false;
             if (_reservedTurns.Remove(session.Record.OrchestrationTurnId ?? string.Empty)) return true;
+            if (Runs.Any(run => run.Status == RunStatus.Running && run.Delegations.Any(request =>
+                request.ChildSessionId == session.SessionId && request.Status != DelegationStatus.Delivered)))
+                return false;
             if (string.IsNullOrEmpty(session.Record.RoleSkillId) &&
                 (session.Record.RoleAllowedTargets == null || session.Record.RoleAllowedTargets.Count == 0)) return true;
             if (session.HasActiveWork || Runs.Any(run => run.Status == RunStatus.Running &&
@@ -137,12 +144,13 @@ namespace DTech.Parley.Editor.Orchestration
         }
 
         // Approval state is durable; the orchestration UI can bind this API without owning execution.
-        public bool Approve(string runId, string delegationId, bool allow)
+        public bool Approve(string runId, string delegationId, bool allow, DelegationStatus? expectedStatus = null)
         {
             OrchestrationRun run = Runs.FirstOrDefault(candidate => candidate.Id == runId &&
                 candidate.Status == RunStatus.Running);
             DelegationRecord request = run?.Delegations.Find(candidate => candidate.Id == delegationId);
-            if (_disposed || request == null || (request.Status != DelegationStatus.WaitingApproval &&
+            if (_disposed || request == null || (expectedStatus.HasValue && request.Status != expectedStatus.Value) ||
+                (request.Status != DelegationStatus.WaitingApproval &&
                 request.Status != DelegationStatus.WaitingResultApproval)) return false;
             if (request.Status == DelegationStatus.WaitingApproval)
             {
@@ -190,16 +198,50 @@ namespace DTech.Parley.Editor.Orchestration
         public void CancelSession(ChatSession session)
         {
             foreach (OrchestrationRun run in Runs.Where(run => run.Status == RunStatus.Running &&
-                run.Steps.Any(step => step.SessionId == session.SessionId)).ToArray())
+                run.Id == session.Record.OrchestrationRunId &&
+                (run.Steps.Any(step => step.SessionId == session.SessionId) ||
+                run.Delegations.Any(request => request.ChildSessionId == session.SessionId))).ToArray())
                 Stop(run, RunStatus.Cancelled);
+        }
+
+        public bool StopChain(string runId)
+        {
+            OrchestrationRun run = Runs.FirstOrDefault(item => item.Id == runId && item.Status == RunStatus.Running);
+            if (_disposed || run == null) return false;
+            Stop(run, RunStatus.Cancelled);
+            return true;
+        }
+
+        public ChatSession OpenApprovalTarget(string runId, string delegationId)
+        {
+            OrchestrationRun run = Runs.FirstOrDefault(item => item.Id == runId && item.Status == RunStatus.Running);
+            DelegationRecord request = run?.Delegations.Find(item => item.Id == delegationId);
+            if (_disposed || request == null || request.Status != DelegationStatus.WaitingApproval) return null;
+            ChatSession existing = Find(request.ChildSessionId);
+            if (existing != null) return existing;
+            OrchestrationStep parentStep = run.Steps.Find(item => item.TurnId == request.ParentTurnId);
+            ChatSession parent = Find(parentStep.SessionId);
+            SkillDocument skill = _skills().Skills.FirstOrDefault(item => item.Id == request.TargetSkill);
+            if (parent == null || skill == null || !ChatPresets.TryCreateRole(skill, _profiles(),
+                CurrentProfile(parent), StricterMode(request.PermissionCeiling, LimitMode(parent, parent.Mode)),
+                out ParleyProfile profile, out SessionRecord record, out _)) return null;
+            record.ParentSessionId = parent.SessionId;
+            record.OrchestrationRunId = run.Id;
+            request.ChildSessionId = record.Id;
+            Changed();
+            ChatSession child = _tabs.Open(profile, record);
+            Changed();
+            return child;
         }
 
         public PermissionMode LimitMode(ChatSession session, PermissionMode requested)
         {
             OrchestrationRun run = ActiveRun(session);
             OrchestrationStep step = ActiveStep(session, run);
-            if (step?.ParentDelegationId == null) return requested;
-            DelegationRecord delegation = run.Delegations.Find(item => item.Id == step.ParentDelegationId);
+            DelegationRecord delegation = step?.ParentDelegationId != null
+                ? run.Delegations.Find(item => item.Id == step.ParentDelegationId)
+                : run?.Delegations.Find(item => item.ChildSessionId == session.SessionId);
+            if (delegation == null) return requested;
             OrchestrationStep parentStep = run.Steps.Find(item => item.TurnId == delegation.ParentTurnId);
             ChatSession parent = Find(parentStep.SessionId);
             PermissionMode ceiling = parent == null ? delegation.PermissionCeiling :
@@ -308,6 +350,8 @@ namespace DTech.Parley.Editor.Orchestration
                 if (!ChatPresets.TryCreateRole(skill, _profiles(), CurrentProfile(parent), ceiling,
                     out ParleyProfile profile, out SessionRecord record, out string error))
                     throw new InvalidOperationException(error);
+                ChatSession prepared = Find(request.ChildSessionId);
+                if (prepared != null) record = prepared.Record;
                 record.Mode = ceiling;
                 record.ParentSessionId = parent.SessionId;
                 record.ContextSnapshot = snapshot;
@@ -412,18 +456,20 @@ namespace DTech.Parley.Editor.Orchestration
         private void Stop(OrchestrationRun run, RunStatus status)
         {
             run.Status = status;
-            CancelSource(run);
             foreach (OrchestrationStep step in run.Steps.Where(step => !Terminal(step.Status)))
             {
                 step.Status = status == RunStatus.Interrupted ? StepStatus.Interrupted : StepStatus.Cancelled;
                 _reservedTurns.Remove(step.TurnId);
             }
             foreach (DelegationRecord request in run.Delegations.Where(item => !Terminal(item.Status)))
-                request.Status = status == RunStatus.Interrupted ? DelegationStatus.Interrupted : DelegationStatus.Cancelled;
-            foreach (string sessionId in run.Steps.Select(step => step.SessionId).Distinct())
+                request.Status = status == RunStatus.Interrupted
+                    ? DelegationStatus.Interrupted : DelegationStatus.Cancelled;
+            CancelSource(run);
+            foreach (string sessionId in run.Steps.Select(step => step.SessionId)
+                .Concat(run.Delegations.Select(request => request.ChildSessionId)).Where(id => id != null).Distinct())
             {
                 ChatSession session = Find(sessionId);
-                if (session == null) continue;
+                if (session == null || session.Record.OrchestrationRunId != run.Id) continue;
                 session.FenceTurn();
                 session.Record.ExecutionStatus = status == RunStatus.Interrupted
                     ? ChatExecutionStatus.Interrupted : ChatExecutionStatus.Idle;

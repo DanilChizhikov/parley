@@ -57,6 +57,7 @@ namespace DTech.Parley.Editor.UI
         private IChatTabManager _tabs;
         private ChatTabManager _previewTabs;
         private ChatTabBar _tabBar;
+        private OrchestrationBar _orchestrationBar;
         private TranscriptView _transcript;
         private SidePanel _side;
         private Composer _composer;
@@ -257,7 +258,10 @@ namespace DTech.Parley.Editor.UI
             ParleyStyles.Apply(root);
             _tabBar = new ChatTabBar(_tabs, CloseTab);
             root.Add(_tabBar);
+            _orchestrationBar = new OrchestrationBar(_tabs);
+            root.Add(_orchestrationBar);
             root.Add(BuildToolbar());
+            root.Add(_orchestrationBar.TargetApproval);
             root.RegisterCallback<KeyDownEvent>(TabShortcutHandler, TrickleDown.TrickleDown);
             _authCard = new AuthCard();
             root.Add(_authCard);
@@ -437,6 +441,7 @@ namespace DTech.Parley.Editor.UI
             }
 
             _tabBar?.Refresh();
+            _orchestrationBar?.Refresh();
             if (!_stateDirty || _session == null)
             {
                 return;
