@@ -132,6 +132,17 @@ An unavoidable reload marks active work **Interrupted**, expires approvals and n
 or tool calls. Review the last action before continuing. New agent work is available in Edit Mode; finish or stop
 all chats before entering Play Mode.
 
+Right-click an idle tab for **Send Context to New Tab** (last 10, 25 or 50 messages) or
+**Summarize & Send to New Tab**, then choose the destination profile. A handoff freezes completed conversational
+text and file-change paths at that moment; it never copies tool protocol, pending approvals or backend session IDs.
+The new tab includes the snapshot with your next message. The footer shows an approximate text token count and
+its tooltip reports characters and handoff delivery status; provider-reported context usage remains separate.
+
+Summaries use a separate request with the current or destination model and leave the source conversation intact.
+Local API summaries have no tools; Claude summaries disable tools, MCP, hooks and session persistence.
+The current Codex app-server protocol cannot disable every tool, so Codex cannot generate a handoff summary;
+use a Local or Claude model to summarize, or transfer last messages. Every backend can receive either snapshot format.
+
 ### Profiles and Sign-in
 Profiles live in `Preferences/DTech/Parley`. Parley starts with a Claude Code profile, a Codex profile and two local
 ones (LM Studio and Ollama). Add, duplicate or delete profiles there. Changes apply to chats you start afterwards.

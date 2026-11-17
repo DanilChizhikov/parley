@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
 using DTech.Parley.Editor.Sessions;
 using UnityEditor;
 using UnityEngine.UIElements;
@@ -13,6 +15,8 @@ namespace DTech.Parley.Editor.UI
         private readonly IChatTabManager _manager;
         private readonly Func<ChatSession, bool> _close;
         private readonly Dictionary<ChatSession, Button> _buttons = new();
+        private bool _handoffRunning;
+        private CancellationTokenSource _handoffCancellation;
 
         public ChatTabBar(IChatTabManager manager, Func<ChatSession, bool> close) : base(ScrollViewMode.Horizontal)
         {
@@ -22,6 +26,7 @@ namespace DTech.Parley.Editor.UI
             contentContainer.style.flexDirection = FlexDirection.Row;
             verticalScrollerVisibility = ScrollerVisibility.Hidden;
             horizontalScrollerVisibility = ScrollerVisibility.Auto;
+            RegisterCallback<DetachFromPanelEvent>(_ => _handoffCancellation?.Cancel());
         }
 
         public void Refresh()
@@ -77,6 +82,24 @@ namespace DTech.Parley.Editor.UI
         {
             evt.menu.AppendAction("Duplicate Tab", _ => _manager.Duplicate(session),
                 session.HasActiveWork ? DropdownMenuAction.Status.Disabled : DropdownMenuAction.Status.Normal);
+            DropdownMenuAction.Status handoffStatus = _handoffRunning || session.HasActiveWork
+                ? DropdownMenuAction.Status.Disabled : DropdownMenuAction.Status.Normal;
+            foreach (ParleyProfile target in ParleyUserSettings.instance.Profiles)
+            {
+                ParleyProfile destination = target;
+                foreach (int count in new[] { 10, 25, 50 })
+                {
+                    int lastMessages = count;
+                    evt.menu.AppendAction("Send Context to New Tab/" + target.Name + "/Last " + count + " Messages",
+                        _ => _manager.OpenWithContext(destination,
+                            ContextHandoffService.Capture(session.Record, lastMessages)), handoffStatus);
+                }
+
+                evt.menu.AppendAction("Summarize & Send to New Tab/" + target.Name + "/Use current model",
+                    action => { _ = HandoffAsync(session, destination, session.Profile, CancellationToken.None); }, handoffStatus);
+                evt.menu.AppendAction("Summarize & Send to New Tab/" + target.Name + "/Use target model",
+                    action => { _ = HandoffAsync(session, destination, destination, CancellationToken.None); }, handoffStatus);
+            }
             evt.menu.AppendAction("Close Other Tabs", _ =>
             {
                 _manager.Select(session);
@@ -89,6 +112,47 @@ namespace DTech.Parley.Editor.UI
                     }
                 }
             });
+        }
+
+        private async Task HandoffAsync(ChatSession source, ParleyProfile target, ParleyProfile summarizer,
+            CancellationToken cancellationToken)
+        {
+            if (_handoffRunning)
+            {
+                return;
+            }
+            // Freeze before awaiting: later source messages cannot enter the summary request.
+            ContextSnapshot captured = ContextHandoffService.Capture(source.Record, int.MaxValue);
+            ParleyProfile model = UnityEngine.JsonUtility.FromJson<ParleyProfile>(
+                UnityEngine.JsonUtility.ToJson(summarizer));
+            if (ReferenceEquals(summarizer, source.Profile))
+            {
+                model.Model = source.Model;
+                model.Effort = source.Effort;
+            }
+            _handoffRunning = true;
+            using CancellationTokenSource lifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            _handoffCancellation = lifetime;
+            ReloadGuard.Acquire(this);
+            try
+            {
+                ContextHandoffService service = new(new ContextSummaryGenerator());
+                ContextSnapshot snapshot = await service.SummarizeAsync(captured, model, lifetime.Token);
+                _manager.OpenWithContext(target, snapshot);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (Exception exception)
+            {
+                EditorUtility.DisplayDialog("Context handoff failed", exception.Message, "OK");
+            }
+            finally
+            {
+                _handoffRunning = false;
+                _handoffCancellation = null;
+                ReloadGuard.Release(this);
+            }
         }
     }
 }

@@ -63,6 +63,46 @@ namespace DTech.Parley.Tests.EditorMode
         }
 
         [Test]
+        public async Task HandoffStartsFreshAcrossProvidersAndDeliversContextOnce()
+        {
+            ChatSession source = _manager.Open(_profile);
+            source.Record.Entries.Add(new TranscriptEntry
+            {
+                Role = EntryRole.User,
+                Blocks = { new TranscriptBlock { Kind = BlockKind.Text, Text = "original goal", IsFinished = true } },
+            });
+            source.Record.BackendSessionId = "source-thread";
+            ContextSnapshot snapshot = ContextHandoffService.Capture(source.Record, 10);
+            ParleyProfile target = ParleyProfile.CreateCodex("Target", CodexAuthMethod.CliDefault);
+            ChatSession destination = _manager.OpenWithContext(target, snapshot);
+            FakeBackend backend = (FakeBackend)destination.Backend;
+            Assert.AreSame(destination, _manager.Active);
+            Assert.AreEqual(source.SessionId, destination.ParentSessionId);
+            Assert.AreNotEqual("source-thread", destination.Record.BackendSessionId);
+            Assert.IsNull(destination.Record.ForkBackendSessionId);
+            Assert.IsNull(destination.Record.LocalHistory);
+            Assert.IsNull(backend.ResumeId);
+            Assert.IsEmpty(destination.Messages);
+            Task first = destination.SendAsync("continue", null);
+            StringAssert.Contains("original goal", backend.LastText);
+            StringAssert.Contains("continue", backend.LastText);
+            backend.Complete();
+            await first;
+            Task second = destination.SendAsync("next", null);
+            Assert.AreEqual("next", backend.LastText);
+            backend.Complete();
+            await second;
+            _manager.Save();
+            ChatTabManager restored = CreateManager(_store);
+            restored.Restore(id => id == target.Id ? target : _profile, _profile);
+            Assert.AreEqual(snapshot.Markdown, restored.Active.Record.ContextSnapshot.Markdown);
+            Assert.IsTrue(restored.Active.Record.ContextDelivered);
+            await destination.ClearAsync();
+            Assert.IsNull(destination.Record.ContextSnapshot);
+            Assert.IsFalse(destination.Record.ContextDelivered);
+        }
+
+        [Test]
         public void BackgroundCompletionStreamsToItsOwnTranscriptAndMarksUnread()
         {
             ChatSession first = _manager.Open(_profile);
@@ -426,6 +466,7 @@ namespace DTech.Parley.Tests.EditorMode
             public IAgentSink Sink { get; }
             public string ResumeId { get; }
             public int SendCount { get; private set; }
+            public string LastText { get; private set; }
             public int StartCount { get; private set; }
             public bool Disposed { get; private set; }
             public bool IsRunning => StartCount > 0;
@@ -460,6 +501,7 @@ namespace DTech.Parley.Tests.EditorMode
             {
                 token.ThrowIfCancellationRequested();
                 SendCount++;
+                LastText = turn.Text;
                 TaskCompletionSource<bool> completion = new TaskCompletionSource<bool>();
                 _sends.Enqueue(completion);
                 return completion.Task;

@@ -33,6 +33,12 @@ namespace DTech.Parley.Editor.Sessions
 		[JsonProperty("parentSessionId")]
 		public string ParentSessionId { get; set; }
 
+		[JsonProperty("contextSnapshot")]
+		public ContextSnapshot ContextSnapshot { get; set; }
+
+		[JsonProperty("contextDelivered")]
+		public bool ContextDelivered { get; set; }
+
 		[JsonProperty("activeSkillId")]
 		public string ActiveSkillId { get; set; }
 
