@@ -674,6 +674,10 @@ namespace DTech.Parley.Editor.Agents.Claude
 
 			builder.Append(" Do not edit files under Library/ or Temp/, and never change GUIDs in .meta files by hand.");
 			string extra = ParleyProjectSettings.instance.AppendSystemPrompt;
+			if (!string.IsNullOrWhiteSpace(_skills.RoleInstructions))
+			{
+				builder.Append("\n\n# Role instructions\n").Append(_skills.RoleInstructions);
+			}
 			if (!string.IsNullOrWhiteSpace(extra))
 			{
 				builder.Append("\n\n").Append(extra.Trim());

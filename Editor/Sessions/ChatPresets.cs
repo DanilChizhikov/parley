@@ -1,10 +1,62 @@
 using System;
 using System.Collections.Generic;
+using DTech.Parley.Editor.Skills;
 
 namespace DTech.Parley.Editor.Sessions
 {
 	internal static class ChatPresets
 	{
+        public static bool TryCreateRole(SkillDocument skill, IReadOnlyList<ParleyProfile> profiles,
+            ParleyProfile current, PermissionMode mode, out ParleyProfile profile, out SessionRecord record,
+            out string error)
+        {
+            profile = null;
+            record = null;
+            error = null;
+            if (skill.Diagnostics.Count > 0 || string.IsNullOrWhiteSpace(skill.Body))
+                error = "The role has invalid or empty instructions.";
+            else if (string.IsNullOrWhiteSpace(skill.PreferredProvider) || string.IsNullOrWhiteSpace(skill.Model))
+                error = "The role requires preferred_provider and model. Use 'current' explicitly to inherit the current profile.";
+            else if (skill.PreferredProvider == "current") profile = current;
+            else
+            {
+                foreach (ParleyProfile candidate in profiles)
+                {
+                    if (!string.Equals(candidate.Id, skill.PreferredProvider, StringComparison.Ordinal)
+                        && !string.Equals(candidate.Name, skill.PreferredProvider, StringComparison.OrdinalIgnoreCase)
+                        && !(skill.PreferredProvider == "claude" && candidate.Kind == ProfileKind.ClaudeCode)
+                        && !(skill.PreferredProvider == "codex" && candidate.Kind == ProfileKind.Codex)
+                        && !(skill.PreferredProvider == "local" && candidate.Kind == ProfileKind.Local)) continue;
+                    if (profile != null)
+                    {
+                        error = "Multiple profiles match '" + skill.PreferredProvider + "'. Use a unique profile name or ID.";
+                        break;
+                    }
+                    profile = candidate;
+                }
+            }
+            if (error == null && profile == null) error = "Provider profile '" + skill.PreferredProvider + "' is unavailable.";
+            string model = skill.Model == "current" ? profile?.Model : skill.Model;
+            if (error == null && string.IsNullOrWhiteSpace(model))
+                error = "The selected profile has no model. Choose a model before opening this role.";
+            if (error != null) return false;
+            record = new SessionRecord
+            {
+                Title = skill.Name,
+                ProfileId = profile.Id,
+                Kind = profile.Kind,
+                Model = model,
+                Effort = profile.Effort,
+                HasModelSelection = true,
+                Mode = mode,
+                RoleSkillId = skill.Id,
+                RoleInstructions = SkillRenderer.Render(skill.Body, skill.FolderPath, string.Empty),
+                RoleHandoffMode = skill.HandoffMode,
+                RoleAllowedTargets = new List<string>(skill.AllowedTargets),
+            };
+            return true;
+        }
+
 		public static ChatPreset Capture(SessionRecord record, string name)
 		{
 			ChatPreset preset = new ChatPreset { Name = (name ?? string.Empty).Trim() };

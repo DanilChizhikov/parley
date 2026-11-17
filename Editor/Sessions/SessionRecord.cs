@@ -42,6 +42,18 @@ namespace DTech.Parley.Editor.Sessions
 		[JsonProperty("activeSkillId")]
 		public string ActiveSkillId { get; set; }
 
+		[JsonProperty("roleInstructions")]
+		public string RoleInstructions { get; set; }
+
+		[JsonProperty("roleSkillId")]
+		public string RoleSkillId { get; set; }
+
+		[JsonProperty("roleHandoffMode")]
+		public string RoleHandoffMode { get; set; }
+
+		[JsonProperty("roleAllowedTargets")]
+		public List<string> RoleAllowedTargets { get; set; }
+
 		[JsonProperty("backgroundTasks")]
 		public List<BackgroundTaskInfo> BackgroundTasks { get; set; } = new();
 
