@@ -35,7 +35,7 @@ namespace DTech.Parley.Editor.Skills
             List<string> block = new ();
             for (int i = 1; i < end; i++)
             {
-                if (block.Count > 0 && !IsContinuation(lines[i]))
+                if (block.Count > 0 && !IsContinuation(lines[i]) && !IsOpenTargetsList(block))
                 {
                     ReadKey(document, block, extra, keys);
                     block.Clear();
@@ -117,6 +117,27 @@ namespace DTech.Parley.Editor.Skills
                 || line.StartsWith("- ", StringComparison.Ordinal) || line.TrimStart().StartsWith("#", StringComparison.Ordinal);
         }
 
+        private static bool IsOpenTargetsList(List<string> block)
+        {
+            int colon = block[0].IndexOf(':');
+            if (colon < 0 || block[0].Substring(0, colon).Trim() != "allowed_targets"
+                || !block[0].Substring(colon + 1).TrimStart().StartsWith("[", StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            for (int i = block.Count - 1; i >= 0; i--)
+            {
+                string line = StripComment(block[i]).TrimEnd();
+                if (line.Length > 0)
+                {
+                    return !line.EndsWith("]", StringComparison.Ordinal);
+                }
+            }
+
+            return true;
+        }
+
         private static void ReadKey(SkillDocument document, List<string> block, StringBuilder extra, HashSet<string> keys)
         {
             string line = block[0];
@@ -190,6 +211,16 @@ namespace DTech.Parley.Editor.Skills
         private static void ReadTargets(SkillDocument document, string inline, List<string> block)
         {
             inline = StripComment(inline);
+            if (inline.StartsWith("[", StringComparison.Ordinal))
+            {
+                StringBuilder sequence = new(inline);
+                for (int i = 1; i < block.Count; i++)
+                {
+                    sequence.Append(' ').Append(StripComment(block[i].Trim()));
+                }
+
+                inline = sequence.ToString().TrimEnd();
+            }
             List<string> values = new();
             if (inline.StartsWith("[", StringComparison.Ordinal) && inline.EndsWith("]", StringComparison.Ordinal))
             {

@@ -47,6 +47,19 @@ namespace DTech.Parley.Editor.Sessions
             Assert.That(skill.AllowedTargets, Is.EqualTo(new[] { "developer", "qa,team", "hash#tag" }));
         }
 
+        [Test]
+        public void MultilineFlowTargetsRemainAvailableInRegistry()
+        {
+            SkillDocument skill = SkillMarkdown.Parse("---\nname: reviewer\nallowed_targets: [\n  developer, # first target\n  tester\n]\npreferred_provider: current\nmodel: current\n---\nReview changes");
+            Assert.That(skill.Diagnostics, Is.Empty);
+            Assert.That(skill.AllowedTargets, Is.EqualTo(new[] { "developer", "tester" }));
+            Assert.That(skill.PreferredProvider, Is.EqualTo("current"));
+            SkillRegistry registry = new();
+            registry.Add(skill, "reviewer.md");
+            Assert.That(registry.Diagnostics, Is.Empty);
+            Assert.That(registry.Skills, Has.Count.EqualTo(1));
+        }
+
         [TestCase("handoff_mode: unsafe")]
         [TestCase("allowed_targets: developer")]
         public void MalformedMetadataHasDiagnostics(string metadata)
