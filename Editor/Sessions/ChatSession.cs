@@ -1503,7 +1503,9 @@ namespace DTech.Parley.Editor.Sessions
                 Backend.SetPermissionMode(limited);
                 return;
             }
+            PermissionMode previous = Record.Mode;
 			Record.Mode = mode;
+            Orchestration?.PermissionsChanged(this, previous);
 			RaiseState();
 		}
 

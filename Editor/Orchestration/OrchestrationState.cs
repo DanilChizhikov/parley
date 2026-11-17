@@ -31,6 +31,8 @@ namespace DTech.Parley.Editor.Orchestration
         public StepStatus Status { get; set; }
         public bool TurnFinished { get; set; }
         public string Output { get; set; }
+        public bool IsError { get; set; }
+        public string Error { get; set; }
     }
 
     internal sealed class DelegationRecord
@@ -47,5 +49,8 @@ namespace DTech.Parley.Editor.Orchestration
         public bool RequireApproval { get; set; }
         public PermissionMode PermissionCeiling { get; set; }
         public string Result { get; set; }
+        public bool IsError { get; set; }
+        public string Error { get; set; }
+        public string PartialOutput { get; set; }
     }
 }
