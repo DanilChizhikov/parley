@@ -184,7 +184,7 @@ namespace DTech.Parley.Editor.Agents.Claude
 			{
 				if (_restartPending && IsRunning && !IsBusy)
 				{
-					_resumeSessionId = SessionId;
+					_resumeSessionId = SessionId ?? _resumeSessionId;
 					StopProcess();
 					_restartPending = false;
 				}
@@ -1146,7 +1146,6 @@ namespace DTech.Parley.Editor.Agents.Claude
 						if ((string)message["subtype"] == "init")
 						{
 							Mode = PermissionModes.FromWire((string)message["permissionMode"]);
-							_forkPending = false;
 						}
 
 						break;
@@ -1161,6 +1160,12 @@ namespace DTech.Parley.Editor.Agents.Claude
 				_mapper.Handle(message);
 				if (type == "result")
 				{
+					if (_mapper.ConfirmedSessionId != null)
+					{
+						_forkPending = false;
+						_resumeSessionId = _mapper.ConfirmedSessionId;
+					}
+
 					ReleaseBusy();
 					_skillTurn?.TrySetResult(true);
 					_ = RefreshContextUsageAsync();

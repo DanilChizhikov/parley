@@ -217,7 +217,6 @@ namespace DTech.Parley.Editor.Sessions
 			_lifetime.Cancel();
 			Backend.Dispose();
 			_lifetime.Dispose();
-			EditorApplication.delayCall -= RefreshAssetsIfIdle;
 			OnEntryAdded = null;
 			OnBlockAdded = null;
 			OnBlockChanged = null;
@@ -1178,14 +1177,6 @@ namespace DTech.Parley.Editor.Sessions
 			}
 		}
 
-		private void RefreshAssetsIfIdle()
-		{
-			if (!ReloadGuard.IsLocked && !HasActiveWork && !IsPreview)
-			{
-				AssetDatabase.Refresh();
-			}
-		}
-
 		void IAgentSink.CapabilitiesChanged(BackendCapabilities capabilities)
 		{
 			Capabilities = capabilities ?? new BackendCapabilities();
@@ -1467,8 +1458,10 @@ namespace DTech.Parley.Editor.Sessions
 
 			_currentAssistant = null;
 			Save();
-			EditorApplication.delayCall -= RefreshAssetsIfIdle;
-			EditorApplication.delayCall += RefreshAssetsIfIdle;
+			if (!IsPreview)
+			{
+				ChatTabInstaller.RequestAssetRefresh();
+			}
 			RaiseState();
 			OnTurnCompleted?.Invoke();
 		}
@@ -1481,6 +1474,26 @@ namespace DTech.Parley.Editor.Sessions
 
 		void IAgentSink.Exited(string reason, bool unexpected)
 		{
+			foreach (BackgroundTaskInfo task in _tasks.Values)
+			{
+				if (task.Status == "running" || task.Status == "pending")
+				{
+					task.Status = "interrupted";
+					Record.ExecutionStatus = ChatExecutionStatus.Interrupted;
+				}
+			}
+
+			foreach (PendingRequest request in _requests.Values)
+			{
+				if (_requestBlocks.TryGetValue(request.Id, out TranscriptBlock block))
+				{
+					block.Resolution = "Interrupted (the agent exited)";
+					OnBlockChanged?.Invoke(block);
+				}
+			}
+
+			_requests.Clear();
+
 			if (unexpected)
 			{
 				_hasExecutionError = true;

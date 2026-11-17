@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
+using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using DTech.Parley.Editor;
@@ -284,6 +285,80 @@ namespace DTech.Parley.Tests.EditorMode
             Assert.IsNull(backend.SessionId);
             backend.ClearContextAsync(CancellationToken.None);
             Assert.IsNull(backend.SessionId);
+        }
+
+        [Test]
+        public void ClaudeForkInitAndReloadBeforeFirstResultCannotRestoreSourceIdentity()
+        {
+            ParleyProfile profile = ParleyProfile.CreateClaude("Fork", ClaudeAuthMethod.CliDefault);
+            SessionRecord record = new SessionRecord
+            {
+                ProfileId = profile.Id, Kind = profile.Kind, ForkBackendSessionId = "source-thread",
+            };
+            using ChatSession session = new ChatSession(profile, record, true,
+                (selected, saved, sink) => new ClaudeCodeBackend(selected, sink,
+                    new ToolCatalog(Array.Empty<IParleyTool>()), saved.ForkBackendSessionId,
+                    saved.Mode, true));
+            session.OnStateChanged += session.Save;
+            MethodInfo receive = typeof(ClaudeCodeBackend).GetMethod("StdoutLineHandler",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+            receive.Invoke(session.Backend, new object[]
+            {
+                "{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"copy-thread\",\"model\":\"test\"}",
+            });
+            session.Save();
+            SessionRecord restored = JsonConvert.DeserializeObject<SessionRecord>(JsonConvert.SerializeObject(record));
+            Assert.IsNull(session.Backend.SessionId);
+            Assert.IsNull(restored.BackendSessionId);
+            Assert.AreEqual("source-thread", restored.ForkBackendSessionId);
+            // Only a result confirms a resumable fork. The source is never exposed as this tab's identity.
+            receive.Invoke(session.Backend, new object[]
+            {
+                "{\"type\":\"result\",\"session_id\":\"copy-thread\",\"subtype\":\"success\",\"is_error\":false,\"num_turns\":1}",
+            });
+            session.Save();
+            Assert.AreEqual("copy-thread", record.BackendSessionId);
+            Assert.IsNull(record.ForkBackendSessionId);
+        }
+
+        [Test]
+        public void AssetRefreshIsRetainedUntilGlobalIdleAndUnlockAndCoalescesRequests()
+        {
+            bool idle = false;
+            bool locked = true;
+            int refreshes = 0;
+            DeferredAssetRefresh refresh = new DeferredAssetRefresh(() => idle && !locked, () => refreshes++);
+            refresh.Request();
+            refresh.Tick();
+            idle = true;
+            refresh.Request();
+            refresh.Tick();
+            Assert.AreEqual(0, refreshes);
+            locked = false;
+            refresh.Tick();
+            refresh.Tick();
+            Assert.AreEqual(1, refreshes);
+        }
+
+        [TestCase(true, "Error")]
+        [TestCase(false, "Interrupted")]
+        public void BackendExitTerminatesOrphanedTasksAndApprovals(bool unexpected, string expected)
+        {
+            ChatSession session = _manager.Open(_profile);
+            IAgentSink sink = session;
+            sink.BackgroundTaskChanged(new BackgroundTaskInfo { TaskId = "running", Status = "running" });
+            sink.BackgroundTaskChanged(new BackgroundTaskInfo { TaskId = "pending", Status = "pending" });
+            sink.BackgroundTaskChanged(new BackgroundTaskInfo { TaskId = "done", Status = "completed" });
+            sink.RequestRaised(new PendingRequest { Id = "approval", Input = new JObject(), ToolName = "Bash" });
+            Assert.IsTrue(_manager.HasActiveWork);
+            sink.Exited("Process stopped", unexpected);
+            Assert.IsFalse(_manager.HasActiveWork);
+            Assert.IsEmpty(session.OpenRequests);
+            Assert.AreEqual(expected, session.ExecutionStatus.ToString());
+            Assert.AreEqual("interrupted", session.Record.BackgroundTasks[0].Status);
+            Assert.AreEqual("interrupted", session.Record.BackgroundTasks[1].Status);
+            Assert.AreEqual("completed", session.Record.BackgroundTasks[2].Status);
+            Assert.IsNotEmpty(session.Record.Entries[0].Blocks[0].Resolution);
         }
 
         [UnityTest]

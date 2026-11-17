@@ -7,6 +7,8 @@ namespace DTech.Parley.Editor.Sessions
     internal static class ChatTabInstaller
     {
         private static ChatTabManager _manager;
+        private static readonly DeferredAssetRefresh AssetRefresh = new(
+            () => !ReloadGuard.IsLocked && !HasActiveWork, () => AssetDatabase.Refresh());
 
         public static bool HasActiveWork => _manager?.HasActiveWork == true;
 
@@ -40,6 +42,11 @@ namespace DTech.Parley.Editor.Sessions
             return new ChatTabManager(new SessionFactory(true), new PreviewStore());
         }
 
+        public static void RequestAssetRefresh()
+        {
+            AssetRefresh.Request();
+        }
+
         private static void UpdateHandler()
         {
             if (_manager != null)
@@ -51,6 +58,7 @@ namespace DTech.Parley.Editor.Sessions
             }
 
             WorkChangedHandler();
+            AssetRefresh.Tick();
         }
 
         private static void WorkChangedHandler()
