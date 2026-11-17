@@ -49,6 +49,7 @@ namespace DTech.Parley.Editor.Sessions
 		private readonly List<SlashCommandInfo> _commands = new ();
 		private readonly CancellationTokenSource _lifetime = new ();
 		private readonly UsageTracker _usage = new (ProjectPaths.Root);
+		private Task _startup;
 
 		public ParleyProfile Profile { get; }
 
@@ -269,7 +270,8 @@ namespace DTech.Parley.Editor.Sessions
 			RaiseState();
 			try
 			{
-				await Backend.StartAsync(_lifetime.Token);
+				_startup = Backend.StartAsync(_lifetime.Token);
+				await _startup;
 			}
 			catch (OperationCanceledException)
 			{
@@ -283,6 +285,7 @@ namespace DTech.Parley.Editor.Sessions
 			}
 			finally
 			{
+				_startup = null;
 				IsStarting = false;
 				RaiseState();
 			}
@@ -350,6 +353,11 @@ namespace DTech.Parley.Editor.Sessions
 			RaiseState();
 			try
 			{
+                Task startup = _startup;
+                if (startup != null)
+                {
+                    await startup;
+                }
                 sendCancellation.Token.ThrowIfCancellationRequested();
 				if (deliverContext)
 				{

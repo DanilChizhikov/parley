@@ -206,6 +206,62 @@ namespace DTech.Parley.Tests.EditorMode
         }
 
         [Test]
+        public async Task FirstMessageWaitsForSessionInitialization()
+        {
+            ChatSession session = _manager.Open(_profile);
+            FakeBackend backend = (FakeBackend)session.Backend;
+            backend.Startup = new TaskCompletionSource<bool>();
+            Task startup = session.EnsureStartedAsync();
+            Task send = session.SendAsync("first message", null);
+
+            Assert.AreEqual(0, backend.SendCount);
+            Assert.IsFalse(send.IsCompleted);
+            backend.Startup.SetResult(true);
+            await startup;
+            await Task.Yield();
+            Assert.AreEqual(1, backend.StartCount);
+            Assert.AreEqual(1, backend.SendCount);
+            Assert.AreEqual("first message", backend.LastText);
+            backend.Complete();
+            await send;
+        }
+
+        [Test]
+        public async Task StartupFailurePreventsFirstMessageFromReachingBackend()
+        {
+            ChatSession session = _manager.Open(_profile);
+            FakeBackend backend = (FakeBackend)session.Backend;
+            backend.Startup = new TaskCompletionSource<bool>();
+            Task startup = session.EnsureStartedAsync();
+            Task send = session.SendAsync("first message", null);
+            backend.Startup.SetException(new AgentSetupException("Sign in required"));
+            await startup;
+            await send;
+
+            Assert.AreEqual(0, backend.SendCount);
+            Assert.AreEqual("Sign in required", session.AuthMessage);
+            Assert.IsFalse(session.IsBusy);
+        }
+
+        [Test]
+        public async Task ClosingDuringStartupCancelsTheWaitingFirstMessage()
+        {
+            ChatSession session = _manager.Open(_profile);
+            FakeBackend backend = (FakeBackend)session.Backend;
+            backend.Startup = new TaskCompletionSource<bool>();
+            Task startup = session.EnsureStartedAsync();
+            Task send = session.SendAsync("first message", null);
+
+            _manager.Close(session);
+            await startup;
+            await send;
+
+            Assert.AreEqual(0, backend.SendCount);
+            Assert.IsTrue(backend.Disposed);
+            Assert.IsFalse(session.IsBusy);
+        }
+
+        [Test]
         public async Task InitializationRunsOnceWithoutSendingDraftOrAutoSkills()
         {
             ChatSession session = _manager.Open(_profile);
