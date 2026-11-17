@@ -288,6 +288,35 @@ namespace DTech.Parley.Tests.EditorMode
         }
 
         [Test]
+        public async Task SummaryCancellationStopsWorkflowAndAllowsANewTurn()
+        {
+            _summary.Pending = new TaskCompletionSource<string>();
+            await _parent.SendAsync("context to summarize", null);
+            _engine.Submit(_parent, new DelegationRequest("summary", "worker", "do work", "summary"));
+            Complete(_parent, "waiting");
+            _engine.Tick();
+            OrchestrationRun run = _engine.Runs[0];
+            Assert.AreEqual(DelegationStatus.Preparing, run.Delegations[0].Status);
+            Assert.IsFalse(_summary.Token.IsCancellationRequested);
+
+            _summary.Pending.SetCanceled();
+            await Task.Yield();
+            _engine.Tick();
+
+            Assert.AreEqual(RunStatus.Cancelled, run.Status);
+            Assert.IsTrue(run.Delegations.All(request => request.Status == DelegationStatus.Cancelled));
+            Assert.IsTrue(run.Steps.All(step => step.Status == StepStatus.Cancelled));
+            Assert.IsTrue(_summary.Token.IsCancellationRequested);
+            Assert.AreEqual(1, _tabs.Tabs.Count);
+            Assert.IsFalse(_tabs.HasActiveWork);
+
+            await _parent.SendAsync("new task", null);
+            Assert.AreEqual(2, Backend(_parent).Sends);
+            Assert.AreEqual(2, _engine.Runs.Count);
+            Assert.AreEqual(RunStatus.Running, _engine.Runs[1].Status);
+        }
+
+        [Test]
         public async Task StopCancelsChildrenQueuedDelegationsTasksAndLateCallbacks()
         {
             await _parent.SendAsync("task", null);
