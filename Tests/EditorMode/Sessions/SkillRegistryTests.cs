@@ -17,11 +17,35 @@ namespace DTech.Parley.Editor.Sessions
 {
     internal sealed class SkillRegistryTests
     {
-        [Test]
-        public void PackageIncludesBuiltinReviewer()
+        [TestCase("reviewer")]
+        [TestCase("orchestrator")]
+        [TestCase("worker")]
+        public void PackageIncludesBuiltinRole(string name)
         {
             SkillRegistry.Reload();
-            Assert.That(SkillRegistry.Current.Skills, Has.Some.Matches<SkillDocument>(skill => skill.Name == "reviewer"));
+            Assert.That(SkillRegistry.Current.Skills, Has.Some.Matches<SkillDocument>(skill => skill.Name == name));
+        }
+
+        [Test]
+        public void BuiltinOrchestratorAndItsTargetsCanCreateRoles()
+        {
+            SkillRegistry.Reload();
+            List<SkillDocument> skills = new(SkillRegistry.Current.Skills);
+            SkillDocument orchestrator = skills.Find(skill => skill.Name == "orchestrator");
+            Assert.That(orchestrator, Is.Not.Null);
+            Assert.That(orchestrator.AllowedTargets, Is.EqualTo(new[] { "worker", "reviewer" }));
+            Assert.That(orchestrator.HandoffMode, Is.EqualTo("auto"));
+            ParleyProfile profile = ParleyProfile.CreateLocal("Test", LocalPreset.LmStudio);
+            profile.Model = "test-model";
+            foreach (string name in new[] { "orchestrator", "worker", "reviewer" })
+            {
+                SkillDocument skill = skills.Find(candidate => candidate.Name == name);
+                Assert.That(skill, Is.Not.Null);
+                Assert.That(ChatPresets.TryCreateRole(skill, new[] { profile }, profile, PermissionMode.Plan,
+                    out _, out SessionRecord record, out string error), Is.True, error);
+                Assert.That(record.RoleSkillId, Is.EqualTo(skill.Id));
+                if (skill.Name != "orchestrator") Assert.That(record.RoleAllowedTargets, Is.Empty);
+            }
         }
 
         [Test]
