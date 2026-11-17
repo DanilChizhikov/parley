@@ -23,6 +23,9 @@ namespace DTech.Parley.Editor.Sessions
                     _manager.OnChanged += WorkChangedHandler;
                     ParleyUserSettings settings = ParleyUserSettings.instance;
                     _manager.Restore(settings.Find, settings.ActiveProfile, SessionStore.Load(settings.LastSessionId));
+                    _manager.Engine = new Orchestration.OrchestrationEngine(_manager,
+                        new ContextHandoffService(new ContextSummaryGenerator()), () => Skills.SkillRegistry.Current,
+                        () => settings.Profiles, () => settings.MaxHops);
                 }
 
                 return _manager;
@@ -51,6 +54,7 @@ namespace DTech.Parley.Editor.Sessions
         {
             if (_manager != null)
             {
+                _manager.Engine?.Tick();
                 foreach (ChatSession session in _manager.Tabs)
                 {
                     session.RefreshExecutionState();

@@ -6,6 +6,7 @@ namespace DTech.Parley.Editor.Sessions
     {
         public List<SessionRecord> Tabs { get; set; } = new();
         public string ActiveSessionId { get; set; }
+        public List<Orchestration.OrchestrationRun> Runs { get; set; } = new();
     }
 
     internal interface IChatTabStore

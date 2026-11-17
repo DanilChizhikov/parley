@@ -53,6 +53,17 @@ namespace DTech.Parley.Editor.UI
             };
             skills.RegisterValueChangedCallback(evt => settings.CustomSkillsDirectory = evt.newValue);
             section.Add(skills);
+            IntegerField hops = new IntegerField("Max Hops")
+            {
+                value = settings.MaxHops, isDelayed = true,
+                tooltip = "Maximum delegation depth per run. Root is depth 0; changes apply to new runs.",
+            };
+            hops.RegisterValueChangedCallback(evt =>
+            {
+                settings.MaxHops = evt.newValue;
+                hops.SetValueWithoutNotify(settings.MaxHops);
+            });
+            section.Add(hops);
             HelpBox diagnostics = new HelpBox(string.Join("\n", SkillRegistry.Current.Diagnostics), HelpBoxMessageType.Info);
             section.Add(new Button(() =>
             {
