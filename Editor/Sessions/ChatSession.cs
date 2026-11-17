@@ -151,7 +151,6 @@ namespace DTech.Parley.Editor.Sessions
 		public ChatSession(ParleyProfile profile, SessionRecord record, bool preview = false,
 			Func<ParleyProfile, SessionRecord, IAgentSink, IAgentBackend> backendFactory = null)
 		{
-			// Backends may update their profile when selecting a model; every tab owns its copy.
 			Profile = UnityEngine.JsonUtility.FromJson<ParleyProfile>(UnityEngine.JsonUtility.ToJson(profile));
 			profile = Profile;
 			IsPreview = preview;
@@ -1390,7 +1389,6 @@ namespace DTech.Parley.Editor.Sessions
             if (Orchestration != null && request.Kind == BlockKind.Text &&
                 string.IsNullOrEmpty(request.ParentToolUseId) && string.IsNullOrEmpty(block.ParentToolUseId))
             {
-                // Final text is authoritative: providers may replace streamed deltas during reconciliation.
                 if (!streamedTextMatches || !_delegationParsers.TryGetValue(request.Key, out DelegationStreamParser parser))
                 {
                     parser = new DelegationStreamParser();

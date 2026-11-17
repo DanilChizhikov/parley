@@ -13,7 +13,6 @@ namespace DTech.Parley.Editor.Orchestration
         public string Description => "Delegate a subtask to an allowed skill in a child chat. Returns a receipt; " +
             "finish this turn and wait for the child result, which will arrive in a new turn. " +
             "Use request_id to retry the same request without spawning another child.";
-        // The engine validates delegation and enforces its own durable approval boundary.
         public ToolKind Kind => ToolKind.ReadOnly;
         public JObject InputSchema => new()
         {

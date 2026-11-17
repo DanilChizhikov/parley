@@ -8,7 +8,6 @@ using Newtonsoft.Json.Linq;
 
 namespace DTech.Parley.Editor.Orchestration
 {
-    // Only standalone tags are executable. Inline prose, quoted examples and fenced code are data.
     internal sealed class DelegationStreamParser
     {
         private const int MaxPayload = 65536;
@@ -76,7 +75,6 @@ namespace DTech.Parley.Editor.Orchestration
             if (_fence != '\0') return;
             if (_tag.Length == 0)
             {
-                // Markdown indentation also denotes code.
                 if (line.StartsWith("    ", StringComparison.Ordinal) || line.StartsWith("\t", StringComparison.Ordinal)
                     || !trimmed.StartsWith("<parley_delegate ", StringComparison.Ordinal)) return;
             }

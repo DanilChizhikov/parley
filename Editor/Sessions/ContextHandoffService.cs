@@ -42,14 +42,12 @@ namespace DTech.Parley.Editor.Sessions
                 StringBuilder text = new();
                 foreach (TranscriptBlock block in entry.Blocks)
                 {
-                    // Transport state, reasoning, tool results and unfinished output are never replayable context.
                     if (block.Kind == BlockKind.Text && block.IsFinished &&
                         string.IsNullOrEmpty(block.ParentToolUseId) && !string.IsNullOrWhiteSpace(block.Text))
                     {
                         text.AppendLine(block.Text);
                     }
 
-                    // Reload recovery also finishes abandoned blocks; a result is required to confirm a change.
                     if (block.Kind == BlockKind.ToolUse && block.IsFinished && !block.IsError &&
                         (block.Result != null || block.StructuredResult != null) &&
                         string.IsNullOrEmpty(block.ParentToolUseId))
