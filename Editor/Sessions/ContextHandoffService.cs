@@ -21,7 +21,8 @@ namespace DTech.Parley.Editor.Sessions
             _summary = summary;
         }
 
-        public static ContextSnapshot Capture(SessionRecord source, int lastMessages)
+        public static ContextSnapshot Capture(SessionRecord source, int lastMessages,
+            TranscriptEntry throughEntry = null, bool includeInheritedContext = true)
         {
             if (source == null)
             {
@@ -32,9 +33,15 @@ namespace DTech.Parley.Editor.Sessions
             {
                 throw new ArgumentOutOfRangeException(nameof(lastMessages));
             }
-            List<string> messages = new();
-            foreach (TranscriptEntry entry in source.Entries)
+            int cutoff = throughEntry == null ? source.Entries.Count - 1 : source.Entries.IndexOf(throughEntry);
+            if (throughEntry != null && cutoff < 0)
             {
+                throw new ArgumentException("The selected message no longer belongs to this chat.", nameof(throughEntry));
+            }
+            List<string> messages = new();
+            for (int index = 0; index <= cutoff; index++)
+            {
+                TranscriptEntry entry = source.Entries[index];
                 if (entry.Role != EntryRole.User && entry.Role != EntryRole.Assistant)
                 {
                     continue;
@@ -84,7 +91,7 @@ namespace DTech.Parley.Editor.Sessions
             }
 
             StringBuilder body = new();
-            if (source.ContextSnapshot != null)
+            if (includeInheritedContext && source.ContextSnapshot != null)
             {
                 body.AppendLine("## Inherited context").AppendLine().AppendLine(source.ContextSnapshot.Markdown);
             }

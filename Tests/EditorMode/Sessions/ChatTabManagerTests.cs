@@ -46,6 +46,99 @@ namespace DTech.Parley.Tests.EditorMode
         }
 
         [Test]
+        public void ManualHandoffPreparesNewTabWithoutRunningOrForkingBackend()
+        {
+            ChatSession source = _manager.Open(_profile);
+            source.Record.BackendSessionId = "live-parent-thread";
+            ContextSnapshot snapshot = ContextHandoffService.Capture(source.Record, 10);
+            ChatSession child = ManualContextHandoff.Prepare(_manager, source, null, _profile, snapshot, false);
+            FakeBackend backend = (FakeBackend)child.Backend;
+            Assert.AreEqual(0, backend.SendCount);
+            Assert.AreEqual(0, backend.StartCount);
+            Assert.AreSame(source, ManualContextHandoff.FindParent(_manager, child));
+            Assert.IsNull(child.Record.ContextSnapshot);
+            Assert.AreEqual(snapshot.Markdown, child.Record.Draft);
+            Assert.IsNull(child.Record.ForkBackendSessionId);
+            Assert.IsNotEmpty(child.Record.Draft);
+            Assert.IsEmpty(child.Record.Entries);
+            _manager.Save();
+            ChatTabManager restored = CreateManager(_store);
+            restored.Restore(id => _profile, _profile);
+            Assert.AreEqual(snapshot.Markdown, restored.Active.Record.Draft);
+            Assert.AreEqual(source.SessionId, restored.Active.Record.ParentSessionId);
+        }
+
+        [Test]
+        public async Task PreparedContextIsSentOnlyAfterExplicitSendAndRemainsEditable()
+        {
+            ChatSession source = _manager.Open(_profile);
+            ContextSnapshot snapshot = new(source.SessionId, DateTime.UtcNow, "captured context");
+            ChatSession child = ManualContextHandoff.Prepare(_manager, source, null, _profile, snapshot, false);
+            child.Record.Draft = "reviewed and edited context";
+            FakeBackend backend = (FakeBackend)child.Backend;
+            Assert.AreEqual(0, backend.SendCount);
+            Task send = child.SendAsync(child.Record.Draft, null);
+            Assert.AreEqual("reviewed and edited context", backend.LastText);
+            backend.Complete();
+            await send;
+        }
+
+        [Test]
+        public void ManualHandoffAppendsToExistingDraftAndPreservesAttachmentsAndLineage()
+        {
+            ChatSession source = _manager.Open(_profile);
+            ChatSession target = _manager.Open(_profile);
+            target.Record.Draft = "existing request";
+            target.Record.ParentSessionId = "original-parent";
+            target.Record.DraftAttachments.Add(new ChatAttachment());
+            ContextSnapshot snapshot = ContextHandoffService.Capture(source.Record, 10);
+            ManualContextHandoff.Prepare(_manager, source, target, null, snapshot, false);
+            Assert.AreEqual("existing request\n\n" + snapshot.Markdown, target.Record.Draft);
+            Assert.AreEqual(1, target.Record.DraftAttachments.Count);
+            Assert.AreEqual("original-parent", target.Record.ParentSessionId);
+            Assert.AreEqual(0, ((FakeBackend)target.Backend).SendCount);
+            Assert.IsEmpty(target.Record.Entries);
+        }
+
+        [Test]
+        public void BusyOrClosedTargetRejectsHandoffWithoutChangingState()
+        {
+            ChatSession source = _manager.Open(_profile);
+            ChatSession target = _manager.Open(_profile);
+            target.Record.Draft = "keep draft";
+            target.SendAsync("running request", null);
+            _manager.Select(source);
+            string before = JsonConvert.SerializeObject(target.Record);
+            ContextSnapshot snapshot = ContextHandoffService.Capture(source.Record, 10);
+            Assert.Throws<InvalidOperationException>(() =>
+                ManualContextHandoff.Prepare(_manager, source, target, null, snapshot, false));
+            Assert.AreEqual(before, JsonConvert.SerializeObject(target.Record));
+            Assert.AreSame(source, _manager.Active);
+            Assert.AreEqual(1, ((FakeBackend)target.Backend).SendCount);
+            _manager.Close(target);
+            Assert.Throws<InvalidOperationException>(() =>
+                ManualContextHandoff.Prepare(_manager, source, target, null, snapshot, false));
+            Assert.AreEqual(1, _manager.Tabs.Count);
+        }
+
+        [Test]
+        public void ResultReturnPreparesParentDraftAndNeverRecreatesClosedParent()
+        {
+            ChatSession parent = _manager.Open(_profile);
+            ChatSession child = _manager.OpenWithContext(_profile,
+                ContextHandoffService.Capture(parent.Record, 10));
+            ContextSnapshot result = new(child.SessionId, DateTime.UtcNow, "final outcome");
+            ManualContextHandoff.Prepare(_manager, child, parent, null, result, true);
+            StringAssert.Contains("final outcome", parent.Record.Draft);
+            Assert.AreEqual(0, ((FakeBackend)parent.Backend).SendCount);
+            _manager.Close(parent);
+            Assert.IsNull(ManualContextHandoff.FindParent(_manager, child));
+            Assert.Throws<InvalidOperationException>(() =>
+                ManualContextHandoff.Prepare(_manager, child, null, _profile, result, true));
+            Assert.AreEqual(1, _manager.Tabs.Count);
+        }
+
+        [Test]
         public void SwitchingTabsDoesNotDisposeOrShareBackends()
         {
             ChatSession first = _manager.Open(_profile);
