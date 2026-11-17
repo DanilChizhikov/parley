@@ -41,8 +41,6 @@ namespace DTech.Parley.Editor
 				return;
 			}
 
-			// Queued turns and skill chains may resume after a completion callback.
-			// Unlock only on a later editor update after all sessions have become idle.
 			_idleUpdates = 0;
 		}
 
