@@ -324,7 +324,8 @@ namespace DTech.Parley.Editor.UI
             _updateButton.AddToClassList("pl-update");
             ParleyStyles.SetVisible(_updateButton, false);
             toolbar.Add(_updateButton);
-            toolbar.Add(new ToolbarButton(NewChat) { text = "New", tooltip = "Start a new chat" });
+            toolbar.Add(new ToolbarButton(() => _tabBar.ShowNewTabMenu())
+                { text = "New ▾", tooltip = "Start a blank chat or role preset" });
             _historyButton = new ToolbarButton(ShowHistoryMenu) { text = "History ▾", tooltip = "Resume or delete earlier chats" };
             toolbar.Add(_historyButton);
             _sideToggle = new ToolbarToggle

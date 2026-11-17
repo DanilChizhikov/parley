@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using DTech.Parley.Editor.Sessions;
+using DTech.Parley.Editor.Skills;
 using UnityEditor;
 using UnityEngine.UIElements;
 
@@ -54,9 +55,8 @@ namespace DTech.Parley.Editor.UI
                     contentContainer.Add(tab);
                 }
 
-                contentContainer.Add(new Button(() => _manager.Open(
-                    _manager.Active?.Profile ?? ParleyUserSettings.instance.ActiveProfile))
-                    { text = "+", tooltip = "New tab (Ctrl/Cmd+T)" });
+                contentContainer.Add(new Button(ShowNewTabMenu)
+                    { text = "+ ▾", tooltip = "New blank tab or role preset (Ctrl/Cmd+T for blank)" });
             }
 
             foreach (KeyValuePair<ChatSession, Button> pair in _buttons)
@@ -76,6 +76,28 @@ namespace DTech.Parley.Editor.UI
         private static string Spinner()
         {
             return SpinnerFrames[(int)(EditorApplication.timeSinceStartup * 8) % SpinnerFrames.Length];
+        }
+
+        public void ShowNewTabMenu()
+        {
+            GenericMenu menu = new GenericMenu();
+            menu.AddItem(new UnityEngine.GUIContent("Blank chat"), false,
+                () => _manager.Open(_manager.Active?.Profile ?? ParleyUserSettings.instance.ActiveProfile));
+            foreach (SkillDocument skill in SkillRegistry.Current.Skills)
+            {
+                SkillDocument role = skill;
+                menu.AddItem(new UnityEngine.GUIContent("Role Preset/" + role.Name, role.Description), false, () =>
+                {
+                    ParleyUserSettings settings = ParleyUserSettings.instance;
+                    if (ChatPresets.TryCreateRole(role, settings.Profiles, _manager.Active?.Profile ?? settings.ActiveProfile,
+                        settings.DefaultMode, out ParleyProfile profile, out SessionRecord record, out string error))
+                        _manager.Open(profile, record);
+                    else EditorUtility.DisplayDialog("Cannot open role", error, "OK");
+                });
+            }
+            menu.AddSeparator(string.Empty);
+            menu.AddItem(new UnityEngine.GUIContent("Reload skills"), false, SkillRegistry.Reload);
+            menu.ShowAsContext();
         }
 
         private void PopulateMenu(ContextualMenuPopulateEvent evt, ChatSession session)

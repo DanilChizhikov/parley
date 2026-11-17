@@ -290,6 +290,36 @@ Local models talk to MCP servers through Parley's own MCP client. Every MCP tool
 the server claims about it. Some changes apply with your next message: the agent restarts and resumes the chat.
 
 ### Skills
+
+Use **+ ▾** in the tab bar or **New ▾** in the toolbar to open a blank chat or a role preset.
+Roles merge the packaged reviewer, your Parley library and **Custom Skills Directory** in Preferences, in that
+order; later sources override the same `name`. Custom directories are scanned recursively for `.md` files.
+**Reload skills** refreshes the menu and reports malformed files, unavailable directories and name overrides.
+Within a directory, files and subdirectories load in ordinal order; the last same-name role wins.
+
+Role files use YAML frontmatter followed by system instructions:
+
+```markdown
+---
+name: project-reviewer
+description: Review project changes
+preferred_provider: current
+model: current
+handoff_mode: ask_approval
+allowed_targets: [developer, tester]
+---
+Review the change and report concrete defects with file and line references.
+```
+
+`preferred_provider` accepts a unique configured profile name or ID, or `claude`, `codex`, `local` when only one
+profile matches. Provider and model are required; `current` explicitly inherits the active profile or its model.
+Missing profiles, ambiguous providers and missing models produce an error when opening the role.
+The parser supports quoted and plain scalars, folded/literal text blocks, inline comments, and flow or block
+sequences for `allowed_targets`. Unknown frontmatter is preserved when editing library skills.
+`handoff_mode` accepts `auto` or `ask_approval` (default); handoff mode and targets are metadata for future
+orchestration. They do not run handoffs automatically. Role instructions, model, provider and metadata are
+snapshotted in each session, survive reloads, and apply to Local, Claude Code and Codex without changing profiles.
+
 The **Skills** tab lists the skills of the current chat, each with a checkbox for this chat. The **All** checkbox in
 the header of **Parley skills** and **From Claude Code** / **From Codex** switches the whole section at once.
 

@@ -74,7 +74,7 @@ namespace DTech.Parley.Editor.Sessions
 		public ProfileKind Provider => Profile.Kind;
 		public IReadOnlyList<TranscriptEntry> Messages => Record.Entries;
 		public string ParentSessionId => Record.ParentSessionId;
-		public string ActiveSkillId => Record.ActiveSkillId;
+		public string ActiveSkillId => Record.ActiveSkillId ?? Record.RoleSkillId;
 		public ChatExecutionStatus ExecutionStatus => Record.ExecutionStatus;
 		public bool HasActiveWork
 		{
@@ -289,7 +289,8 @@ namespace DTech.Parley.Editor.Sessions
 
 			AddUserEntry(turn);
 			_usage.BeginTurn(turn.Text, DateTime.UtcNow);
-			if (Record.Entries.Count <= 2 || Record.Title == SessionRecord.DefaultTitle)
+			if (string.IsNullOrEmpty(Record.RoleSkillId)
+				&& (Record.Entries.Count <= 2 || Record.Title == SessionRecord.DefaultTitle))
 			{
 				Record.Title = SessionStore.MakeTitle(turn.Text);
 			}
@@ -849,6 +850,7 @@ namespace DTech.Parley.Editor.Sessions
 		private SkillConfiguration BuildSkillConfiguration()
 		{
 			SkillConfiguration configuration = new SkillConfiguration { LibraryRoot = SkillLibrary.Root, LibraryFolder = SkillLibrary.Folder };
+			configuration.RoleInstructions = Record.RoleInstructions;
 			foreach (string name in SkillLibrary.Names())
 			{
 				configuration.LibraryNames.Add(name);
