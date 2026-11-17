@@ -58,6 +58,7 @@ namespace DTech.Parley.Editor.Agents.Codex
         private bool _forkPending;
         private string _threadId;
         private string _turnId;
+        private string _turnCorrelationId;
         private string _model;
         private string _activeModel;
         private string _effort;
@@ -96,6 +97,7 @@ namespace DTech.Parley.Editor.Agents.Codex
             {
                 AdditionalDirectories = ParleyProjectSettings.instance.AdditionalDirectories,
                 GetMode = () => Mode,
+                TurnCorrelationId = _turnCorrelationId,
             });
         }
 
@@ -137,6 +139,7 @@ namespace DTech.Parley.Editor.Agents.Codex
 
         public async Task SendAsync(UserTurn turn, CancellationToken token)
         {
+            _turnCorrelationId = turn.CorrelationId;
             if (_restartPending && !IsBusy && _process != null)
             {
                 _restartPending = false;
@@ -170,6 +173,7 @@ namespace DTech.Parley.Editor.Agents.Codex
                 return;
             }
 
+            token.ThrowIfCancellationRequested();
             await StartTurnAsync(input);
         }
 
@@ -1130,6 +1134,12 @@ namespace DTech.Parley.Editor.Agents.Codex
 
         private async Task HandleToolCallAsync(JToken rpcId, JObject parameters)
         {
+            if (((string)parameters["threadId"] != null && (string)parameters["threadId"] != _threadId) ||
+                ((string)parameters["turnId"] != null && (string)parameters["turnId"] != _turnId))
+            {
+                Write(CodexWire.Error(rpcId, -32602, "Tool call belongs to an inactive turn."));
+                return;
+            }
             JObject response;
             try
             {

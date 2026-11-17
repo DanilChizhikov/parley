@@ -154,6 +154,7 @@ namespace DTech.Parley.Editor.Agents.Local
 		public async Task SendAsync(UserTurn turn, CancellationToken token)
 		{
 			await StartAsync(token);
+            token.ThrowIfCancellationRequested();
 			string text = (turn.Text ?? string.Empty).Trim();
 			if (!_running && text == CompactCommand)
 			{
@@ -162,6 +163,7 @@ namespace DTech.Parley.Editor.Agents.Local
 			}
 
 			_queued.Enqueue(turn);
+            _context.TurnCorrelationId = turn.CorrelationId;
 			if (!_running)
 			{
 				_ = RunAsync(false);

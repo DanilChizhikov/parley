@@ -70,7 +70,10 @@ namespace DTech.Parley.Editor.Agents.Codex
             ToolResult result;
             try
             {
-                result = await tool.ExecuteAsync(arguments, _contextFactory(), cancellationToken);
+                cancellationToken.ThrowIfCancellationRequested();
+                ToolContext context = _contextFactory();
+                context.ToolUseId = (string)parameters["callId"] ?? (string)parameters["itemId"];
+                result = await tool.ExecuteAsync(arguments, context, cancellationToken);
             }
             catch (OperationCanceledException)
             {

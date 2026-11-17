@@ -54,6 +54,9 @@ namespace DTech.Parley.Editor.Sessions
 		[JsonProperty("roleAllowedTargets")]
 		public List<string> RoleAllowedTargets { get; set; }
 
+        public string OrchestrationRunId { get; set; }
+        public string OrchestrationTurnId { get; set; }
+
 		[JsonProperty("backgroundTasks")]
 		public List<BackgroundTaskInfo> BackgroundTasks { get; set; } = new();
 
