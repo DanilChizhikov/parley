@@ -31,6 +31,7 @@ project info. You can attach the selection, console errors, a Scene or Game scre
 - [Features](#features)
 - [Usage](#usage)
     - [Open the Window](#open-the-window)
+    - [Chat Tabs](#chat-tabs)
     - [Profiles and Sign-in](#profiles-and-sign-in)
     - [Codex](#codex)
     - [Local Models](#local-models)
@@ -115,6 +116,21 @@ Use `Window/DTech/Parley/AI Chat`. The toolbar holds the profile, model, permiss
 new line. While the agent works, Send queues your message and **Stop** interrupts the turn.
 
 **Panel** toggles the side panel. Its tabs are **Todos**, **Plan**, **Tasks**, **Agents**, **MCP**, **Skills** and **Usage**.
+
+### Chat Tabs
+Each tab owns its conversation, backend, model, effort and composer draft. Inactive tabs keep streaming; a spinner
+shows activity, `!` indicates pending input, and a dot marks an unread completed reply. Closing the Parley window
+keeps background chats alive. Closing a working tab asks before stopping its work.
+
+Use **Ctrl/Cmd+T** for a new tab, **Ctrl/Cmd+W** to close the current tab, and **Ctrl/Cmd+Tab** to cycle
+(add **Shift** to cycle backwards). Right-click a tab for **Duplicate Tab** or **Close Other Tabs**.
+Duplication is available for idle tabs: local history is copied, while Claude Code and Codex create independent
+native conversation forks. Fork failures appear in the chat rather than silently sharing the source conversation.
+
+Open tabs, their order and the active tab survive script reloads and editor restarts, including empty chats.
+An unavoidable reload marks active work **Interrupted**, expires approvals and never automatically replays messages
+or tool calls. Review the last action before continuing. New agent work is available in Edit Mode; finish or stop
+all chats before entering Play Mode.
 
 ### Profiles and Sign-in
 Profiles live in `Preferences/DTech/Parley`. Parley starts with a Claude Code profile, a Codex profile and two local

@@ -47,7 +47,7 @@ namespace DTech.Parley.Editor.Agents.Claude
 
 		public bool IsBusy { get; private set; }
 
-		public string SessionId => _mapper.ConfirmedSessionId ?? _resumeSessionId;
+		public string SessionId => _mapper.ConfirmedSessionId ?? (_forkPending ? null : _resumeSessionId);
 
 		public PermissionMode Mode { get; private set; }
 
@@ -56,6 +56,7 @@ namespace DTech.Parley.Editor.Agents.Claude
 		private ChildProcess _process;
 		private Task _starting;
 		private string _resumeSessionId;
+		private bool _forkPending;
 		private string _model;
 		private string _effort;
 		private bool _restartPending;
@@ -82,12 +83,14 @@ namespace DTech.Parley.Editor.Agents.Claude
 			IAgentSink sink,
 			ToolCatalog unityTools,
 			string resumeSessionId,
-			PermissionMode mode)
+			PermissionMode mode,
+			bool forkSession = false)
 		{
 			_profile = profile;
 			_sink = sink;
 			_unityTools = unityTools;
 			_resumeSessionId = resumeSessionId;
+			_forkPending = forkSession;
 			_model = profile.Model;
 			_effort = profile.Effort;
 			Mode = mode;
@@ -237,6 +240,7 @@ namespace DTech.Parley.Editor.Agents.Claude
 		public Task ClearContextAsync(CancellationToken token)
 		{
 			_resumeSessionId = null;
+			_forkPending = false;
 			_restartPending = false;
 			_mapper.Reset();
 			StopProcess();
@@ -570,6 +574,10 @@ namespace DTech.Parley.Editor.Agents.Claude
 			if (!string.IsNullOrEmpty(_resumeSessionId))
 			{
 				arguments.Add("--resume=" + _resumeSessionId);
+				if (_forkPending)
+				{
+					arguments.Add("--fork-session");
+				}
 			}
 
 			if (_unityTools.Tools.Count > 0)
@@ -1138,6 +1146,7 @@ namespace DTech.Parley.Editor.Agents.Claude
 						if ((string)message["subtype"] == "init")
 						{
 							Mode = PermissionModes.FromWire((string)message["permissionMode"]);
+							_forkPending = false;
 						}
 
 						break;
