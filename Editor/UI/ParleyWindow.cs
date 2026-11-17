@@ -74,6 +74,10 @@ namespace DTech.Parley.Editor.UI
         private ToolbarButton _presetButton;
         private ToolbarButton _updateButton;
         private ToolbarButton _historyButton;
+        private ToolbarButton _contextButton;
+        private ToolbarButton _parentButton;
+        private ToolbarButton _resultButton;
+        private VisualElement _lineage;
         private ToolbarToggle _sideToggle;
         private ToolbarButton _previewButton;
         private bool _stateDirty = true;
@@ -262,6 +266,12 @@ namespace DTech.Parley.Editor.UI
             root.Add(_orchestrationBar);
             root.Add(BuildToolbar());
             root.Add(_orchestrationBar.TargetApproval);
+            _lineage = new Toolbar();
+            _parentButton = new ToolbarButton(SelectParent);
+            _resultButton = new ToolbarButton(SendResultBack) { text = "Send Result Back" };
+            _lineage.Add(_parentButton);
+            _lineage.Add(_resultButton);
+            root.Add(_lineage);
             root.RegisterCallback<KeyDownEvent>(TabShortcutHandler, TrickleDown.TrickleDown);
             _authCard = new AuthCard();
             root.Add(_authCard);
@@ -271,6 +281,7 @@ namespace DTech.Parley.Editor.UI
             _split = new TwoPaneSplitView(1, ParleyUserSettings.instance.SidePanelWidth, TwoPaneSplitViewOrientation.Horizontal);
             _split.AddToClassList("pl-split");
             _transcript = new TranscriptView();
+            _transcript.OnSendToTab += ShowMessageHandoff;
             _side = new SidePanel();
             _side.OnOpenAgentsWindow += OpenAgentsWindow;
             _side.RegisterCallback<GeometryChangedEvent>(SideGeometryChangedHandler);
@@ -314,6 +325,9 @@ namespace DTech.Parley.Editor.UI
             toolbar.Add(_mcpButton);
             toolbar.Add(_skillsButton);
             toolbar.Add(_presetButton);
+            _contextButton = new ToolbarButton(() => ShowHandoff(null, _contextButton.worldBound, false))
+                { text = "Send Context →", tooltip = "Prepare context in another tab; sending remains manual" };
+            toolbar.Add(_contextButton);
             #if PARLEY_DEBUGG
             if (_preview)
             {
@@ -469,6 +483,7 @@ namespace DTech.Parley.Editor.UI
             ChatPreset preset = ChatPresets.FindMatch(session.Record, ParleyUserSettings.instance.Presets);
             _presetButton.text = preset != null ? "Preset: " + preset.Name + " ▾" : "Preset ▾";
             RefreshUpdateButton();
+            RefreshLineage();
             _composer.SetBusy(session.IsBusy, _tabs.Engine?.IsSessionActive(session) == true);
             _composer.RefreshLimits(profile.Kind != ProfileKind.Local);
             _statusBar.Refresh(session);
@@ -961,6 +976,85 @@ namespace DTech.Parley.Editor.UI
             {
                 ParleyUserSettings.instance.SidePanelWidth = evt.newRect.width;
             }
+        }
+
+        private void RefreshLineage()
+        {
+            bool hasParent = !string.IsNullOrEmpty(_session?.Record.ParentSessionId);
+            ParleyStyles.SetVisible(_lineage, hasParent);
+            _contextButton.SetEnabled(_session != null);
+            if (!hasParent)
+            {
+                return;
+            }
+
+            ChatSession parent = ManualContextHandoff.FindParent(_tabs, _session);
+            int parentNumber = 0;
+            foreach (ChatSession tab in _tabs.Tabs)
+            {
+                parentNumber++;
+                if (tab == parent)
+                {
+                    break;
+                }
+            }
+
+            _parentButton.text = parent == null ? "← Parent tab closed"
+                : "← from Tab #" + parentNumber + " · " + parent.Title;
+            _parentButton.tooltip = parent == null ? "Open the parent from History to navigate or return a result"
+                : "Jump to parent tab";
+            _parentButton.SetEnabled(parent != null);
+            _resultButton.SetEnabled(parent != null && !parent.HasActiveWork && !_session.HasActiveWork);
+            _resultButton.tooltip = parent?.HasActiveWork == true ? "The parent tab is busy. Wait before returning a result."
+                : _session.HasActiveWork ? "Wait for this chat to finish before returning its result."
+                : "Prepare the final outcome in the parent composer; review and send manually";
+        }
+
+        private void SelectParent()
+        {
+            ChatSession parent = ManualContextHandoff.FindParent(_tabs, _session);
+            if (parent != null)
+            {
+                _tabs.Select(parent);
+            }
+        }
+
+        private void ShowMessageHandoff(TranscriptEntry entry, Rect anchor)
+        {
+            ShowHandoff(entry, anchor, false);
+        }
+
+        private void SendResultBack()
+        {
+            TranscriptEntry result = _session.Record.Entries.FindLast(entry => entry.Role == EntryRole.Assistant &&
+                entry.Blocks.Exists(block => block.Kind == BlockKind.Text && block.IsFinished &&
+                    string.IsNullOrEmpty(block.ParentToolUseId) && !string.IsNullOrWhiteSpace(block.Text)));
+            if (result == null)
+            {
+                ShowNotification(new GUIContent("No completed assistant result to return"), NotificationSeconds);
+                return;
+            }
+
+            ShowHandoff(result, _resultButton.worldBound, true);
+        }
+
+        private void ShowHandoff(TranscriptEntry entry, Rect anchor, bool returningResult)
+        {
+            if (_session == null)
+            {
+                return;
+            }
+
+            Rect screenRect = new Rect(position.x + anchor.x, position.y + anchor.y, anchor.width, anchor.height);
+            ContextHandoffWindow.Show(screenRect, _tabs, _session, entry, returningResult,
+                () => _composer?.SaveDraft(_session.Record), target =>
+                {
+                    BindActiveSession();
+                    _composer.RestoreDraft(target.Record);
+                    _composer.FocusInput();
+                    ShowNotification(new GUIContent("Context prepared. Review and send manually."), NotificationSeconds);
+                    MarkDirty();
+                });
         }
 
         private void SubmitHandler(string text, List<ChatAttachment> attachments)

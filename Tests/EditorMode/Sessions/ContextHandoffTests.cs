@@ -13,6 +13,44 @@ namespace DTech.Parley.Tests.EditorMode
     public sealed class ContextHandoffTests
     {
         [Test]
+        public void SelectedMessageCutsOffLaterConversationAndRejectsForeignEntries()
+        {
+            SessionRecord source = new();
+            source.Entries.Add(Entry(EntryRole.User, "initial goal"));
+            TranscriptEntry selected = Entry(EntryRole.Assistant, "selected plan");
+            source.Entries.Add(selected);
+            source.Entries.Add(Entry(EntryRole.User, "later request"));
+            source.Entries.Add(Entry(EntryRole.Assistant, "later decision"));
+            ContextSnapshot snapshot = ContextHandoffService.Capture(source, 10, selected);
+            selected.Blocks[0].Text = "mutated plan";
+            StringAssert.Contains("initial goal", snapshot.Markdown);
+            StringAssert.Contains("selected plan", snapshot.Markdown);
+            StringAssert.DoesNotContain("later request", snapshot.Markdown);
+            StringAssert.DoesNotContain("later decision", snapshot.Markdown);
+            StringAssert.DoesNotContain("mutated plan", snapshot.Markdown);
+            Assert.Throws<ArgumentException>(() => ContextHandoffService.Capture(source, 10,
+                Entry(EntryRole.Assistant, "foreign")));
+        }
+
+        [Test]
+        public void ResultCaptureOmitsInheritedContextAndUsesSelectedFinalOutcome()
+        {
+            SessionRecord child = new()
+            {
+                ContextSnapshot = new ContextSnapshot("parent", DateTime.UtcNow, "inherited goal"),
+            };
+            child.Entries.Add(Entry(EntryRole.User, "child request"));
+            TranscriptEntry result = Entry(EntryRole.Assistant, "final outcome");
+            child.Entries.Add(result);
+            child.Entries.Add(Entry(EntryRole.User, "unsent follow-up"));
+            string snapshot = ContextHandoffService.Capture(child, 1, result, false).Markdown;
+            StringAssert.Contains("final outcome", snapshot);
+            StringAssert.DoesNotContain("inherited goal", snapshot);
+            StringAssert.DoesNotContain("child request", snapshot);
+            StringAssert.DoesNotContain("unsent follow-up", snapshot);
+        }
+
+        [Test]
         public void LastMessagesExcludeTransportStateAndRemainFrozen()
         {
             SessionRecord source = new();

@@ -8,6 +8,8 @@ namespace DTech.Parley.Editor.UI
 {
     internal sealed class TranscriptView : VisualElement
     {
+        public event Action<TranscriptEntry, Rect> OnSendToTab;
+
         private const long RefreshIntervalMs = 50;
         private const long ScrollDelayMs = 10;
         private const float StickThreshold = 24.0f;
@@ -18,6 +20,7 @@ namespace DTech.Parley.Editor.UI
         private readonly Dictionary<TranscriptBlock, BlockView> _views = new ();
         private readonly Dictionary<string, ToolCardView> _toolCards = new ();
         private readonly Dictionary<TranscriptEntry, VisualElement> _entries = new ();
+        private readonly Dictionary<TranscriptEntry, Button> _forkButtons = new();
         private readonly HashSet<BlockView> _dirty = new ();
         private readonly List<BlockView> _flushing = new ();
 
@@ -85,6 +88,7 @@ namespace DTech.Parley.Editor.UI
             }
 
             _entries.Clear();
+            _forkButtons.Clear();
             _views.Clear();
             _toolCards.Clear();
             _dirty.Clear();
@@ -135,6 +139,33 @@ namespace DTech.Parley.Editor.UI
             {
                 AddBlock(entry, block);
             }
+
+            if (entry.Role == EntryRole.Assistant)
+            {
+                Button fork = new() { text = "Fork / Send to Tab", tooltip = "Branch through this message only" };
+                fork.style.alignSelf = Align.FlexEnd;
+                fork.clicked += () => OnSendToTab?.Invoke(entry, fork.worldBound);
+                _forkButtons.Add(entry, fork);
+                element.Add(fork);
+                fork.SetEnabled(CanFork(entry));
+            }
+        }
+
+        private void RefreshForkButtons()
+        {
+            foreach (var pair in _forkButtons)
+            {
+                if (!pair.Value.enabledSelf)
+                {
+                    pair.Value.SetEnabled(CanFork(pair.Key));
+                }
+            }
+        }
+
+        private static bool CanFork(TranscriptEntry entry)
+        {
+            return entry.Blocks.Exists(block => block.Kind == BlockKind.Text && block.IsFinished &&
+                string.IsNullOrEmpty(block.ParentToolUseId) && !string.IsNullOrWhiteSpace(block.Text));
         }
 
         private void AddBlock(TranscriptEntry entry, TranscriptBlock block)
@@ -173,7 +204,14 @@ namespace DTech.Parley.Editor.UI
                 return;
             }
 
-            container.Add(view);
+            if (_forkButtons.TryGetValue(entry, out Button fork))
+            {
+                container.Insert(container.IndexOf(fork), view);
+            }
+            else
+            {
+                container.Add(view);
+            }
         }
 
         private BlockView CreateView(TranscriptEntry entry, TranscriptBlock block)
@@ -307,6 +345,10 @@ namespace DTech.Parley.Editor.UI
 
         private void BlockChangedHandler(TranscriptBlock block)
         {
+            if (block.Kind == BlockKind.Text && block.IsFinished)
+            {
+                RefreshForkButtons();
+            }
             if (_views.TryGetValue(block, out BlockView view))
             {
                 _dirty.Add(view);
