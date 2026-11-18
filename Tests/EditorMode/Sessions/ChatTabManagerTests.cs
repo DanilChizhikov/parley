@@ -120,6 +120,61 @@ namespace DTech.Parley.Tests.EditorMode
             }
         }
 
+        [UnityTest]
+        public IEnumerator WrappedSidePanelTabsStayAboveLongMcpList()
+        {
+            if (SystemInfo.graphicsDeviceType == UnityEngine.Rendering.GraphicsDeviceType.Null)
+            {
+                Assert.Ignore("Requires a graphics device to verify editor layout.");
+            }
+
+            ChatSession session = _manager.Open(ParleyProfile.CreateCodex("Test", CodexAuthMethod.CliDefault));
+            List<McpServerStatus> servers = new();
+            for (int i = 0; i < 30; i++)
+            {
+                servers.Add(new McpServerStatus
+                {
+                    Name = "test-server-" + i,
+                    IsExternal = true,
+                    State = McpConnectionState.Connected,
+                    ToolCount = 1,
+                });
+            }
+            ((IAgentSink)session).McpStatusChanged(servers);
+
+            EditorWindow window = ScriptableObject.CreateInstance<EditorWindow>();
+            try
+            {
+                window.Show();
+                window.position = new Rect(0, 0, 360, 400);
+                VisualElement root = window.rootVisualElement;
+                ParleyStyles.Apply(root);
+                SidePanel side = new() { style = { width = 260, height = 320, flexShrink = 0 } };
+                root.Add(side);
+                side.Bind(session);
+                yield return null;
+
+                side.ShowTab(SidePanelTab.Mcp);
+                yield return null;
+                yield return null;
+                root.panel.GetType().GetMethod("ValidateLayout",
+                    BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+                    .Invoke(root.panel, null);
+
+                VisualElement header = side.Q(className: "pl-side__tabs");
+                ScrollView content = side.Q<ScrollView>(className: "pl-side__content");
+                VisualElement lastTab = header[header.childCount - 1];
+                Assert.Greater(lastTab.worldBound.yMin, header[0].worldBound.yMin, "Tabs must wrap in this test.");
+                Assert.Greater(content.verticalScroller.highValue, 0, "The MCP list must scroll in this test.");
+                Assert.LessOrEqual(lastTab.worldBound.yMax, header.worldBound.yMax + 1);
+                Assert.LessOrEqual(header.worldBound.yMax, content.worldBound.yMin + 1);
+            }
+            finally
+            {
+                window.Close();
+            }
+        }
+
         [TestCase(56000L, 200000L, "Context: 72% left · 144k / 200k", false)]
         [TestCase(0L, 200000L, "Context: 100% left · 200k / 200k", false)]
         [TestCase(200000L, 200000L, "Context: 0% left · 0 / 200k", true)]

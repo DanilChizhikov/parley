@@ -1119,6 +1119,7 @@
 .pl-side__tabs {
     flex-direction: row;
     flex-wrap: wrap;
+    flex-shrink: 0;
     padding: 4px;
     border-bottom-width: 1px;
     border-bottom-color: var(--pl-border);
