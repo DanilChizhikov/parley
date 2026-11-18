@@ -10,6 +10,7 @@ namespace DTech.Parley.Editor
         public HashSet<string> Disabled { get; } = new (StringComparer.Ordinal);
         public string LibraryRoot { get; set; }
         public string LibraryFolder { get; set; }
+        public string RoleInstructions { get; set; }
 
         public bool HasEnabledLibrarySkill
         {
@@ -36,6 +37,7 @@ namespace DTech.Parley.Editor
         {
             StringBuilder builder = new StringBuilder();
             builder.Append(LibraryRoot).Append('|');
+            builder.Append(RoleInstructions).Append('|');
             AppendSorted(builder, LibraryNames);
             builder.Append('|');
             AppendSorted(builder, Disabled);

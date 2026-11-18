@@ -31,6 +31,7 @@ project info. You can attach the selection, console errors, a Scene or Game scre
 - [Features](#features)
 - [Usage](#usage)
     - [Open the Window](#open-the-window)
+    - [Chat Tabs](#chat-tabs)
     - [Profiles and Sign-in](#profiles-and-sign-in)
     - [Codex](#codex)
     - [Local Models](#local-models)
@@ -73,7 +74,7 @@ project info. You can attach the selection, console errors, a Scene or Game scre
     ```
 3. Unity will automatically import the package.
 
-To pin a release, add its tag: `https://github.com/DanilChizhikov/parley.git#v0.4.0`.
+To pin a release, add its tag: `https://github.com/DanilChizhikov/parley.git#v0.5.0`.
 
 Parley depends on `com.unity.nuget.newtonsoft-json`; Unity installs it automatically.
 
@@ -115,6 +116,32 @@ Use `Window/DTech/Parley/AI Chat`. The toolbar holds the profile, model, permiss
 new line. While the agent works, Send queues your message and **Stop** interrupts the turn.
 
 **Panel** toggles the side panel. Its tabs are **Todos**, **Plan**, **Tasks**, **Agents**, **MCP**, **Skills** and **Usage**.
+
+### Chat Tabs
+Each tab owns its conversation, backend, model, effort and composer draft. Inactive tabs keep streaming; a spinner
+shows activity, `!` indicates pending input, and a dot marks an unread completed reply. Closing the Parley window
+keeps background chats alive. Closing a working tab asks before stopping its work.
+
+Use **Ctrl/Cmd+T** for a new tab, **Ctrl/Cmd+W** to close the current tab, and **Ctrl/Cmd+Tab** to cycle
+(add **Shift** to cycle backwards). Right-click a tab for **Duplicate Tab** or **Close Other Tabs**.
+Duplication is available for idle tabs: local history is copied, while Claude Code and Codex create independent
+native conversation forks. Fork failures appear in the chat rather than silently sharing the source conversation.
+
+Open tabs, their order and the active tab survive script reloads and editor restarts, including empty chats.
+An unavoidable reload marks active work **Interrupted**, expires approvals and never automatically replays messages
+or tool calls. Review the last action before continuing. New agent work is available in Edit Mode; finish or stop
+all chats before entering Play Mode.
+
+Right-click an idle tab for **Send Context to New Tab** (last 10, 25 or 50 messages) or
+**Summarize & Send to New Tab**, then choose the destination profile. A handoff freezes completed conversational
+text and file-change paths at that moment; it never copies tool protocol, pending approvals or backend session IDs.
+The new tab includes the snapshot with your next message. The footer shows an approximate text token count and
+its tooltip reports characters and handoff delivery status; provider-reported context usage remains separate.
+
+Summaries use a separate request with the current or destination model and leave the source conversation intact.
+Local API summaries have no tools; Claude summaries disable tools, MCP, hooks and session persistence.
+The current Codex app-server protocol cannot disable every tool, so Codex cannot generate a handoff summary;
+use a Local or Claude model to summarize, or transfer last messages. Every backend can receive either snapshot format.
 
 ### Profiles and Sign-in
 Profiles live in `Preferences/DTech/Parley`. Parley starts with a Claude Code profile, a Codex profile and two local
@@ -263,6 +290,46 @@ Local models talk to MCP servers through Parley's own MCP client. Every MCP tool
 the server claims about it. Some changes apply with your next message: the agent restarts and resumes the chat.
 
 ### Skills
+
+Use **+ ▾** in the tab bar or **New ▾** in the toolbar to open a blank chat or a role preset.
+Roles merge the packaged orchestrator, worker and reviewer, your Parley library and **Custom Skills Directory** in Preferences, in that
+order; later sources override the same `name`. Custom directories are scanned recursively for `.md` files.
+**Reload skills** refreshes the menu and reports malformed files, unavailable directories and name overrides.
+Within a directory, files and subdirectories load in ordinal order; the last same-name role wins.
+
+The **orchestrator** role dispatches tasks to **worker** and **reviewer** child chats using the current
+profile and model. It finishes its turn after delegation and resumes when Parley delivers child results.
+Handoffs run automatically; use **Stop Chain** to cancel the workflow.
+The **reviewer** role focuses on Unity C# changes and produces its review report in English.
+
+Role files use YAML frontmatter followed by system instructions:
+
+```markdown
+---
+name: project-reviewer
+description: Review project changes
+preferred_provider: current
+model: current
+handoff_mode: ask_approval
+allowed_targets: [developer, tester]
+---
+Review the change and report concrete defects with file and line references.
+```
+
+`preferred_provider` accepts a unique configured profile name or ID, or `claude`, `codex`, `local` when only one
+profile matches. Provider and model are required; `current` explicitly inherits the active profile or its model.
+Missing profiles, ambiguous providers and missing models produce an error when opening the role.
+The parser supports quoted and plain scalars, folded/literal text blocks, inline comments, and flow or block
+sequences for `allowed_targets`. Unknown frontmatter is preserved when editing library skills.
+`handoff_mode` accepts `auto` or `ask_approval` (default). Roles can delegate to their allowed targets; the
+**Orchestration Bar** below the tabs shows the chain, status and delivered results. Click a node to select its tab.
+For `ask_approval`, **Approve & Run** releases the pending handoff; click the target node to review it in a tab
+before approving. The bar and target tab share the same approval, including a separate result review before
+returning output to the parent. **Stop Chain** cancels that run's active streams and queued handoffs. After an
+editor reload, interrupted chains show their status and never replay automatically.
+Role instructions, model, provider and metadata are
+snapshotted in each session, survive reloads, and apply to Local, Claude Code and Codex without changing profiles.
+
 The **Skills** tab lists the skills of the current chat, each with a checkbox for this chat. The **All** checkbox in
 the header of **Parley skills** and **From Claude Code** / **From Codex** switches the whole section at once.
 
@@ -344,8 +411,14 @@ prompt cache and the whole context is written again, the tab says so. **Copy XML
 so you can paste it into a chat and ask the agent where the tokens went. Usage is recorded for Claude Code, Codex and
 local models.
 
+The status bar shows the active chat's remaining context as a percentage and tokens, for example
+`Context: 72% left · 144k / 200k`. Hover for used and remaining tokens and the source of the reading. Local-model
+readings are estimates marked with `~`. Until the backend reports context usage, the indicator shows `Context: —`.
+The separate text-only estimate is available in the tooltip.
+
 With a Claude Code or Codex subscription, a circle next to **Send** shows what is left of your plan: the 5-hour session
 on the left half and the weekly limit on the right. Click it for the percentages, a countdown and the reset time.
+Account details, model lists and plan limits load automatically when you open or select a chat, before you send a message.
 
 ### Debug Preview
 The preview is for working on Parley itself. Add `PARLEY_DEBUGG` to **Project Settings > Player > Scripting Define

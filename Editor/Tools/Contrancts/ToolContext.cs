@@ -14,5 +14,6 @@ namespace DTech.Parley.Editor.Tools
         public Action<PermissionMode> SetMode { get; set; } = _ => { };
         public Func<PendingRequest, CancellationToken, Task<Decision>> AskUser { get; set; }
         public string ToolUseId { get; set; }
+        public string TurnCorrelationId { get; set; }
     }
 }

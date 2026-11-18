@@ -46,6 +46,18 @@ namespace DTech.Parley.Editor
 			set => Set(ref _defaultMode, value);
 		}
 
+		public string CustomSkillsDirectory
+		{
+			get => _customSkillsDirectory;
+			set => Set(ref _customSkillsDirectory, value);
+		}
+
+        public int MaxHops
+        {
+            get => Math.Max(1, _maxHops);
+            set => Set(ref _maxHops, Math.Max(1, value));
+        }
+
 		public bool LockReloadDuringTurn
 		{
 			get => _lockReloadDuringTurn;
@@ -94,6 +106,8 @@ namespace DTech.Parley.Editor
 		[SerializeField] private string _activeProfileId;
 		[SerializeField] private string _cliPathOverride;
 		[SerializeField] private string _codexCliPathOverride;
+		[SerializeField] private string _customSkillsDirectory;
+        [SerializeField] private int _maxHops = 4;
 		[SerializeField] private PermissionMode _defaultMode = PermissionMode.Default;
 		[SerializeField] private bool _lockReloadDuringTurn = true;
 		[SerializeField] private bool _openLoginLinks = true;

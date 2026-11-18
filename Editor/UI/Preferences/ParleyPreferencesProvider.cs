@@ -6,6 +6,7 @@ using DTech.Parley.Editor.Agents.Codex;
 using DTech.Parley.Editor.Secrets;
 using DTech.Parley.Editor.Settings;
 using DTech.Parley.Editor.Tools;
+using DTech.Parley.Editor.Skills;
 using UnityEditor;
 using UnityEngine.UIElements;
 
@@ -44,6 +45,34 @@ namespace DTech.Parley.Editor.UI
         {
             ParleyUserSettings settings = ParleyUserSettings.instance;
             VisualElement section = Section("General");
+            TextField skills = new TextField("Custom Skills Directory")
+            {
+                value = settings.CustomSkillsDirectory ?? string.Empty,
+                isDelayed = true,
+                tooltip = "Loads .md roles recursively. Custom names override built-in roles.",
+            };
+            skills.RegisterValueChangedCallback(evt => settings.CustomSkillsDirectory = evt.newValue);
+            section.Add(skills);
+            IntegerField hops = new IntegerField("Max Hops")
+            {
+                value = settings.MaxHops, isDelayed = true,
+                tooltip = "Maximum delegation depth per run. Root is depth 0; changes apply to new runs.",
+            };
+            hops.RegisterValueChangedCallback(evt =>
+            {
+                settings.MaxHops = evt.newValue;
+                hops.SetValueWithoutNotify(settings.MaxHops);
+            });
+            section.Add(hops);
+            HelpBox diagnostics = new HelpBox(string.Join("\n", SkillRegistry.Current.Diagnostics), HelpBoxMessageType.Info);
+            section.Add(new Button(() =>
+            {
+                SkillRegistry.Reload();
+                diagnostics.text = SkillRegistry.Current.Diagnostics.Count == 0
+                    ? "Loaded " + SkillRegistry.Current.Skills.Count + " roles."
+                    : string.Join("\n", SkillRegistry.Current.Diagnostics);
+            }) { text = "Reload skills" });
+            section.Add(diagnostics);
             section.Add(new CliPathField("Claude Code CLI path", settings.CliPathOverride, value => settings.CliPathOverride = value, DetectClaudeAsync));
             section.Add(new CliPathField("Codex CLI path", settings.CodexCliPathOverride, value => settings.CodexCliPathOverride = value, DetectCodexAsync));
             EnumField mode = new EnumField("Default permission mode", settings.DefaultMode)

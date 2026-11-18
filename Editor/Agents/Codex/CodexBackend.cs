@@ -16,7 +16,7 @@ using Debug = UnityEngine.Debug;
 
 namespace DTech.Parley.Editor.Agents.Codex
 {
-    internal sealed class CodexBackend : IAgentBackend
+    internal sealed class CodexBackend : IAgentBackend, IAgentPermissionBoundary
     {
         private const int InitializeTimeoutMs = 60000;
         private const int RequestTimeoutMs = 30000;
@@ -45,7 +45,7 @@ namespace DTech.Parley.Editor.Agents.Codex
 
         public bool IsBusy { get; private set; }
 
-        public string SessionId => _threadId ?? _resumeThreadId;
+        public string SessionId => _threadId ?? (_forkPending ? null : _resumeThreadId);
 
         public PermissionMode Mode { get; private set; }
 
@@ -55,8 +55,10 @@ namespace DTech.Parley.Editor.Agents.Codex
         private Task _starting;
         private PendingRequest _planRequest;
         private string _resumeThreadId;
+        private bool _forkPending;
         private string _threadId;
         private string _turnId;
+        private string _turnCorrelationId;
         private string _model;
         private string _activeModel;
         private string _effort;
@@ -80,11 +82,13 @@ namespace DTech.Parley.Editor.Agents.Codex
             IAgentSink sink,
             ToolCatalog unityTools,
             string resumeThreadId,
-            PermissionMode mode)
+            PermissionMode mode,
+            bool forkSession = false)
         {
             _profile = profile;
             _sink = sink;
             _resumeThreadId = resumeThreadId;
+            _forkPending = forkSession;
             _model = string.IsNullOrEmpty(profile.Model) ? null : profile.Model;
             _effort = string.IsNullOrEmpty(profile.Effort) ? null : profile.Effort;
             Mode = CodexPermissions.Normalize(mode);
@@ -93,6 +97,7 @@ namespace DTech.Parley.Editor.Agents.Codex
             {
                 AdditionalDirectories = ParleyProjectSettings.instance.AdditionalDirectories,
                 GetMode = () => Mode,
+                TurnCorrelationId = _turnCorrelationId,
             });
         }
 
@@ -110,14 +115,20 @@ namespace DTech.Parley.Editor.Agents.Codex
 
         public async Task StartAsync(CancellationToken token)
         {
-            if (IsRunning)
-            {
-                return;
-            }
-
             if (_starting != null)
             {
                 await _starting;
+                return;
+            }
+
+            token.ThrowIfCancellationRequested();
+            if (_disposed)
+            {
+                throw new ObjectDisposedException(nameof(CodexBackend));
+            }
+
+            if (IsRunning)
+            {
                 return;
             }
 
@@ -134,16 +145,19 @@ namespace DTech.Parley.Editor.Agents.Codex
 
         public async Task SendAsync(UserTurn turn, CancellationToken token)
         {
+            _turnCorrelationId = turn.CorrelationId;
+            if (_starting != null)
+            {
+                await _starting;
+            }
+
             if (_restartPending && !IsBusy && _process != null)
             {
                 _restartPending = false;
                 await StopProcess();
             }
 
-            if (!IsRunning)
-            {
-                await StartAsync(token);
-            }
+            await StartAsync(token);
 
             CancelPlanRequest();
             string text = (turn.Text ?? string.Empty).Trim();
@@ -167,6 +181,7 @@ namespace DTech.Parley.Editor.Agents.Codex
                 return;
             }
 
+            token.ThrowIfCancellationRequested();
             await StartTurnAsync(input);
         }
 
@@ -198,12 +213,19 @@ namespace DTech.Parley.Editor.Agents.Codex
 
             _threadId = null;
             _resumeThreadId = null;
+            _forkPending = false;
         }
 
         public void SetPermissionMode(PermissionMode mode)
         {
             Mode = CodexPermissions.Normalize(mode);
             _sink.ModeChanged(Mode);
+        }
+
+        public void RestrictPermissions(PermissionMode mode)
+        {
+            _ = StopProcess(true);
+            SetPermissionMode(mode);
         }
 
         public void SetModel(string model)
@@ -516,7 +538,8 @@ namespace DTech.Parley.Editor.Agents.Codex
             JToken response;
             try
             {
-                response = await SendRequestAsync("thread/resume", ThreadParameters(true), InitializeTimeoutMs);
+                response = await SendRequestAsync(_forkPending ? "thread/fork" : "thread/resume",
+                    ThreadParameters(true), InitializeTimeoutMs);
             }
             catch (InvalidOperationException exception)
             {
@@ -532,6 +555,7 @@ namespace DTech.Parley.Editor.Agents.Codex
         private async Task StartThreadAsync()
         {
             _resumeThreadId = null;
+            _forkPending = false;
             JToken response = await SendRequestAsync("thread/start", ThreadParameters(false), InitializeTimeoutMs);
             ApplyThread(response);
         }
@@ -580,6 +604,7 @@ namespace DTech.Parley.Editor.Agents.Codex
             }
 
             _threadId = threadId;
+            _forkPending = false;
             _resumeThreadId = threadId;
             _activeModel = (string)response["model"] ?? _activeModel;
             WarnIfModelUnavailable();
@@ -628,6 +653,10 @@ namespace DTech.Parley.Editor.Agents.Codex
 
             builder.Append(" Do not edit files under Library/ or Temp/, and never change GUIDs in .meta files by hand.");
             string extra = ParleyProjectSettings.instance.AppendSystemPrompt;
+            if (!string.IsNullOrWhiteSpace(_skills.RoleInstructions))
+            {
+                builder.Append("\n\n# Role instructions\n").Append(_skills.RoleInstructions);
+            }
             if (!string.IsNullOrWhiteSpace(extra))
             {
                 builder.Append("\n\n").Append(extra.Trim());
@@ -780,7 +809,7 @@ namespace DTech.Parley.Editor.Agents.Codex
             return SecretStores.Default.TryGet(SecretStores.Key(_profile.Id, field), out string secret) ? secret : null;
         }
 
-        private Task StopProcess()
+        private Task StopProcess(bool immediate = false)
         {
             ChildProcess process = _process;
             if (process == null)
@@ -789,6 +818,7 @@ namespace DTech.Parley.Editor.Agents.Codex
             }
 
             Detach(process);
+            if (immediate) process.Kill();
             process.CloseInput();
             int processId = process.ProcessId;
             string credentialsPath = CodexEnvironment.ManagedCredentialsPath(_profile);
@@ -1119,6 +1149,12 @@ namespace DTech.Parley.Editor.Agents.Codex
 
         private async Task HandleToolCallAsync(JToken rpcId, JObject parameters)
         {
+            if (((string)parameters["threadId"] != null && (string)parameters["threadId"] != _threadId) ||
+                ((string)parameters["turnId"] != null && (string)parameters["turnId"] != _turnId))
+            {
+                Write(CodexWire.Error(rpcId, -32602, "Tool call belongs to an inactive turn."));
+                return;
+            }
             JObject response;
             try
             {

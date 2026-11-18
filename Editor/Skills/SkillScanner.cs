@@ -8,6 +8,58 @@ namespace DTech.Parley.Editor.Skills
     {
         private static readonly string[] SkillFolders = { ".claude/skills", ".agents/skills" };
 
+        public static List<SkillDocument> ScanDocuments(string folder, List<string> diagnostics)
+        {
+            List<SkillDocument> documents = new();
+            if (string.IsNullOrWhiteSpace(folder)) return documents;
+            try
+            {
+                if (!Directory.Exists(folder))
+                {
+                    diagnostics.Add(folder + ": directory does not exist.");
+                    return documents;
+                }
+                ScanDirectory(folder, documents, diagnostics);
+            }
+            catch (Exception exception) when (exception is IOException || exception is UnauthorizedAccessException
+                || exception is ArgumentException || exception is NotSupportedException)
+            {
+                diagnostics.Add(folder + ": " + exception.Message);
+            }
+            return documents;
+        }
+
+        private static void ScanDirectory(string folder, List<SkillDocument> documents, List<string> diagnostics)
+        {
+            string[] files = Directory.GetFiles(folder, "*.md");
+            Array.Sort(files, StringComparer.Ordinal);
+            foreach (string file in files)
+            {
+                try
+                {
+                    SkillDocument document = SkillMarkdown.Parse(File.ReadAllText(file));
+                    document.FolderPath = Path.GetDirectoryName(file);
+                    documents.Add(document);
+                }
+                catch (Exception exception) when (exception is IOException || exception is UnauthorizedAccessException)
+                {
+                    diagnostics.Add(file + ": " + exception.Message);
+                }
+            }
+            string[] directories = Directory.GetDirectories(folder);
+            Array.Sort(directories, StringComparer.Ordinal);
+            foreach (string directory in directories)
+            {
+                if (Path.GetFileName(directory).StartsWith(".", StringComparison.Ordinal)
+                    || (File.GetAttributes(directory) & FileAttributes.ReparsePoint) != 0) continue;
+                try { ScanDirectory(directory, documents, diagnostics); }
+                catch (Exception exception) when (exception is IOException || exception is UnauthorizedAccessException)
+                {
+                    diagnostics.Add(directory + ": " + exception.Message);
+                }
+            }
+        }
+
         public static List<SkillInfo> Scan(SkillConfiguration configuration)
         {
             List<SkillInfo> skills = new ();

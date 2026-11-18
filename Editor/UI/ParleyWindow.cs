@@ -54,6 +54,10 @@ namespace DTech.Parley.Editor.UI
         };
 
         private ChatSession _session;
+        private IChatTabManager _tabs;
+        private ChatTabManager _previewTabs;
+        private ChatTabBar _tabBar;
+        private OrchestrationBar _orchestrationBar;
         private TranscriptView _transcript;
         private SidePanel _side;
         private Composer _composer;
@@ -70,6 +74,10 @@ namespace DTech.Parley.Editor.UI
         private ToolbarButton _presetButton;
         private ToolbarButton _updateButton;
         private ToolbarButton _historyButton;
+        private ToolbarButton _contextButton;
+        private ToolbarButton _parentButton;
+        private ToolbarButton _resultButton;
+        private VisualElement _lineage;
         private ToolbarToggle _sideToggle;
         private ToolbarButton _previewButton;
         private bool _stateDirty = true;
@@ -218,34 +226,53 @@ namespace DTech.Parley.Editor.UI
             #if PARLEY_DEBUGG
             if (_preview)
             {
+                _previewTabs = ChatTabInstaller.CreatePreview();
+                _tabs = _previewTabs;
+                _tabs.OnChanged += TabsChangedHandler;
                 StartSession(CreatePreviewProfile(_previewKind), null);
                 return;
             }
             #endif
 
-            ParleyUserSettings settings = ParleyUserSettings.instance;
-            SessionRecord record = SessionStore.Load(settings.LastSessionId);
-            ParleyProfile profile = record != null ? settings.Find(record.ProfileId) : null;
-            if (profile == null)
-            {
-                profile = settings.ActiveProfile;
-                record = record != null && record.ProfileId == profile.Id ? record : null;
-            }
-
-            StartSession(profile, record);
+            _tabs = ChatTabInstaller.Manager;
+            _tabs.OnChanged += TabsChangedHandler;
+            _tabs.OnBackgroundCompleted += BackgroundCompletedHandler;
+            BindActiveSession();
         }
 
         private void OnDisable()
         {
             ParleyUpdates.OnChanged -= MarkDirty;
             EndSession();
+            if (_tabs != null)
+            {
+                _tabs.OnChanged -= TabsChangedHandler;
+                _tabs.OnBackgroundCompleted -= BackgroundCompletedHandler;
+                _tabs.Save();
+            }
+
+            _previewTabs?.Dispose();
+            _previewTabs = null;
+            _tabs = null;
         }
 
         private void CreateGUI()
         {
             VisualElement root = rootVisualElement;
             ParleyStyles.Apply(root);
+            _tabBar = new ChatTabBar(_tabs, CloseTab);
+            root.Add(_tabBar);
+            _orchestrationBar = new OrchestrationBar(_tabs);
+            root.Add(_orchestrationBar);
             root.Add(BuildToolbar());
+            root.Add(_orchestrationBar.TargetApproval);
+            _lineage = new Toolbar();
+            _parentButton = new ToolbarButton(SelectParent);
+            _resultButton = new ToolbarButton(SendResultBack) { text = "Send Result Back" };
+            _lineage.Add(_parentButton);
+            _lineage.Add(_resultButton);
+            root.Add(_lineage);
+            root.RegisterCallback<KeyDownEvent>(TabShortcutHandler, TrickleDown.TrickleDown);
             _authCard = new AuthCard();
             root.Add(_authCard);
             _trustCard = new TrustCard();
@@ -254,6 +281,7 @@ namespace DTech.Parley.Editor.UI
             _split = new TwoPaneSplitView(1, ParleyUserSettings.instance.SidePanelWidth, TwoPaneSplitViewOrientation.Horizontal);
             _split.AddToClassList("pl-split");
             _transcript = new TranscriptView();
+            _transcript.OnSendToTab += ShowMessageHandoff;
             _side = new SidePanel();
             _side.OnOpenAgentsWindow += OpenAgentsWindow;
             _side.RegisterCallback<GeometryChangedEvent>(SideGeometryChangedHandler);
@@ -297,6 +325,9 @@ namespace DTech.Parley.Editor.UI
             toolbar.Add(_mcpButton);
             toolbar.Add(_skillsButton);
             toolbar.Add(_presetButton);
+            _contextButton = new ToolbarButton(() => ShowHandoff(null, _contextButton.worldBound, false))
+                { text = "Send Context →", tooltip = "Prepare context in another tab; sending remains manual" };
+            toolbar.Add(_contextButton);
             #if PARLEY_DEBUGG
             if (_preview)
             {
@@ -311,7 +342,8 @@ namespace DTech.Parley.Editor.UI
             _updateButton.AddToClassList("pl-update");
             ParleyStyles.SetVisible(_updateButton, false);
             toolbar.Add(_updateButton);
-            toolbar.Add(new ToolbarButton(NewChat) { text = "New", tooltip = "Start a new chat" });
+            toolbar.Add(new ToolbarButton(() => _tabBar.ShowNewTabMenu())
+                { text = "New ▾", tooltip = "Start a blank chat or role preset" });
             _historyButton = new ToolbarButton(ShowHistoryMenu) { text = "History ▾", tooltip = "Resume or delete earlier chats" };
             toolbar.Add(_historyButton);
             _sideToggle = new ToolbarToggle
@@ -328,15 +360,7 @@ namespace DTech.Parley.Editor.UI
 
         private void StartSession(ParleyProfile profile, SessionRecord record)
         {
-            EndSession();
-            #if PARLEY_DEBUGG
-            _session = new ChatSession(profile, record, _preview);
-            #else
-            _session = new ChatSession(profile, record);
-            #endif
-            
-            _session.OnStateChanged += MarkDirty;
-            _session.OnRequestRaised += RequestRaisedHandler;
+            _tabs.Open(profile, record);
             #if PARLEY_DEBUGG
             if (!_preview)
             {
@@ -346,6 +370,25 @@ namespace DTech.Parley.Editor.UI
             ParleyUserSettings.instance.SetActive(profile);
             #endif
 
+            BindActiveSession();
+        }
+
+        private void BindActiveSession()
+        {
+            if (_session == _tabs?.Active)
+            {
+                return;
+            }
+
+            EndSession();
+            _session = _tabs?.Active;
+            if (_session == null)
+            {
+                return;
+            }
+
+            _session.OnStateChanged += MarkDirty;
+            _session.OnRequestRaised += RequestRaisedHandler;
             BindViews();
             _ = _session.EnsureStartedAsync();
         }
@@ -359,8 +402,10 @@ namespace DTech.Parley.Editor.UI
 
             _session.OnStateChanged -= MarkDirty;
             _session.OnRequestRaised -= RequestRaisedHandler;
+            _composer?.SaveDraft(_session.Record);
             _transcript?.Unbind();
-            _session.Dispose();
+            _side?.Bind(null);
+            _authCard?.Bind(null);
             _session = null;
         }
 
@@ -378,6 +423,7 @@ namespace DTech.Parley.Editor.UI
             _authCard.Bind(session);
             _composer.SetCommandSource(() => session.Commands);
             _composer.SetLimitsSource(() => session.RateLimits, session.RefreshRateLimits);
+            _composer.RestoreDraft(session.Record);
             MarkDirty();
         }
 
@@ -404,6 +450,13 @@ namespace DTech.Parley.Editor.UI
 
         private void RefreshStateIfDirty()
         {
+            if (_session != null)
+            {
+                _composer?.SaveDraft(_session.Record);
+            }
+
+            _tabBar?.Refresh();
+            _orchestrationBar?.Refresh();
             if (!_stateDirty || _session == null)
             {
                 return;
@@ -431,7 +484,8 @@ namespace DTech.Parley.Editor.UI
             ChatPreset preset = ChatPresets.FindMatch(session.Record, ParleyUserSettings.instance.Presets);
             _presetButton.text = preset != null ? "Preset: " + preset.Name + " ▾" : "Preset ▾";
             RefreshUpdateButton();
-            _composer.SetBusy(session.IsBusy);
+            RefreshLineage();
+            _composer.SetBusy(session.IsBusy, _tabs.Engine?.IsSessionActive(session) == true);
             _composer.RefreshLimits(profile.Kind != ProfileKind.Local);
             _statusBar.Refresh(session);
             _authCard.Refresh();
@@ -809,6 +863,15 @@ namespace DTech.Parley.Editor.UI
 
         private void Resume(string id)
         {
+            foreach (ChatSession session in _tabs.Tabs)
+            {
+                if (session.SessionId == id)
+                {
+                    _tabs.Select(session);
+                    return;
+                }
+            }
+
             SessionRecord record = SessionStore.Load(id);
             if (record == null)
             {
@@ -832,11 +895,22 @@ namespace DTech.Parley.Editor.UI
                 return;
             }
 
-            SessionStore.Delete(id);
-            if (_session?.Record.Id == id)
+            ChatSession open = null;
+            foreach (ChatSession session in _tabs.Tabs)
             {
-                NewChat();
+                if (session.SessionId == id)
+                {
+                    open = session;
+                    break;
+                }
             }
+
+            if (open != null && !CloseTab(open))
+            {
+                return;
+            }
+
+            SessionStore.Delete(id);
         }
 
         #if PARLEY_DEBUGG
@@ -905,6 +979,85 @@ namespace DTech.Parley.Editor.UI
             }
         }
 
+        private void RefreshLineage()
+        {
+            bool hasParent = !string.IsNullOrEmpty(_session?.Record.ParentSessionId);
+            ParleyStyles.SetVisible(_lineage, hasParent);
+            _contextButton.SetEnabled(_session != null);
+            if (!hasParent)
+            {
+                return;
+            }
+
+            ChatSession parent = ManualContextHandoff.FindParent(_tabs, _session);
+            int parentNumber = 0;
+            foreach (ChatSession tab in _tabs.Tabs)
+            {
+                parentNumber++;
+                if (tab == parent)
+                {
+                    break;
+                }
+            }
+
+            _parentButton.text = parent == null ? "← Parent tab closed"
+                : "← from Tab #" + parentNumber + " · " + parent.Title;
+            _parentButton.tooltip = parent == null ? "Open the parent from History to navigate or return a result"
+                : "Jump to parent tab";
+            _parentButton.SetEnabled(parent != null);
+            _resultButton.SetEnabled(parent != null && !parent.HasActiveWork && !_session.HasActiveWork);
+            _resultButton.tooltip = parent?.HasActiveWork == true ? "The parent tab is busy. Wait before returning a result."
+                : _session.HasActiveWork ? "Wait for this chat to finish before returning its result."
+                : "Prepare the final outcome in the parent composer; review and send manually";
+        }
+
+        private void SelectParent()
+        {
+            ChatSession parent = ManualContextHandoff.FindParent(_tabs, _session);
+            if (parent != null)
+            {
+                _tabs.Select(parent);
+            }
+        }
+
+        private void ShowMessageHandoff(TranscriptEntry entry, Rect anchor)
+        {
+            ShowHandoff(entry, anchor, false);
+        }
+
+        private void SendResultBack()
+        {
+            TranscriptEntry result = _session.Record.Entries.FindLast(entry => entry.Role == EntryRole.Assistant &&
+                entry.Blocks.Exists(block => block.Kind == BlockKind.Text && block.IsFinished &&
+                    string.IsNullOrEmpty(block.ParentToolUseId) && !string.IsNullOrWhiteSpace(block.Text)));
+            if (result == null)
+            {
+                ShowNotification(new GUIContent("No completed assistant result to return"), NotificationSeconds);
+                return;
+            }
+
+            ShowHandoff(result, _resultButton.worldBound, true);
+        }
+
+        private void ShowHandoff(TranscriptEntry entry, Rect anchor, bool returningResult)
+        {
+            if (_session == null)
+            {
+                return;
+            }
+
+            Rect screenRect = new Rect(position.x + anchor.x, position.y + anchor.y, anchor.width, anchor.height);
+            ContextHandoffWindow.Show(screenRect, _tabs, _session, entry, returningResult,
+                () => _composer?.SaveDraft(_session.Record), target =>
+                {
+                    BindActiveSession();
+                    _composer.RestoreDraft(target.Record);
+                    _composer.FocusInput();
+                    ShowNotification(new GUIContent("Context prepared. Review and send manually."), NotificationSeconds);
+                    MarkDirty();
+                });
+        }
+
         private void SubmitHandler(string text, List<ChatAttachment> attachments)
         {
             if (_session == null)
@@ -919,6 +1072,64 @@ namespace DTech.Parley.Editor.UI
         private void StopHandler()
         {
             _session?.Interrupt();
+        }
+
+        private bool CloseTab(ChatSession session)
+        {
+            if (session.HasActiveWork && !EditorUtility.DisplayDialog("Close active chat",
+                "Stop this chat and its background work?", "Stop and close", "Cancel"))
+            {
+                return false;
+            }
+
+            ParleyProfile profile = session.Profile;
+            _tabs.Close(session);
+            if (_tabs.Tabs.Count == 0)
+            {
+                StartSession(profile, null);
+            }
+
+            return true;
+        }
+
+        private void TabsChangedHandler()
+        {
+            BindActiveSession();
+            MarkDirty();
+        }
+
+        private void BackgroundCompletedHandler(ChatSession session)
+        {
+            ShowNotification(new GUIContent("Reply ready: " + session.Title), NotificationSeconds);
+        }
+
+        private void TabShortcutHandler(KeyDownEvent evt)
+        {
+            if (!evt.actionKey && !evt.ctrlKey)
+            {
+                return;
+            }
+
+            switch (evt.keyCode)
+            {
+                case KeyCode.T:
+                    NewChat();
+                    break;
+                case KeyCode.W:
+                    if (_session != null)
+                    {
+                        CloseTab(_session);
+                    }
+                    break;
+                case KeyCode.Tab:
+                    _tabs.Cycle(evt.shiftKey ? -1 : 1);
+                    break;
+                default:
+                    return;
+            }
+
+            evt.StopImmediatePropagation();
+            evt.PreventDefault();
         }
 
         private void RequestRaisedHandler(PendingRequest request)

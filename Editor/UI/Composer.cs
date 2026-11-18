@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using DTech.Parley.Editor.Sessions;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.UIElements;
@@ -33,6 +34,7 @@ namespace DTech.Parley.Editor.UI
         private readonly List<(string insert, string name, string detail)> _suggestionItems = new ();
         private readonly HashSet<string> _suggestedNames = new (StringComparer.OrdinalIgnoreCase);
         private readonly ComposerUndoStack _undo = new ();
+        private bool _workflowActive;
 
         private Func<IReadOnlyList<SlashCommandInfo>> _commands = () => Array.Empty<SlashCommandInfo>();
         private int _selectedSuggestion;
@@ -101,16 +103,52 @@ namespace DTech.Parley.Editor.UI
             _limits.UpdateView();
         }
 
-        public void SetBusy(bool busy)
+        public void SetBusy(bool busy, bool workflowActive = false)
         {
-            ParleyStyles.SetVisible(_stop, busy);
-            _send.text = busy ? "Queue ↵" : "Send ↵";
-            _send.tooltip = busy ? "Queue this message: it is sent when the current reply finishes (Enter)" : "Send (Enter)";
+            _workflowActive = workflowActive;
+            ParleyStyles.SetVisible(_stop, busy || workflowActive);
+            _send.text = workflowActive ? "Working…" : busy ? "Queue ↵" : "Send ↵";
+            _send.tooltip = workflowActive ? "Finish or stop the active workflow before sending another message."
+                : busy ? "Queue this message: it is sent when the current reply finishes (Enter)" : "Send (Enter)";
+            UpdateSendEnabled();
         }
 
         public void FocusInput()
         {
             _input.Focus();
+        }
+
+        public void SaveDraft(SessionRecord record)
+        {
+            bool unchanged = record.Draft == _input.value && record.DraftAttachments != null &&
+                record.DraftAttachments.Count == _attachments.Count;
+            for (int i = 0; unchanged && i < _attachments.Count; i++)
+            {
+                unchanged = ReferenceEquals(record.DraftAttachments[i], _attachments[i]);
+            }
+
+            if (unchanged)
+            {
+                return;
+            }
+
+            record.Draft = _input.value;
+            record.DraftAttachments = new List<ChatAttachment>(_attachments);
+        }
+
+        public void RestoreDraft(SessionRecord record)
+        {
+            _input.SetValueWithoutNotify(record.Draft ?? string.Empty);
+            _attachments.Clear();
+            if (record.DraftAttachments != null)
+            {
+                _attachments.AddRange(record.DraftAttachments);
+            }
+
+            _undo.Clear();
+            HideSuggestions();
+            RebuildChips();
+            UpdateSendEnabled();
         }
 
         public void AddAttachment(ChatAttachment attachment)
@@ -140,6 +178,7 @@ namespace DTech.Parley.Editor.UI
 
         private void Submit()
         {
+            if (_workflowActive) return;
             string text = (_input.value ?? string.Empty).Trim();
             if (text.Length == 0 && _attachments.Count == 0)
             {
@@ -234,7 +273,7 @@ namespace DTech.Parley.Editor.UI
 
         private void UpdateSendEnabled()
         {
-            _send.SetEnabled(_attachments.Count > 0 || !string.IsNullOrWhiteSpace(_input.value));
+            _send.SetEnabled(!_workflowActive && (_attachments.Count > 0 || !string.IsNullOrWhiteSpace(_input.value)));
         }
 
         private void UpdateSuggestions()

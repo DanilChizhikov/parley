@@ -154,6 +154,7 @@ namespace DTech.Parley.Editor.Agents.Local
 		public async Task SendAsync(UserTurn turn, CancellationToken token)
 		{
 			await StartAsync(token);
+            token.ThrowIfCancellationRequested();
 			string text = (turn.Text ?? string.Empty).Trim();
 			if (!_running && text == CompactCommand)
 			{
@@ -162,6 +163,7 @@ namespace DTech.Parley.Editor.Agents.Local
 			}
 
 			_queued.Enqueue(turn);
+            _context.TurnCorrelationId = turn.CorrelationId;
 			if (!_running)
 			{
 				_ = RunAsync(false);
@@ -393,6 +395,10 @@ namespace DTech.Parley.Editor.Agents.Local
 			_roundCatalog = BuildRoundCatalog();
 			SystemPromptRequest promptRequest = new SystemPromptRequest(Mode, _roundCatalog, _profile.TextToolCalls, ParleyProjectSettings.instance, Application.unityVersion, _enabledSkills);
 			string system = SystemPromptBuilder.Build(promptRequest);
+			if (!string.IsNullOrWhiteSpace(_skills.RoleInstructions))
+			{
+				system += "\n\n# Role instructions\n" + _skills.RoleInstructions;
+			}
 			JArray tools = includeTools && !_profile.TextToolCalls && _roundCatalog.Tools.Count > 0 ? SystemPromptBuilder.FunctionTools(_roundCatalog) : null;
 			int fixedChars = system.Length + (tools == null ? 0 : tools.ToString(Formatting.None).Length);
 			int budget = window - maxTokens - _budget.Tokens(fixedChars) - 256;

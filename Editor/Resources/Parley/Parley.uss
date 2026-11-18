@@ -8,6 +8,87 @@
     color: var(--pl-text);
 }
 
+.pl-chat-tabs {
+    flex-shrink: 0;
+    max-height: 52px;
+    background-color: var(--pl-surface);
+    padding: 4px 4px 0 4px;
+}
+
+.pl-chat-tab {
+    flex-direction: row;
+    flex-shrink: 0;
+    align-items: center;
+    max-width: 250px;
+    height: 28px;
+    margin-right: 4px;
+    border-radius: 5px 5px 0 0;
+    border-bottom-width: 2px;
+    border-bottom-color: transparent;
+}
+
+.pl-chat-tab:hover {
+    background-color: var(--pl-surface-3);
+}
+
+.pl-chat-tab > Button,
+.pl-chat-tabs .pl-chat-tabs__add {
+    margin: 0;
+    border-width: 0;
+    border-radius: 3px;
+    background-color: transparent;
+    color: var(--pl-text-muted);
+    -unity-font-style: normal;
+}
+
+.pl-chat-tab > .pl-chat-tab__select {
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-width: 0;
+    max-width: 220px;
+    height: 26px;
+    padding: 0 8px;
+    -unity-text-align: middle-left;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pl-chat-tab > .pl-chat-tab__select:hover,
+.pl-chat-tab > .pl-chat-tab__select:active {
+    background-color: transparent;
+}
+
+.pl-chat-tab > .pl-chat-tab__close {
+    flex-shrink: 0;
+    width: 20px;
+    height: 20px;
+    margin-right: 3px;
+    padding: 0;
+    font-size: 15px;
+}
+
+.pl-chat-tab > .pl-chat-tab__close:hover,
+.pl-chat-tabs .pl-chat-tabs__add:hover {
+    background-color: var(--pl-border);
+    color: var(--pl-text);
+}
+
+.pl-chat-tab--active {
+    background-color: var(--pl-bg);
+    border-bottom-color: var(--pl-accent);
+}
+
+.pl-chat-tab--active > Button {
+    color: var(--pl-text);
+}
+
+.pl-chat-tabs .pl-chat-tabs__add {
+    flex-shrink: 0;
+    height: 26px;
+    padding: 0 8px;
+}
+
 .pl-text {
     white-space: normal;
 }
@@ -1038,6 +1119,7 @@
 .pl-side__tabs {
     flex-direction: row;
     flex-wrap: wrap;
+    flex-shrink: 0;
     padding: 4px;
     border-bottom-width: 1px;
     border-bottom-color: var(--pl-border);
@@ -1354,6 +1436,7 @@
 
 .pl-status {
     flex-direction: row;
+    flex-wrap: wrap;
     align-items: center;
     flex-shrink: 0;
     min-height: 20px;
@@ -1395,7 +1478,8 @@
 }
 
 .pl-root .pl-status__account,
-.pl-root .pl-status__usage {
+.pl-root .pl-status__usage,
+.pl-root .pl-status__context {
     flex-shrink: 1;
     font-size: 11px;
     color: var(--pl-text-muted);
@@ -1404,7 +1488,13 @@
     text-overflow: ellipsis;
 }
 
-.pl-root .pl-status__usage--warning {
+.pl-root .pl-status__context {
+    flex-shrink: 0;
+    margin-left: 8px;
+    max-width: 100%;
+}
+
+.pl-root .pl-status__context--warning {
     color: var(--pl-warning);
 }
 
@@ -2184,4 +2274,29 @@
     flex-shrink: 1;
     white-space: normal;
     color: var(--pl-text);
+}
+
+.pl-orchestration, .pl-orchestration-approval {
+    padding: 4px 6px;
+    flex-shrink: 0;
+    border-bottom-width: 1px;
+    border-bottom-color: var(--pl-border);
+}
+
+.pl-orchestration__row {
+    flex-direction: row;
+    align-items: center;
+}
+
+.pl-orchestration__nodes {
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-width: 0;
+}
+
+.pl-orchestration__gate {
+    flex-direction: row;
+    align-items: center;
+    flex-wrap: wrap;
+    max-width: 480px;
 }
