@@ -292,10 +292,15 @@ the server claims about it. Some changes apply with your next message: the agent
 ### Skills
 
 Use **+ ▾** in the tab bar or **New ▾** in the toolbar to open a blank chat or a role preset.
-Roles merge the packaged reviewer, your Parley library and **Custom Skills Directory** in Preferences, in that
+Roles merge the packaged orchestrator, worker and reviewer, your Parley library and **Custom Skills Directory** in Preferences, in that
 order; later sources override the same `name`. Custom directories are scanned recursively for `.md` files.
 **Reload skills** refreshes the menu and reports malformed files, unavailable directories and name overrides.
 Within a directory, files and subdirectories load in ordinal order; the last same-name role wins.
+
+The **orchestrator** role dispatches tasks to **worker** and **reviewer** child chats using the current
+profile and model. It finishes its turn after delegation and resumes when Parley delivers child results.
+Handoffs run automatically; use **Stop Chain** to cancel the workflow.
+The **reviewer** role focuses on Unity C# changes and produces its review report in English.
 
 Role files use YAML frontmatter followed by system instructions:
 

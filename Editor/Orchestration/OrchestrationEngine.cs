@@ -371,7 +371,10 @@ namespace DTech.Parley.Editor.Orchestration
                 await child.SendAsync(request.TaskSummary, null);
                 cancellationToken.ThrowIfCancellationRequested();
             }
-            catch (OperationCanceledException) { }
+            catch (OperationCanceledException)
+            {
+                if (!_disposed && run.Status == RunStatus.Running) Stop(run, RunStatus.Cancelled);
+            }
             catch (Exception exception)
             {
                 if (!_disposed && run.Status == RunStatus.Running && !Terminal(request.Status))
